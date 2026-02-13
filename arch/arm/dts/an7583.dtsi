@@ -255,18 +255,20 @@
 				#reset-cells = <1>;
 			};
 
-			mdio_0: mdio-0 {
+			mdio_0: mdio-bus@c8 {
 				compatible = "airoha,an7583-mdio";
-				resets = <&scuclk AN7583_MDIO0>;
+				reg = <0xc8>;
 
-				airoha,bus-id = <0>;
+				clocks = <&scuclk AN7583_CLK_MDIO0>;
+				resets = <&scuclk AN7583_MDIO0>;
 			};
 
-			mdio_1: mdio-1 {
+			mdio_1: mdio-bus@cc {
 				compatible = "airoha,an7583-mdio";
-				resets = <&scuclk AN7583_MDIO1>;
+				reg = <0xcc>;
 
-				airoha,bus-id = <1>;
+				clocks = <&scuclk AN7583_CLK_MDIO1>;
+				resets = <&scuclk AN7583_MDIO1>;
 			};
 		};
 
