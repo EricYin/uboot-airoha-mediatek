@@ -1,0 +1,4 @@
+loadaddr=0x81800000
+ipaddr=192.168.1.1
+serverip=192.168.1.10
+bootargs=console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x1fbf0000 root=/dev/mtdblock5 ro rootwait

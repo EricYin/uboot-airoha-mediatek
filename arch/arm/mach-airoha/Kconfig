@@ -40,22 +40,39 @@ config TARGET_AN7583
 	  Peripherals include Gigabit Ethernet, switch, USB3.0 and OTG, PCIe,
 	  I2S, PCM, S/PDIF, UART, SPI, I2C, IR TX/RX, and PWM.
 
+config TARGET_AN7563
+	bool "Airoha AN7563 SoC"
+	select CPU_V7A
+	select ARMV7_SET_CORTEX_SMPEN
+	help
+	  The Airoha AN7563 (a.k.a. AN7552) is an Airoha SoC built around a
+	  dual Cortex-A53 cluster running ARMv8 in 32-bit AArch32 mode. It
+	  shares the EN7581 chip-SCU / SCU register layout (in particular
+	  the IOMUX_1 register at chip-SCU offset 0x214), so the SCU nodes
+	  carry an "airoha,en7581-{chip-,}scu" fallback compatible to share
+	  the EN7581 clock and reset descriptor tables. The CPU side keeps
+	  the EN7523 ARMv7-A code path because AN7563 boots in AArch32
+	  mode.
+
 endchoice
 
 config SYS_SOC
 	default "en7523" if TARGET_EN7523
 	default "an7581" if TARGET_AN7581
 	default "an7583" if TARGET_AN7583
+	default "an7563" if TARGET_AN7563
 
 config SYS_BOARD
 	default "en7523" if TARGET_EN7523
 	default "an7581" if TARGET_AN7581
 	default "an7583" if TARGET_AN7583
+	default "an7563" if TARGET_AN7563
 
 config SYS_CONFIG_NAME
 	default "en7523" if TARGET_EN7523
 	default "an7581" if TARGET_AN7581
 	default "an7583" if TARGET_AN7583
+	default "an7563" if TARGET_AN7563
 
 endif
 
