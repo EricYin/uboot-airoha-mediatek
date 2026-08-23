@@ -313,6 +313,10 @@ static inline void _debug_uart_init(void)
 	struct ns16550 *com_port = (struct ns16550 *)CONFIG_VAL(DEBUG_UART_BASE);
 	int baud_divisor;
 
+	/* A chainloaded payload may inherit a fully configured UART. */
+	if (IS_ENABLED(CONFIG_DEBUG_UART_SKIP_INIT))
+		return;
+
 	/* Wait until tx buffer is empty */
 	while (!(serial_din(&com_port->lsr) & UART_LSR_TEMT))
 		;
