@@ -4,6 +4,7 @@
 #include <dm.h>
 #include <linux/bitfield.h>
 #include <linux/iopoll.h>
+#include <mapmem.h>
 #include <miiphy.h>
 
 #include "mdio-mt7531-mmio.h"
@@ -149,15 +150,19 @@ static const struct mdio_ops mt7531_mdio_ops = {
 static int mt7531_mdio_probe(struct udevice *dev)
 {
 	struct mt7531_mdio_mmio_priv *priv = dev_get_priv(dev);
+	fdt_addr_t addr;
+	fdt_size_t size;
 	ofnode switch_node;
 
 	switch_node = ofnode_get_parent(dev_ofnode(dev));
 	if (!ofnode_valid(switch_node))
 		return -EINVAL;
 
-	priv->switch_regs = ofnode_get_addr(switch_node);
-	if (priv->switch_regs == FDT_ADDR_T_NONE)
+	addr = ofnode_get_addr_size_index(switch_node, 0, &size);
+	if (addr == FDT_ADDR_T_NONE)
 		return -EINVAL;
+
+	priv->switch_regs = map_sysmem(addr, size);
 
 	return 0;
 }

@@ -88,7 +88,7 @@ static int mt7988_mdio_register(struct mt753x_switch_priv *priv)
 	if (!mdio_priv)
 		return -ENOMEM;
 
-	mdio_priv->switch_regs = (phys_addr_t)priv->epriv.ethsys_base + GSW_BASE;
+	mdio_priv->switch_regs = priv->epriv.ethsys_base + GSW_BASE;
 
 	mdio_bus->read = mt7531_mdio_mmio_read;
 	mdio_bus->write = mt7531_mdio_mmio_write;
