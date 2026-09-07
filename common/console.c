@@ -98,24 +98,55 @@ U_BOOT_ENV_CALLBACK(silent, on_silent);
 /* helper function: access to gd->console_out and gd->console_in */
 static void console_record_putc(const char c)
 {
+	struct membuf *mb = (struct membuf *)&gd->console_out;
+
 	if (!(gd->flags & GD_FLG_RECORD))
 		return;
-	if  (gd->console_out.start &&
-	     !membuf_putbyte((struct membuf *)&gd->console_out, c))
+
+	if (!mb->start)
+		return;
+
+	/*
+	 * membuf is a strict ring buffer: when it is full, writes are
+	 * refused and new data is lost.  For console recording we
+	 * prefer dmesg-style behaviour -- keep the *most recent*
+	 * output by dropping the oldest byte when the buffer is full.
+	 */
+	while (!membuf_putbyte(mb, c)) {
 		gd->flags |= GD_FLG_RECORD_OVF;
+		if (membuf_getbyte(mb) < 0)
+			return;		/* buffer broken, give up */
+	}
 }
 
 static void console_record_puts(const char *s)
 {
+	struct membuf *mb = (struct membuf *)&gd->console_out;
+	int len, need;
+	char dummy;
+
 	if (!(gd->flags & GD_FLG_RECORD))
 		return;
-	if  (gd->console_out.start) {
-		int len = strlen(s);
 
-		if (membuf_put((struct membuf *)&gd->console_out, s, len) !=
-		    len)
-			gd->flags |= GD_FLG_RECORD_OVF;
+	if (!mb->start)
+		return;
+
+	len = strlen(s);
+	if (!len)
+		return;
+
+	if (membuf_put(mb, s, len) == len)
+		return;
+
+	gd->flags |= GD_FLG_RECORD_OVF;
+
+	/* drop oldest data to make room, then write */
+	need = len - membuf_free(mb);
+	if (need > 0) {
+		while (need-- > 0 && membuf_get(mb, &dummy, 1) == 1)
+			;
 	}
+	membuf_put(mb, s, len);
 }
 
 static int console_record_getc(void)
