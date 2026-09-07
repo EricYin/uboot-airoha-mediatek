@@ -247,7 +247,10 @@
 		}
 
 		var btn = document.getElementById("lang-switch");
-		if (btn) btn.textContent = t("lang.switch");
+		if (btn) {
+			btn.hidden = Object.keys(T).length < 2;
+			btn.textContent = t("lang.switch");
+		}
 	}
 
 	function init() { cur = detect(); apply(); }

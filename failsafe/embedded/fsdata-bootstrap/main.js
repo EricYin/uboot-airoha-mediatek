@@ -23,12 +23,37 @@ var APP_STATE = {
     page: "",
 };
 
+/*
+ * Languages can be trimmed at build time (see the WEBUI_FAILSAFE_I18N_*
+ * Kconfig options), so the switcher must only offer what is really
+ * embedded in I18N - otherwise picking a stripped language would
+ * silently fall back to English.
+ */
+const LANG_ORDER = ["en", "zh-cn", "ru"];
+const LANG_LABELS = { en: "English", "zh-cn": "简体中文", ru: "Русский" };
+
+function availableLangs() {
+    if (!isI18nAvailable()) return [];
+    return LANG_ORDER.filter(function (code) { return !!I18N[code]; });
+}
+
+function firstAvailableLang() {
+    const availableLanguageList = availableLangs();
+    return availableLanguageList.length ? availableLanguageList[0] : "en";
+}
+
+function resolveLang(languageCode) {
+    return availableLangs().indexOf(languageCode) >= 0
+        ? languageCode
+        : firstAvailableLang();
+}
+
 function normalizeLang(input) {
-    if (!input) return "en";
+    if (!input) return firstAvailableLang();
     const lowerCaseLanguage = String(input).toLowerCase();
-    if (lowerCaseLanguage.indexOf("zh") === 0) return "zh-cn";
-    if (lowerCaseLanguage.indexOf("ru") === 0 || lowerCaseLanguage.indexOf("be") === 0 || lowerCaseLanguage.indexOf("uk") === 0) return "ru";
-    return "en";
+    if (lowerCaseLanguage.indexOf("zh") === 0) return resolveLang("zh-cn");
+    if (lowerCaseLanguage.indexOf("ru") === 0 || lowerCaseLanguage.indexOf("be") === 0 || lowerCaseLanguage.indexOf("uk") === 0) return resolveLang("ru");
+    return resolveLang("en");
 }
 
 function detectLang() {
@@ -658,8 +683,20 @@ function ensureSidebar() {
 
     const languageSelect = document.createElement("select");
     languageSelect.id = "lang_select";
-    languageSelect.innerHTML = '<option value="en">English</option><option value="zh-cn">简体中文</option><option value="ru">Русский</option>';
-    languageSelect.value = APP_STATE.lang;
+    const availableLanguageList = availableLangs();
+    languageSelect.innerHTML = availableLanguageList
+        .map(function (code) {
+            return '<option value="' + code + '">' + (LANG_LABELS[code] || code) + "</option>";
+        })
+        .join("");
+    if (availableLanguageList.length < 2) {
+        /* only one (or no) language embedded: nothing to switch */
+        languageRow.hidden = true;
+    } else {
+        languageSelect.value = availableLanguageList.indexOf(APP_STATE.lang) >= 0
+            ? APP_STATE.lang
+            : availableLanguageList[0];
+    }
     languageSelect.onchange = function () { setLang(this.value); };
     languageRow.appendChild(languageSelect);
     controlsContainer.appendChild(languageRow);
