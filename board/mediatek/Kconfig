@@ -2,6 +2,55 @@ if ARCH_MEDIATEK
 
 menu "Mediatek specific configurations"
 
+menu "Mediatek Failsafe Web recovery"
+
+config MTK_WEB_FAILSAFE
+	bool "Enable failsafe Web recovery"
+	select WEBUI_FAILSAFE
+	help
+	  Enable the Mediatek failsafe Web recovery feature.
+
+menuconfig MTK_FAILSAFE_VALIDATE
+	bool "Enable failsafe image validation"
+	depends on MTK_WEB_FAILSAFE
+	help
+	  Master switch for all structural image validation performed by
+	  the failsafe Web recovery before flashing (failsafe_validate.c).
+
+	  Independently of this compile-time switch, the runtime
+	  environment variable "failsafe_validate" can disable the
+	  structural validation on a running device (set it to 0/no);
+	  the generic storage capacity checks are always performed.
+
+if MTK_FAILSAFE_VALIDATE
+
+config MTK_FAILSAFE_VALIDATE_BL2
+	bool "Validate 'bl2' (preloader) images"
+	default y
+	help
+	  Structurally validate uploaded 'bl2' images before they are
+	  flashed.
+
+config MTK_FAILSAFE_VALIDATE_FIP
+	bool "Validate 'fip' images"
+	default y
+	help
+	  Structurally validate uploaded 'fip' (UBI static volume) images
+	  before they are flashed.
+
+config MTK_FAILSAFE_VALIDATE_FIRMWARE
+	bool "Validate 'firmware' images"
+	depends on FIT
+	default y
+	help
+	  Validate uploaded 'firmware' images (OpenWrt kernel/rootfs FIT,
+	  UBI volume) with the FIT checker (fit_check_format) before
+	  they are flashed.
+
+endif # MTK_FAILSAFE_VALIDATE
+
+endmenu # Mediatek Failsafe Web recovery
+
 config MTK_DEFAULT_FIT_BOOT_CONF
 	string "Default boot configuration of FIT image"
 	default ""
