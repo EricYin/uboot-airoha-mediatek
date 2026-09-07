@@ -16,7 +16,7 @@
 #include <dm/device_compat.h>
 #include <dm/lists.h>
 #include <regmap.h>
-#include <asm/arch/scu-regmap.h>
+#include <soc/airoha/scu-regmap.h>
 
 #include <dt-bindings/clock/en7523-clk.h>
 

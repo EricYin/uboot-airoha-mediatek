@@ -11,7 +11,7 @@
 #include <dm/lists.h>
 #include <dm/ofnode.h>
 #include <asm-generic/gpio.h>
-#include <asm/arch/scu-regmap.h>
+#include <soc/airoha/scu-regmap.h>
 #include <dt-bindings/pinctrl/mt65xx.h>
 #include <regmap.h>
 #include <syscon.h>

@@ -10,7 +10,7 @@
 #include <net.h>
 #include <regmap.h>
 #include <reset.h>
-#include <asm/arch/scu-regmap.h>
+#include <soc/airoha/scu-regmap.h>
 
 #include "pcs-airoha.h"
 

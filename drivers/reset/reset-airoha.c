@@ -11,7 +11,7 @@
 #include <linux/io.h>
 #include <reset-uclass.h>
 #include <regmap.h>
-#include <asm/arch/scu-regmap.h>
+#include <soc/airoha/scu-regmap.h>
 
 #include <dt-bindings/reset/airoha,en7523-reset.h>
 #include <dt-bindings/reset/airoha,en7581-reset.h>

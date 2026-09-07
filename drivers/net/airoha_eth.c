@@ -26,7 +26,7 @@
 #include <linux/iopoll.h>
 #include <linux/mii.h>
 #include <linux/time.h>
-#include <asm/arch/scu-regmap.h>
+#include <soc/airoha/scu-regmap.h>
 
 #include "airoha/pcs-airoha.h"
 
