@@ -130,24 +130,25 @@
 		status = "okay";
 	};
 
-	gpio0: gpio@1fbf0200 {
-		compatible = "airoha,en7523-gpio";
-		reg = <0x1fbf0204 0x4>,
-		      <0x1fbf0200 0x4>,
-		      <0x1fbf0220 0x4>,
-		      <0x1fbf0214 0x4>;
-		gpio-controller;
-		#gpio-cells = <2>;
-	};
+	system-controller@1fbf0200 {
+		compatible = "airoha,en7581-gpio-sysctl", "syscon",
+			     "simple-mfd";
+		reg = <0x1fbf0200 0xc0>;
 
-	gpio1: gpio@1fbf0270 {
-		compatible = "airoha,en7523-gpio";
-		reg = <0x1fbf0270 0x4>,
-		      <0x1fbf0260 0x4>,
-		      <0x1fbf0264 0x4>,
-		      <0x1fbf0278 0x4>;
-		gpio-controller;
-		#gpio-cells = <2>;
+		an7563_pinctrl: pinctrl {
+			compatible = "airoha,an7563-pinctrl";
+
+			interrupt-parent = <&gic>;
+			interrupts = <GIC_SPI 26 IRQ_TYPE_LEVEL_HIGH>;
+
+			gpio-controller;
+			#gpio-cells = <2>;
+
+			interrupt-controller;
+			#interrupt-cells = <2>;
+
+			gpio-ranges = <&an7563_pinctrl 0 0 38>;
+		};
 	};
 
 	eth: ethernet@1fb50000 {
