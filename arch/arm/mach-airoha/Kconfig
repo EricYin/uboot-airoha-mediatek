@@ -11,6 +11,8 @@ config TARGET_EN7523
 	select CPU_V7A
 	select ARMV7_SET_CORTEX_SMPEN
 	select REGMAP
+	select OF_SYSTEM_SETUP
+	select ARCH_FIXUP_FDT_MEMORY
 	help
 	  The Airoha EN7523 family (en7523/en7529/en7562) is an ARM-based
 	  SoCs with a dual-core CPU. It comes with Wi-Fi 5/6 support and
@@ -21,6 +23,8 @@ config TARGET_EN7523
 config TARGET_AN7581
 	bool "Airoha AN7581 SoC"
 	select ARM64
+	select OF_SYSTEM_SETUP
+	select ARCH_FIXUP_FDT_MEMORY
 	help
 	  The Airoha EN7581 is a ARM-based SoC with a quad-core Cortex-A7
 	  including NEON and GPU, Mali-450 graphics, several DDR3 options,
@@ -32,6 +36,8 @@ config TARGET_AN7581
 config TARGET_AN7583
 	bool "Airoha AN7583 SoC"
 	select ARM64
+	select OF_SYSTEM_SETUP
+	select ARCH_FIXUP_FDT_MEMORY
 	help
 	  The Airoha AN7583 is a ARM-based SoC with a quad-core Cortex-A7
 	  including NEON and GPU, Mali-450 graphics, several DDR3 options,
@@ -44,6 +50,9 @@ config TARGET_AN7563
 	bool "Airoha AN7563 SoC"
 	select CPU_V7A
 	select ARMV7_SET_CORTEX_SMPEN
+	select REGMAP
+	select OF_SYSTEM_SETUP
+	select ARCH_FIXUP_FDT_MEMORY
 	help
 	  The Airoha AN7563 (a.k.a. AN7552) is an Airoha SoC built around a
 	  dual Cortex-A53 cluster running ARMv8 in 32-bit AArch32 mode. It
@@ -74,5 +83,4 @@ config SYS_CONFIG_NAME
 	default "an7583" if TARGET_AN7583
 	default "an7563" if TARGET_AN7563
 
-endif
-
+endif # ARCH_AIROHA
