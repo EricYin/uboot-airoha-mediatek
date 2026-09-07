@@ -49,6 +49,7 @@
 # Top-level generic files
 #
 fit-dtb.blob*
+fiptool
 /MLO*
 /SPL*
 /System.map
@@ -142,3 +143,19 @@ __pycache__
 
 # Clang's compilation database file
 /compile_commands.json
+
+# Output
+*.fip
+*.lzma
+*.uImage
+bootext.ram
+output
+flash_table_gen
+
+# Reference
+ref
+reference
+original_binary
+
+# Toolchain
+node_modules/
