@@ -15,6 +15,11 @@ config PINCTRL_AIROHA_EN7523
 	depends on TARGET_EN7523
 	select PINCTRL_AIROHA
 
+config PINCTRL_AIROHA_AN7563
+	bool "Airoha AN7563/EN7552 pin controller and gpio driver"
+	depends on TARGET_AN7563
+	select PINCTRL_AIROHA
+
 config PINCTRL_AIROHA_AN7581
 	bool "Airoha AN7581 pin controller and gpio driver"
 	depends on TARGET_AN7581
