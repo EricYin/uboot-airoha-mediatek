@@ -528,7 +528,9 @@ void autoboot_command(const char *s)
 		if (lock)
 			prev = disable_ctrlc(1); /* disable Ctrl-C checking */
 
-		run_command_list(s, -1, 0);
+		if (run_command_list(s, -1, 0) &&
+		    IS_ENABLED(CONFIG_WEB_FAILSAFE_AFTER_BOOT_FAILURE))
+			run_command("httpd", 0);
 
 		if (lock)
 			disable_ctrlc(prev);	/* restore Ctrl-C checking */
