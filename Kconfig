@@ -13,6 +13,7 @@ source "scripts/Kconfig.include"
 source "arch/Kconfig"
 
 source "board/mediatek/Kconfig"
+source "board/airoha/Kconfig"
 
 menu "General setup"
 
