@@ -79,6 +79,10 @@ choice
 config WEBUI_FAILSAFE_UI_BOOTSTRAP
 	bool "Bootstrap UI (fsdata-bootstrap)"
 
+config WEBUI_FAILSAFE_UI_BRUTALISM
+	bool "Brutalism UI (fsdata-brutalism)"
+	depends on WEBUI_FAILSAFE_LAYOUT_UBOOT
+
 endchoice
 
 config WEBUI_FAILSAFE_BUILD_VARIANT

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>[ FLASHING ACTIVE ] AIROHA U-BOOT RECOVERY</title>
+	<link rel="stylesheet" type="text/css" href="/style.css">
+</head>
+<body>
+	<div id="lang-bar">
+		<span id="lang-label" data-i18n="lang.label">LANG</span>
+		<button id="lang-switch" data-i18n="lang.switch">中文</button>
+	</div>
+	<div class="stripe-warning"></div>
+	<div id="banner" data-i18n="banner.title">
+		&#9608;&#9608; AIROHA U-BOOT SYSTEM RECOVERY &#9608;&#9608;
+	</div>
+	<div class="stripe-warning"></div>
+
+	<div id="main" class="progress">
+		<p data-i18n="flashing.progress">&#9654; UPGRADE IN PROGRESS<span class="dots"></span> <span class="blink">DO NOT INTERRUPT</span></p>
+		<div class="progress-scan"></div>
+		<p data-i18n="flashing.writing">&nbsp;&nbsp;WRITING TO FLASH MEMORY<span class="dots"></span></p>
+		<div class="progress-scan"></div>
+		<p data-i18n="flashing.verifying">&nbsp;&nbsp;VERIFYING CRC CHECKSUM<span class="dots"></span></p>
+		<div class="progress-scan"></div>
+		<p class="alert-text" data-i18n="flashing.not_responding">&nbsp;&nbsp;THIS PAGE MAY BE IN NOT RESPONDING STATUS FOR A SHORT TIME.</p>
+		<p class="alert-text">&nbsp;&nbsp;&#9888;&nbsp;<strong data-i18n="flashing.no_poweroff">DO NOT POWER OFF DEVICE</strong> &#9888;&nbsp;<strong data-i18n="flashing.no_close">DO NOT CLOSE WINDOW</strong></p>
+	</div>
+
+	<div class="ticker">
+		<span data-i18n="flashing.ticker">
+			&#9888;&#65039; FLASHING IN PROGRESS &#9888;&#65039; DO NOT POWER OFF &#9888;&#65039; DO NOT UNPLUG &#9888;&#65039; WAIT FOR COMPLETION &#9888;&#65039; BRICK RISK: ACTIVE &#9888;&#65039;
+		</span>
+	</div>
+
+	<script type="text/javascript" src="/i18n.js"></script>
+	<script type="text/javascript" src="/main.js"></script>
+	<script type="text/javascript">
+		(function () {
+			"use strict";
+
+			/* /result returns "success" or "failed" as text/plain.
+			 * Based on the response, replace #main content with the
+			 * appropriate success/fail fragment and re-apply i18n.
+			 */
+			var successHtml =
+				'<p class="state-title" data-i18n="success.title">&#9608;&#9608;&#9608; UPGRADE COMPLETE! SYSTEM OK &#9608;&#9608;&#9608;</p>' +
+				'<div class="progress-scan"></div>' +
+				'<p class="alert-confirm" data-i18n="success.reboot">&nbsp;&nbsp;>> SELECT REBOOT METHOD...<span class="blink">_</span></p>' +
+				'<div class="progress-scan"></div>' +
+				'<p class="alert-text" data-i18n="success.crc">&nbsp;&nbsp;>> FLASH CRC: <strong>PASS</strong></p>' +
+				'<p class="alert-text" data-i18n="success.layout">&nbsp;&nbsp;>> PARTITION LAYOUT: <strong>VALID</strong></p>' +
+				'<p class="alert-text" data-i18n="success.checksum">&nbsp;&nbsp;>> UBOOT CHECKSUM: <strong>VERIFIED</strong></p>' +
+				'<p class="alert-text" data-i18n="success.status">&nbsp;&nbsp;>> DEVICE STATUS: <strong>READY</strong></p>' +
+				'<div class="progress-scan"></div>' +
+				'<p><input type="button" data-i18n-attr="value:reboot.btn" value="[ &#8635; REBOOT NOW ]" onclick="brutalismReboot(false)" /></p>' +
+				'<p><input type="button" data-i18n-attr="value:reboot.failsafe_btn" value="[ &#8635; REBOOT TO FAILSAFE ]" onclick="brutalismReboot(true)" /></p>';
+
+			var failHtml =
+				'<p class="state-title" data-i18n="fail.title">&#9608;&#9608;&#9608; UPGRADE FAILED! SYSTEM ERROR &#9608;&#9608;&#9608;</p>' +
+				'<div class="progress-scan"></div>' +
+				'<p class="alert-text" data-i18n="fail.write">&nbsp;&nbsp;>> FLASH WRITE: <strong>ABORTED</strong></p>' +
+				'<p class="alert-text" data-i18n="fail.code">&nbsp;&nbsp;>> ERROR CODE: <strong>0xDEADBEEF</strong></p>' +
+				'<p class="alert-text" data-i18n="fail.recovery">&nbsp;&nbsp;>> RECOVERY: FALLBACK TO STOCK IMAGE<span class="dots"></span></p>' +
+				'<div class="progress-scan"></div>' +
+				'<p><input type="button" data-i18n-attr="value:fail.btn" value="[ &#8634; RETURN TO RECOVERY MENU ]" onclick="location=\'/\'" /></p>' +
+				'<p><input type="button" data-i18n-attr="value:reboot.btn" value="[ &#8635; REBOOT NOW ]" onclick="brutalismReboot(false)" /></p>' +
+				'<p><input type="button" data-i18n-attr="value:reboot.failsafe_btn" value="[ &#8635; REBOOT TO FAILSAFE ]" onclick="brutalismReboot(true)" /></p>';
+
+			var interval = window.setInterval(function () {
+				var xmlhttp = new XMLHttpRequest();
+
+				window.clearInterval(interval);
+
+				xmlhttp.timeout = 300000;
+				xmlhttp.open("GET", "/result", true);
+				xmlhttp.send();
+				xmlhttp.onreadystatechange = function () {
+					if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+						var main = document.getElementById("main");
+						if (!main) return;
+
+						if (xmlhttp.responseText === "success") {
+							main.innerHTML = successHtml;
+							main.className = "state-success";
+						} else {
+							main.innerHTML = failHtml;
+							main.className = "state-fail";
+						}
+
+						/* Re-apply i18n translations to injected AJAX content */
+						if (window.i18n) {
+							window.i18n.applyTranslations(main);
+						}
+					}
+				};
+			}, 1000);
+		})();
+	</script>
+</body>
+</html>

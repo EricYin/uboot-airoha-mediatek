@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>[ 404 SEGFAULT ] PAGE NOT FOUND</title>
+	<link rel="stylesheet" type="text/css" href="/style.css">
+</head>
+<body>
+	<div id="lang-bar">
+		<span id="lang-label" data-i18n="lang.label">LANG</span>
+		<button id="lang-switch" data-i18n="lang.switch">中文</button>
+	</div>
+	<div class="stripe-warning"></div>
+	<div id="banner" data-i18n="banner.title">
+		&#9608;&#9608; AIROHA U-BOOT SYSTEM RECOVERY &#9608;&#9608;
+	</div>
+	<div class="stripe-warning"></div>
+
+	<div id="main" class="state-fail">
+		<div class="big-error">404</div>
+		<p data-i18n="404.title">&#9654; PAGE NOT FOUND &mdash; RESOURCE MISSING <span class="blink">_</span></p>
+		<div id="fileinfo">
+			<p style="color:#ff0000;" data-i18n="404.http">HTTP/1.1 404 NOT_FOUND</p>
+			<p style="color:#00ffff;" data-i18n="404.server">Server: uboot-failsafe/2.4.1</p>
+			<p style="color:#ffff00;" data-i18n="404.hint">Hint: Go back to / (root)</p>
+		</div>
+		<p data-i18n="404.missing">&nbsp;&nbsp;REQUESTED URL DOES NOT EXIST ON THIS DEVICE.</p>
+		<p data-i18n="404.void">&nbsp;&nbsp;YOU ARE LOST IN THE VOID. RETURN TO BASE.</p>
+		<p><input type="button" data-i18n="404.btn" value="[ &#8634; RETURN TO RECOVERY MENU ]" onclick="location='/'" /></p>
+	</div>
+
+	<div class="ticker">
+		<span data-i18n="404.ticker">
+			&#9888;&#65039; 404 ERROR &#9888;&#65039; PAGE NOT FOUND &#9888;&#65039; BROKEN LINK OR TYPED URL &#9888;&#65039; NAVIGATE BACK TO ROOT &#9888;&#65039;
+		</span>
+	</div>
+
+	<script type="text/javascript" src="/i18n.js"></script>
+	<script type="text/javascript" src="/main.js"></script>
+</body>
+</html>

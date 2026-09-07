@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>[ FAILSAFE ] AIROHA U-BOOT SYSTEM RECOVERY MODE</title>
+	<link rel="stylesheet" type="text/css" href="/style.css">
+</head>
+<body>
+	<div id="lang-bar">
+		<span id="lang-label" data-i18n="lang.label">LANG</span>
+		<button id="lang-switch" data-i18n="lang.switch">中文</button>
+	</div>
+	<div class="stripe-warning"></div>
+	<div id="banner" data-i18n="banner.title">
+		&#9608;&#9608; AIROHA U-BOOT SYSTEM RECOVERY &#9608;&#9608;
+	</div>
+	<div class="stripe-warning"></div>
+
+	<div id="main">
+		<p data-i18n="index.fw_ubi">&#9654; UPGRADE SYSTEM FIRMWARE (UBI VOLUME) <span class="blink">_</span></p>
+		<form id="form-firmware" enctype="multipart/form-data" onsubmit="return false;">
+			<p><input type="file" id="file-firmware" name="firmware" /></p>
+			<p><input type="button" id="submit-firmware" data-i18n-attr="value:index.fw_ubi_btn" value="[ Upload Firmware ]" onclick="brutalismUpload('firmware')" /></p>
+		</form>
+
+		<hr />
+
+		<div id="section-uboot">
+			<p data-i18n="index.uboot">&#9654; UPGRADE U-BOOT (MTD PARTITION)</p>
+			<form id="form-uboot" enctype="multipart/form-data" onsubmit="return false;">
+				<p><input type="file" id="file-uboot" name="uboot" /></p>
+				<p><input type="button" id="submit-uboot" data-i18n-attr="value:index.uboot_btn" value="[ Upload U-Boot ]" onclick="brutalismUpload('uboot')" /></p>
+			</form>
+		</div>
+
+		<hr />
+
+		<p data-i18n="index.initramfs">&#9654; UPLOAD BOOT IMAGE (RAM BOOT)</p>
+		<form id="form-initramfs" enctype="multipart/form-data" onsubmit="return false;">
+			<p><input type="file" id="file-initramfs" name="initramfs" /></p>
+			<p><input type="button" id="submit-initramfs" data-i18n-attr="value:index.initramfs_btn" value="[ Upload Image ]" onclick="brutalismUpload('initramfs')" /></p>
+		</form>
+
+		<hr />
+
+		<p data-i18n="index.reboot_section">&#9654; SYSTEM REBOOT</p>
+		<form id="form-reboot" onsubmit="return false;">
+			<p><input type="button" id="btn-reboot" data-i18n-attr="value:index.reboot_btn" value="[ &#8635; Reboot Now ]" onclick="brutalismReboot(false)" /></p>
+			<p><input type="button" id="btn-reboot-failsafe" data-i18n-attr="value:index.reboot_failsafe_btn" value="[ &#8635; Reboot To Failsafe ]" onclick="brutalismReboot(true)" /></p>
+		</form>
+
+		<div id="upload-result" style="display:none;">
+			<p id="active-type-title" class="active-title" data-i18n=""></p>
+			<div id="fileinfo">
+				<p><span data-i18n="fileinfo.md5">MD5&nbsp;:</span> <span id="md5-value">XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX</span></p>
+				<p><span data-i18n="fileinfo.size">SIZE:</span> <span id="size-value">YYYYYYYYYY</span> <span data-i18n="fileinfo.bytes">BYTES</span></p>
+			</div>
+
+			<!-- Type-specific warnings (shown based on upload type) -->
+			<div id="warn-firmware" class="type-warnings" style="display:none;">
+				<p class="alert-confirm" data-i18n="upload.confirm">&#9658;&nbsp;IF ALL INFORMATION ABOVE IS CORRECT, CLICK [<strong>PROCEED</strong>] TO BEGIN FLASH OPERATION.</p>
+				<p class="alert-text" data-i18n="upload.warning">&#9888;&nbsp;DO NOT DISCONNECT POWER OR CLOSE THIS BROWSER WINDOW.</p>
+			</div>
+			<div id="warn-uboot" class="type-warnings" style="display:none;">
+				<p class="alert-text" data-i18n="uboot.replace">&#9888;&nbsp;THIS WILL REPLACE THE <strong>U-BOOT</strong> PARTITION PERMANENTLY.</p>
+				<p class="alert-text" data-i18n="uboot.brick">&#9888;&nbsp;CORRUPT U-BOOT = <strong>DEVICE BRICKED</strong>. PROCEED WITH EXTREME CAUTION.</p>
+				<p class="alert-confirm" data-i18n="uboot.confirm">&#9658;&nbsp;IF ALL INFORMATION ABOVE IS CORRECT, CLICK [<strong>PROCEED</strong>].</p>
+			</div>
+			<div id="warn-initramfs" class="type-warnings" style="display:none;">
+				<p class="alert-text" data-i18n="booting.ram_boot">&#9658;&nbsp;THIS WILL BOOT THE UPLOADED IMAGE DIRECTLY FROM <strong>RAM</strong> WITHOUT WRITING TO FLASH.</p>
+				<p class="alert-text" data-i18n="booting.volatile">&#9658;&nbsp;CHANGES WILL BE DISCARDED ON NEXT REBOOT.</p>
+				<p class="alert-confirm" data-i18n="booting.confirm">&#9658;&nbsp;IF ALL INFORMATION ABOVE IS CORRECT, CLICK [<strong>PROCEED</strong>].</p>
+			</div>
+
+			<!-- Inline error state (shown on upload failure) -->
+			<div id="upload-error" style="display:none;">
+				<p class="state-title" data-i18n="fail.title">&#9608;&#9608;&#9608; UPGRADE FAILED! SYSTEM ERROR &#9608;&#9608;&#9608;</p>
+				<p class="alert-text" data-i18n="fail.invalid">&nbsp;&nbsp;THE UPLOADED FILE MAY BE INVALID OR CORRUPT.</p>
+				<p class="alert-text" data-i18n="fail.retry">&nbsp;&nbsp;PLEASE VERIFY THE FILE AND TRY AGAIN.</p>
+				<p><input type="button" data-i18n-attr="value:fail.btn" value="[ &#8634; RETURN TO RECOVERY MENU ]" onclick="brutalismResetUpload()" /></p>
+			</div>
+
+			<!-- Proceed button (hidden when error) -->
+			<div id="proceed-section">
+				<form action="/flashing.html" method="get">
+					<p><input type="submit" id="proceed-btn" data-i18n-attr="value:upload.btn" value="[ &#9654;&#9654; PROCEED &#9664;&#9664; ]" /></p>
+				</form>
+			</div>
+		</div>
+	</div>
+
+	<div class="ticker">
+		<span data-i18n="index.ticker">
+			&#9888;&#65039; WARNING: THIS IS FAILSAFE RECOVERY MODE &#9888;&#65039; DO NOT POWER OFF DURING FLASH &#9888;&#65039; ALL DATA MAY BE LOST &#9888;&#65039; PROCEED WITH CAUTION &#9888;&#65039; AIROHA SEMICONDUCTOR &#9888;&#65039;
+		</span>
+	</div>
+
+	<script type="text/javascript" src="/i18n.js"></script>
+	<script type="text/javascript" src="/main.js"></script>
+</body>
+</html>

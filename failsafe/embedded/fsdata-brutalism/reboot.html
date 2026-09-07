@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>[ REBOOTING ] AIROHA U-BOOT RECOVERY</title>
+	<link rel="stylesheet" type="text/css" href="/style.css">
+</head>
+<body>
+	<div id="lang-bar">
+		<span id="lang-label" data-i18n="lang.label">LANG</span>
+		<button id="lang-switch" data-i18n="lang.switch">中文</button>
+	</div>
+	<div class="stripe-warning"></div>
+	<div id="banner" data-i18n="banner.title">
+		&#9608;&#9608; AIROHA U-BOOT SYSTEM RECOVERY &#9608;&#9608;
+	</div>
+	<div class="stripe-warning"></div>
+
+	<div id="main" class="progress">
+		<p data-i18n="reboot.progress">&#9654; SYSTEM REBOOT IN PROGRESS<span class="dots"></span> <span class="blink">DO NOT INTERRUPT</span></p>
+		<div class="progress-scan"></div>
+		<p data-i18n="reboot.waiting">&nbsp;&nbsp;WAITING FOR DEVICE TO COME BACK ONLINE<span class="dots"></span></p>
+		<div class="progress-scan"></div>
+		<p data-i18n="reboot.hint">&nbsp;&nbsp;IF DEVICE DOES NOT RESPOND WITHIN 60S, POWER-CYCLE MANUALLY.</p>
+		<p>&nbsp;&nbsp;&#9888;&nbsp;<strong data-i18n="reboot.no_poweroff">DO NOT POWER OFF DEVICE</strong></p>
+	</div>
+
+	<div class="ticker">
+		<span data-i18n="reboot.ticker">
+			&#9888;&#65039; REBOOTING DEVICE &#9888;&#65039; PLEASE WAIT &#9888;&#65039; DEVICE WILL RETURN AUTOMATICALLY &#9888;&#65039;
+		</span>
+	</div>
+
+	<script type="text/javascript" src="/i18n.js"></script>
+	<script type="text/javascript" src="/main.js"></script>
+	<script type="text/javascript">
+		(function () {
+			"use strict";
+
+			/* Determine reboot mode from query string.
+			 * ?mode=failsafe -> GET /reboot-failsafe (sets env then resets)
+			 * otherwise      -> GET /reboot          (normal reset)
+			 *
+			 * The reboot request is sent AFTER this page (and its CSS/JS)
+			 * have finished loading, so the browser already has the
+			 * visual feedback rendered before the device resets.
+			 */
+			var params = new URLSearchParams(window.location.search);
+			var mode = params.get("mode");
+			var url = (mode === "failsafe") ? "/reboot-failsafe" : "/reboot";
+
+			/* Small delay so the "REBOOT IN PROGRESS" UI is visible to the user. */
+			setTimeout(function () {
+				var x = new XMLHttpRequest();
+				x.open("GET", url);
+				x.timeout = 5000;
+				/* The device will reset during/after this request; errors expected. */
+				x.send();
+			}, 800);
+
+			/* Poll /version and auto-redirect to / when the device
+			 * comes back online. */
+			var pollStart = Date.now();
+			var pollOnce = function () {
+				fetch("/version", { method: "GET", cache: "no-store" })
+					.then(function (r) { return r && r.ok; })
+					.catch(function () { return false; })
+					.then(function (ok) {
+						if (ok) {
+							location.href = "/";
+							return;
+						}
+						if (Date.now() - pollStart > 120000) return;
+						setTimeout(pollOnce, 1500);
+					});
+			};
+			setTimeout(pollOnce, 3000);
+		})(window);
+	</script>
+</body>
+</html>
