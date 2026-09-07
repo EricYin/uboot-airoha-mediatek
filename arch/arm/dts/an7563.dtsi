@@ -34,6 +34,26 @@
 			no-map;
 			reg = <0x80000000 0x88000>;
 		};
+
+		npu_binary: npu-binary@84000000 {
+			no-map;
+			reg = <0x84000000 0x00100000>;
+		};
+
+		npu_pkt: npu-pkt@84d00000 {
+			no-map;
+			reg = <0x84d00000 0x01600000>;
+		};
+
+		qdma0_buf: qdma0-buf@86400000 {
+			no-map;
+			reg = <0x86400000 0x02000000>;
+		};
+
+		qdma1_buf: qdma1-buf@88400000 {
+			no-map;
+			reg = <0x88400000 0x01000000>;
+		};
 	};
 
 	psci {
