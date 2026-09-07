@@ -12,7 +12,7 @@
 
 #include <linux/list.h>
 
-#define MAX_HTTP_FORM_VALUE_ITEMS	5
+#define MAX_HTTP_FORM_VALUE_ITEMS	8
 
 struct httpd_form_value {
 	const char *name;
@@ -56,6 +56,7 @@ struct http_response_info {
 	u32 code;
 	const char *content_type;
 	int content_length;
+	const char *content_encoding;
 	const char *location;
 	int connection_close;
 	int chunked_encoding;

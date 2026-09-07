@@ -11,10 +11,22 @@
 #include <errno.h>
 #include <malloc.h>
 #include <net.h>
+/*
+ * On MIPS, arch/mips/include/asm/regdef.h #defines sp as $29.
+ * Undefine it before mtk_tcp.h is parsed so struct field 'sp' stays intact.
+ */
+#ifdef __mips__
+#undef sp /* MIPS $29 register macro collides with struct field */
+#endif
 #include <net/mtk_tcp.h>
 #include <net/mtk_httpd.h>
 #include <vsprintf.h>
+#include <log.h>
 #include <asm/global_data.h>
+
+#ifdef __mips__
+#undef sp /* re-undef after asm includes */
+#endif
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -53,6 +65,8 @@ struct httpd_mtk_tcp_pdata {
 	char *upload_ptr;
 	u32 payload_size;
 	u32 upload_size;
+
+	u32 upload_start_time;
 
 	struct httpd_request request;
 	struct httpd_response response;
@@ -146,6 +160,19 @@ void httpd_free_instance(struct httpd_instance *httpd_inst)
 	struct list_head *lh, *n;
 	struct httpd_instance *inst;
 	struct _httpd_uri_handler *u;
+
+	/*
+	 * Connections from an earlier session can still be tracked by the
+	 * TCP stack: stop restarting the web failsafe does not complete a
+	 * FIN handshake, so conn_head keeps them with their per-connection
+	 * data pointing at the uri handlers owned by this instance.
+	 *
+	 * Tear them down *before* the handlers are freed.  Otherwise the
+	 * next session's first packet on such a stale connection runs
+	 * httpd_cleanup()/httpd_rx() against freed uri handlers, which takes
+	 * the whole network stack (and the board) down.
+	 */
+	mtk_tcp_close_conn_by_port(htons(httpd_inst->port));
 
 	mtk_tcp_listen_stop(htons(httpd_inst->port));
 
@@ -278,9 +305,32 @@ u32 http_make_response_header(struct http_response_info *info, char *buff,
 	if (p >= buff + size)
 		return size;
 
+	if (info->content_encoding)
+		p += snprintf(p, buff + size - p, "Content-Encoding: %s\r\n",
+			      info->content_encoding);
+
+	if (p >= buff + size)
+		return size;
+
 	if (info->content_length >= 0)
 		p += snprintf(p, buff + size - p, "Content-Length: %d\r\n",
 			      info->content_length);
+
+	if (p >= buff + size)
+		return size;
+
+	p += snprintf(p, buff + size - p,
+		"Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n");
+
+	if (p >= buff + size)
+		return size;
+
+	p += snprintf(p, buff + size - p, "Pragma: no-cache\r\n");
+
+	if (p >= buff + size)
+		return size;
+
+	p += snprintf(p, buff + size - p, "Expires: 0\r\n");
 
 	if (p >= buff + size)
 		return size;
@@ -308,6 +358,24 @@ u32 http_make_response_header(struct http_response_info *info, char *buff,
 	p += snprintf(p, buff + size - p, "\r\n");
 
 	return p - buff;
+}
+
+static void httpd_print_upload_speed(u32 size, u32 start_time)
+{
+	u32 elapsed = get_timer(start_time);
+	u32 kib = size / 1024;
+	u32 speed_kibs;
+
+	if (elapsed < 1)
+		elapsed = 1;
+	speed_kibs = (u32)(((u64)size * 1000) / ((u64)elapsed * 1024));
+
+	if (kib > 0)
+		printf("Upload complete: %u KiB in %u ms (%u KiB/s)\n",
+		       kib, elapsed, speed_kibs);
+	else
+		printf("Upload complete: %u bytes in %u ms (%u KiB/s)\n",
+		       (u32)size, elapsed, speed_kibs);
 }
 
 static int httpd_recv_hdr(struct httpd_instance *inst,
@@ -390,7 +458,9 @@ static int httpd_recv_hdr(struct httpd_instance *inst,
 	if (p)
 		*p = 0;
 
-	printf("%s %s\n", pdata->buf, uri_ptr);
+	/* Reduce console noise for high-frequency polling endpoints */
+	if (strcmp(uri_ptr, "/console/poll"))
+		debug("%s %s\n", pdata->buf, uri_ptr);
 
 	/* record URI */
 	pdata->uri = uri_ptr;
@@ -404,7 +474,8 @@ static int httpd_recv_hdr(struct httpd_instance *inst,
 			while (*cl_ptr == ' ')
 				cl_ptr++;
 			pdata->payload_size = simple_strtoul(cl_ptr, NULL, 10);
-			printf("    Content-Length: %d\n", pdata->payload_size);
+			if (strcmp(uri_ptr, "/console/poll"))
+				debug("    Content-Length: %d\n", pdata->payload_size);
 		}
 
 		/* Content-Type */
@@ -436,6 +507,8 @@ static int httpd_recv_hdr(struct httpd_instance *inst,
 			debug("    Content-Type: boundary=\"%s\"\n", b_ptr);
 		}
 
+		pdata->upload_start_time = get_timer(0);
+
 		if (hdr_size + pdata->payload_size < sizeof(pdata->buf)) {
 			/* upload payload can be put into the cache */
 			pdata->upload_ptr = pdata->buf + hdr_size;
@@ -464,6 +537,9 @@ static int httpd_recv_hdr(struct httpd_instance *inst,
 			/* upload completed */
 			pdata->upload_ptr[pdata->payload_size] = 0;
 			pdata->status = HTTPD_S_FULL_RCVD;
+			if (strcmp(pdata->uri, "/console/poll"))
+				httpd_print_upload_speed(pdata->payload_size,
+							pdata->upload_start_time);
 		} else {
 			/* switch status for further receving */
 			pdata->status = HTTPD_S_PAYLOAD_RECVING;
@@ -505,6 +581,9 @@ static int httpd_recv_payload(struct httpd_instance *inst,
 		/* remove uploading mark */
 		pdata->is_uploading = 0;
 		is_uploading = 0;
+		if (strcmp(pdata->uri, "/console/poll"))
+			httpd_print_upload_speed(pdata->payload_size,
+						pdata->upload_start_time);
 		return 0;
 	}
 
