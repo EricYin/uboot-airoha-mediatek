@@ -3229,6 +3229,28 @@ config CMD_BTNCHK
 	                  driven with the generic 'led' command
 	    failsafe_led - LED label switched on when the web failsafe is entered
 
+config CMD_GPIOTEST
+	bool "GPIO hardware verification tool (Airoha)"
+	depends on DM_GPIO
+	default n
+	help
+	  Enable gpiotest command for GPIO hardware verification on
+	  Airoha platforms (EN7523, EN7562, AN7563, AN7581, AN7583).
+	  Provides sub-commands to scan all pins, blink LEDs, and monitor
+	  button inputs — useful for hardware bringup on boards that cannot
+	  run OpenWrt/Linux.
+
+	  Pin numbers use dm_gpio offset (0 .. gpio_count-1).
+	  Use "gpiotest list" to discover available pins.
+
+	  Sub-commands:
+	    gpiotest list                     - Scan GPIO states
+	    gpiotest blink <pin> [cnt] [ms]   - Blink a pin (LED test)
+	    gpiotest monitor <pin>            - Monitor input (button test)
+	    gpiotest all-leds [s] [e] [ms]    - Cycle pins one-by-one
+
+	  Also provides a gpioscan shortcut command.
+
 endmenu
 
 config CMD_UBI

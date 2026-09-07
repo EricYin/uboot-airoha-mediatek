@@ -244,6 +244,8 @@ obj-$(CONFIG_CMD_BTNCHK) += btnchk.o
 # Foundries.IO SCP03
 obj-$(CONFIG_CMD_SCP03) += scp03.o
 
+# GPIO hardware verification
+obj-$(CONFIG_CMD_GPIOTEST) += gpiotest.o
 obj-$(CONFIG_HUSH_SELECTABLE) += cli.o
 
 obj-$(CONFIG_CMD_SPAWN) += spawn.o
