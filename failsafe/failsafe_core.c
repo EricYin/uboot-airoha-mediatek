@@ -31,6 +31,7 @@
 #include <net/mtk_telnetd.h>
 #endif
 #include <linux/string.h>
+#include <log.h>
 #include <rand.h>
 #include <u-boot/schedule.h>
 #include <vsprintf.h>
@@ -226,7 +227,7 @@ int start_web_failsafe(void)
 
 	inst = httpd_create_instance(80);
 	if (!inst) {
-		printf("Error: failed to create HTTP instance on port 80\n");
+		debug("Error: failed to create HTTP instance on port 80\n");
 		return -1;
 	}
 
@@ -312,32 +313,37 @@ int start_web_failsafe(void)
 	 * multiple times (only the first call allocates packet buffers).
 	 */
 	int net_ret = net_init();
-	printf("[FAILSAFE] net_init() returned %d\n", net_ret);
+
+	/*
+	 * Bring-up traces only: they cost rodata in every production
+	 * image, so they are compiled out unless DEBUG is defined.
+	 */
+	debug("[FAILSAFE] net_init() returned %d\n", net_ret);
 	if (eth_is_on_demand_init()) {
 		eth_halt();
 		eth_set_current();
 		if (eth_init() < 0) {
-			printf("Error: failed to initialize ethernet\n");
+			debug("Error: failed to initialize ethernet\n");
 			failsafe_httpd_running = false;
 			return -1;
 		}
 	} else {
 		eth_init_state_only();
 	}
-	printf("[FAILSAFE] eth initialized\n");
+	debug("[FAILSAFE] eth initialized\n");
 
 	/* Reset the MTK TCP subsystem */
 	mtk_tcp_start();
-	printf("[FAILSAFE] mtk_tcp_start() done\n");
+	debug("[FAILSAFE] mtk_tcp_start() done\n");
 
 #ifdef CONFIG_MTK_DHCPD
 	/* Start the DHCP server (net_init may have cleared UDP handlers) */
 	mtk_dhcpd_start();
-	printf("[FAILSAFE] DHCP server started\n");
+	debug("[FAILSAFE] DHCP server started\n");
 #endif
 #ifdef CONFIG_MTK_DNSD
 	mtk_dnsd_start();
-	printf("[FAILSAFE] DNS server started\n");
+	debug("[FAILSAFE] DNS server started\n");
 #endif
 
 	/*
@@ -367,7 +373,7 @@ int start_web_failsafe(void)
 	 * poll-loop level, safely outside the callback chain, and also
 	 * re-register the DHCP handler that net_clear_handlers() removed.
 	 */
-	printf("[FAILSAFE] entering poll loop, done_flag=%d\n", mtk_tcp_done_flag);
+	debug("[FAILSAFE] entering poll loop, done_flag=%d\n", mtk_tcp_done_flag);
 	while (!ctrlc() && !mtk_tcp_done_flag && !auto_action_pending &&
 	       !reboot_pending) {
 #if defined(CONFIG_MTK_TELNETD)
@@ -495,7 +501,7 @@ static int do_httpd(struct cmd_tbl *cmdtp, int flag, int argc,
 		 * network has been halted by start_web_failsafe(), so it is
 		 * safe to reset now.
 		 */
-		printf("NOTICE: Rebooting now...\n");
+		debug("NOTICE: Rebooting now...\n");
 		do_reset(NULL, 0, 0, NULL);
 	}
 
