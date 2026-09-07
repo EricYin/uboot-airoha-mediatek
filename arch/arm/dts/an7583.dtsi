@@ -143,6 +143,12 @@
 		chip_scu: syscon@1fa20000 {
 			compatible = "airoha,en7581-chip-scu", "syscon";
 			reg = <0x0 0x1fa20000 0x0 0x388>;
+
+			thermal: thermal {
+				compatible = "airoha,an7583-thermal";
+
+				#thermal-sensor-cells = <0>;
+			};
 		};
 
 		pon_pcs: pcs@1fa08000 {
@@ -248,6 +254,8 @@
 		system-controller@1fb00000 {
 			compatible = "syscon", "simple-mfd";
 			reg = <0x0 0x1fb00000 0x0 0x970>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 
 			scuclk: scuclk {
 				compatible = "airoha,an7583-scu";
