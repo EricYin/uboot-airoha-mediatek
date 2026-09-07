@@ -140,6 +140,12 @@
 			     <GIC_PPI 10 IRQ_TYPE_LEVEL_LOW>;
 	};
 
+	clk20m: clock-20000000 {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <20000000>;
+	};
+
 	uart1: serial@1fbf0000 {
 		compatible = "ns16550";
 		reg = <0x1fbf0000 0x30>;
@@ -179,6 +185,20 @@
 
 			gpio-ranges = <&an7563_pinctrl 0 0 38>;
 		};
+	};
+
+	i2c0: i2c@1fbf8000 {
+		compatible = "mediatek,mt7621-i2c";
+		reg = <0x1fbf8000 0x100>;
+
+		resets = <&scuclk EN7581_I2C2_RST>;
+
+		clocks = <&clk20m>;
+		clock-frequency = <100000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		status = "disabled";
 	};
 
 	eth: ethernet@1fb50000 {
