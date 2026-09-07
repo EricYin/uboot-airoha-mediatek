@@ -626,7 +626,7 @@ static int ubi_dev_scan(const struct mtd_info *info,
 	return 0;
 }
 
-static int ubi_set_skip_check(const char *volume, bool skip_check)
+int ubi_set_skip_check(const char *volume, bool skip_check)
 {
 	struct ubi_vtbl_record vtbl_rec;
 	struct ubi_volume *vol;

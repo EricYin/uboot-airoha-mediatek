@@ -76,6 +76,21 @@ int ubi_detach(void);
 int ubi_part(const char *part_name, const char *vid_header_offset);
 
 /**
+ * ubi_volume_begin_write() - begin write to UBI volume
+ * @volume: name of the volume to write to
+ * @buf: data buffer to be written
+ * @size: number of bytes in the current buffer
+ * @full_size: total size of the update
+ *
+ * This function begins an update of the specified UBI volume and writes
+ * the first chunk of data.
+ *
+ * Return: 0 on success, or -ve on error.
+ */
+int ubi_volume_begin_write(const char *volume, const void *buf, size_t size,
+			   size_t full_size);
+
+/**
  * ubi_volume_write() - write data to UBI volume
  * @volume: name of the volume to write to
  * @buf: data buffer to be written
@@ -90,6 +105,18 @@ int ubi_part(const char *part_name, const char *vid_header_offset);
  */
 int ubi_volume_write(const char *volume, const void *buf, loff_t offset,
 		     size_t size);
+
+/**
+ * ubi_set_skip_check() - set or clear the skip_check flag of a UBI volume
+ * @volume: name of the volume
+ * @skip_check: true to skip CRC check, false to enable it
+ *
+ * This function updates the volume table to enable/disable CRC check
+ * skipping for the specified volume.
+ *
+ * Return: 0 on success, or -ve on error.
+ */
+int ubi_set_skip_check(const char *volume, bool skip_check);
 
 /**
  * ubi_volume_read() - read data from UBI volume
