@@ -3,8 +3,8 @@
 VERSION = 2026
 PATCHLEVEL = 10
 SUBLEVEL =
-EXTRAVERSION =
-NAME =
+EXTRAVERSION = -Airoha/Mediatek
+NAME = Yuzhii-Edition
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
