@@ -820,6 +820,62 @@ static int airoha_hw_init(struct udevice *dev,
 	return 0;
 }
 
+static void airoha_switch_pbus_mii_write(struct airoha_eth *eth, u32 port,
+					 u32 reg, u32 val)
+{
+	int try;
+
+	airoha_switch_wr(eth, SWITCH_PBUS_PHY_IAWD, val);
+	airoha_switch_wr(eth, SWITCH_PBUS_PHY_IAC,
+			 SWITCH_PBUS_PHY_START | SWITCH_PBUS_PHY_CMD_WRITE |
+			 FIELD_PREP(SWITCH_PBUS_PHY_PORTADDR, port) |
+			 FIELD_PREP(SWITCH_PBUS_PHY_REGADDR, reg));
+
+	for (try = 0; try < AIROHA_MAX_PBUS_TRY; try++) {
+		val = airoha_switch_rr(eth, SWITCH_PBUS_PHY_IAC);
+		if (!(val & SWITCH_PBUS_PHY_START))
+			return;
+
+		udelay(AIROHA_PBUS_SLEEP);
+	}
+}
+
+static void airoha_switch_an7583_gephy_init(struct airoha_eth *eth)
+{
+	int i;
+
+	/* AN7583 require a tweak to GEPHY_CONN_CFG to clock the GEPHYs */
+	airoha_switch_rmw(eth, SWITCH_GEPHY_CONN_CFG,
+			  SWITCH_DPHY_CKIN_SEL |
+			  SWITCH_PHY_CORE_REG_CLK_SEL |
+			  SWITCH_ETHER_AFE_PWD,
+			  SWITCH_DPHY_CKIN_SEL |
+			  SWITCH_PHY_CORE_REG_CLK_SEL |
+			  FIELD_PREP(SWITCH_ETHER_AFE_PWD, 0));
+	udelay(2000);
+
+	/*
+	 * Take every internal GEPHY out of power down and restart
+	 * auto-negotiation advertising 1000M full duplex only.
+	 *
+	 * BMCR_PDOWN is set by default on AN7583, so the internal PHYs
+	 * never establish a link unless it is cleared.
+	 *
+	 * Auto-negotiation is deliberately left enabled: letting the PHY
+	 * advertise its full capabilities makes the link settle on 2.5G, a
+	 * speed the bootloader path cannot sustain, while forcing the link
+	 * with auto-negotiation disabled (what the SDK does when talking to
+	 * a fixed peer) makes the link partner fall back to half duplex by
+	 * parallel detection.  The resulting duplex mismatch shows up as
+	 * heavy packet loss and a throughput in the low kB/s range.
+	 */
+	for (i = 0; i < AIROHA_MAX_NUM_SWITCH_PORT; i++)
+		airoha_switch_pbus_mii_write(eth, i,
+					     AIROHA_PBUS_C22_MASK | MII_BMCR,
+					     BMCR_ANENABLE | BMCR_ANRESTART |
+					     BMCR_SPEED1000 | BMCR_FULLDPLX);
+}
+
 static int airoha_switch_init(struct udevice *dev, struct airoha_eth *eth)
 {
 	struct airoha_eth_soc_data *data = (void *)dev_get_driver_data(dev);
@@ -859,58 +915,9 @@ static int airoha_switch_init(struct udevice *dev, struct airoha_eth *eth)
 			 FIELD_PREP(SWITCH_PHY_END_ADDR, 0xc) |
 			 FIELD_PREP(SWITCH_PHY_ST_ADDR, 0x8));
 
-	/* AN7583 require tweak to GEPHY_CONN_CFG and clear PHY BMCR_PDOWN */
-	if (!strcmp(data->switch_compatible, "airoha,an7583-switch")) {
-		int i;
-
-		airoha_switch_rmw(eth, SWITCH_GEPHY_CONN_CFG,
-				  SWITCH_DPHY_CKIN_SEL |
-				  SWITCH_PHY_CORE_REG_CLK_SEL |
-				  SWITCH_ETHER_AFE_PWD,
-				  SWITCH_DPHY_CKIN_SEL |
-				  SWITCH_PHY_CORE_REG_CLK_SEL |
-				  FIELD_PREP(SWITCH_ETHER_AFE_PWD, 0));
-
-		/* Disable BMCR_PDOWN for every PHY */
-		for (i = 0; i < AIROHA_MAX_NUM_SWITCH_PORT; i++) {
-			int try;
-			u32 val;
-
-			airoha_switch_wr(eth, SWITCH_PBUS_PHY_IAC,
-					 SWITCH_PBUS_PHY_START |
-					 SWITCH_PBUS_PHY_CMD_READ |
-					 FIELD_PREP(SWITCH_PBUS_PHY_PORTADDR, i) |
-					 FIELD_PREP(SWITCH_PBUS_PHY_REGADDR,
-						    AIROHA_PBUS_C22_MASK | MII_BMCR));
-
-			for (try = 0; try < AIROHA_MAX_PBUS_TRY; try++) {
-				val = airoha_switch_rr(eth, SWITCH_PBUS_PHY_IAC);
-				if (!(val & SWITCH_PBUS_PHY_START))
-					break;
-
-				udelay(AIROHA_PBUS_SLEEP);
-			}
-
-			val = airoha_switch_rr(eth, SWITCH_PBUS_PHY_IARD);
-			val &= ~BMCR_PDOWN;
-
-			airoha_switch_wr(eth, SWITCH_PBUS_PHY_IAWD, val);
-			airoha_switch_wr(eth, SWITCH_PBUS_PHY_IAC,
-					 SWITCH_PBUS_PHY_START |
-					 SWITCH_PBUS_PHY_CMD_WRITE |
-					 FIELD_PREP(SWITCH_PBUS_PHY_PORTADDR, i) |
-					 FIELD_PREP(SWITCH_PBUS_PHY_REGADDR,
-						    AIROHA_PBUS_C22_MASK | MII_BMCR));
-
-			for (try = 0; try < AIROHA_MAX_PBUS_TRY; try++) {
-				val = airoha_switch_rr(eth, SWITCH_PBUS_PHY_IAC);
-				if (!(val & SWITCH_PBUS_PHY_START))
-					break;
-
-				udelay(AIROHA_PBUS_SLEEP);
-			}
-		}
-	}
+	/* AN7583 require tweak to GEPHY_CONN_CFG and PHY BMCR configuration */
+	if (!strcmp(data->switch_compatible, "airoha,an7583-switch"))
+		airoha_switch_an7583_gephy_init(eth);
 
 	return 0;
 }
@@ -1110,6 +1117,13 @@ static int airoha_eth_init(struct udevice *dev)
 	struct airoha_qdma *qdma = port->qdma;
 	struct airoha_queue *q;
 	int qid;
+
+	/*
+	 * AN7583: make sure the internal GEPHYs are out of power down and
+	 * negotiating at 1000M full duplex before the engine is turned on.
+	 */
+	if (!strcmp(qdma->eth->soc->switch_compatible, "airoha,an7583-switch"))
+		airoha_switch_an7583_gephy_init(qdma->eth);
 
 	qid = 0;
 	q = &qdma->q_rx[qid];
