@@ -32,7 +32,6 @@
 
 #define AIROHA_MAX_NUM_GDM_PORTS	4
 #define AIROHA_MAX_NUM_QDMA		1
-#define AIROHA_MAX_NUM_RSTS		3
 #define AIROHA_MAX_NUM_XSI_RSTS		4
 
 #define AIROHA_MAX_NUM_SWITCH_PORT	4
@@ -366,9 +365,29 @@ struct airoha_eth {
 
 struct airoha_eth_soc_data {
 	u32 version;
+	int num_rsts;
+	const char * const *rsts_names;
 	int num_xsi_rsts;
 	const char * const *xsi_rsts_names;
 	const char *switch_compatible;
+};
+
+static const char * const en7523_rsts_names[] = {
+	"fe",
+	"pdma",
+	"qdma",
+};
+
+static const char * const en7581_rsts_names[] = {
+	"fe",
+	"pdma",
+	"qdma",
+};
+
+static const char * const an7583_rsts_names[] = {
+	"fe",
+	"pdma",
+	"qdma",
 };
 
 static const char * const en7523_xsi_rsts_names[] = {
@@ -987,11 +1006,11 @@ static int airoha_eth_probe(struct udevice *dev)
 	if (!eth->fe_regs)
 		return -ENOMEM;
 
-	eth->rsts.resets = devm_kcalloc(dev, AIROHA_MAX_NUM_RSTS,
+	eth->rsts.resets = devm_kcalloc(dev, data->num_rsts,
 					sizeof(struct reset_ctl), GFP_KERNEL);
 	if (!eth->rsts.resets)
 		return -ENOMEM;
-	eth->rsts.count = AIROHA_MAX_NUM_RSTS;
+	eth->rsts.count = data->num_rsts;
 
 	eth->xsi_rsts.resets = devm_kcalloc(dev, data->num_xsi_rsts,
 					    sizeof(struct reset_ctl), GFP_KERNEL);
@@ -999,17 +1018,12 @@ static int airoha_eth_probe(struct udevice *dev)
 		return -ENOMEM;
 	eth->xsi_rsts.count = data->num_xsi_rsts;
 
-	ret = reset_get_by_name(dev, "fe", &eth->rsts.resets[0]);
-	if (ret)
-		return ret;
-
-	ret = reset_get_by_name(dev, "pdma", &eth->rsts.resets[1]);
-	if (ret)
-		return ret;
-
-	ret = reset_get_by_name(dev, "qdma", &eth->rsts.resets[2]);
-	if (ret)
-		return ret;
+	for (i = 0; i < data->num_rsts; i++) {
+		ret = reset_get_by_name(dev, data->rsts_names[i],
+					&eth->rsts.resets[i]);
+		if (ret)
+			return ret;
+	}
 
 	for (i = 0; i < data->num_xsi_rsts; i++) {
 		ret = reset_get_by_name(dev, data->xsi_rsts_names[i],
@@ -1341,6 +1355,8 @@ static int airoha_eth_bind(struct udevice *dev)
 
 static const struct airoha_eth_soc_data en7523_data = {
 	.version = 0x7523,
+	.rsts_names = en7523_rsts_names,
+	.num_rsts = ARRAY_SIZE(en7523_rsts_names),
 	.xsi_rsts_names = en7523_xsi_rsts_names,
 	.num_xsi_rsts = ARRAY_SIZE(en7523_xsi_rsts_names),
 	.switch_compatible = "airoha,en7523-switch",
@@ -1348,6 +1364,8 @@ static const struct airoha_eth_soc_data en7523_data = {
 
 static const struct airoha_eth_soc_data en7581_data = {
 	.version = 0x7581,
+	.rsts_names = en7581_rsts_names,
+	.num_rsts = ARRAY_SIZE(en7581_rsts_names),
 	.xsi_rsts_names = en7581_xsi_rsts_names,
 	.num_xsi_rsts = ARRAY_SIZE(en7581_xsi_rsts_names),
 	.switch_compatible = "airoha,en7581-switch",
@@ -1355,6 +1373,8 @@ static const struct airoha_eth_soc_data en7581_data = {
 
 static const struct airoha_eth_soc_data an7583_data = {
 	.version = 0x7583,
+	.rsts_names = an7583_rsts_names,
+	.num_rsts = ARRAY_SIZE(an7583_rsts_names),
 	.xsi_rsts_names = an7583_xsi_rsts_names,
 	.num_xsi_rsts = ARRAY_SIZE(an7583_xsi_rsts_names),
 	.switch_compatible = "airoha,an7583-switch",
