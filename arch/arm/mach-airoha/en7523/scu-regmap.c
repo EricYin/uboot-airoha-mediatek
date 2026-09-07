@@ -5,7 +5,7 @@
 
 #include <dm/ofnode.h>
 #include <linux/err.h>
-#include <asm/arch/scu-regmap.h>
+#include <soc/airoha/scu-regmap.h>
 
 static struct regmap *airoha_scu_node_regmap_by_index(unsigned int index)
 {
