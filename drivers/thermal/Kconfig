@@ -8,6 +8,14 @@ config DM_THERMAL
 
 if DM_THERMAL
 
+config AIROHA_THERMAL
+	bool "Airoha thermal sensor driver"
+	depends on ARCH_AIROHA
+	help
+	  Enable this to plug the Airoha thermal sensor driver into the
+	  U-Boot DM thermal framework. Supports temperature sensing on
+	  Airoha EN7581, AN7583, and EN7523 SoCs.
+
 config IMX_THERMAL
 	bool "Temperature sensor driver for Freescale i.MX SoCs"
 	depends on MX6 || MX7
