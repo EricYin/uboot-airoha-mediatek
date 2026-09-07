@@ -5,7 +5,7 @@
 
 #include <syscon.h>
 #include <linux/err.h>
-#include <asm/arch/scu-regmap.h>
+#include <soc/airoha/scu-regmap.h>
 
 struct regmap *airoha_get_scu_regmap(void)
 {
