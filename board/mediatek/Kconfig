@@ -1,0 +1,15 @@
+if ARCH_MEDIATEK
+
+menu "Mediatek specific configurations"
+
+config MTK_DEFAULT_FIT_BOOT_CONF
+	string "Default boot configuration of FIT image"
+	default ""
+	help
+	  FIT image can store multiple boot configuration to allow one sinle
+	  FIT image to be used on multiple boards.
+	  If left empty, the default one specified in FIT will be used.
+
+endmenu # Mediatek specific configurations
+
+endif # ARCH_MEDIATEK
