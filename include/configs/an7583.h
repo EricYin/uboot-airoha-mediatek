@@ -15,6 +15,7 @@
 
 /* DRAM */
 #define CFG_SYS_SDRAM_BASE		0x80000000
+#define CFG_MAX_MEM_MAPPED		SZ_2G
 
 /* Extra environment variables */
 #ifdef CONFIG_AIROHA_DEFAULT_FIT_BOOT_CONF
