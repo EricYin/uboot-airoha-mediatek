@@ -633,8 +633,25 @@ restart:
 		eth_rx();
 
 #if defined(CONFIG_MTK_TCP)
-		if (protocol == MTK_TCP)
-			mtk_tcp_periodic_check();
+		/*
+		 * Always run mtk_tcp_periodic_check() so that existing
+		 * MTK TCP connections (httpd, telnetd) stay alive even
+		 * while another network command (tftpboot, ping, …) is
+		 * using net_loop().  Only terminate the loop when we are
+		 * actually serving MTK_TCP and all listeners are gone.
+		 */
+		if (mtk_tcp_periodic_check() && protocol == MTK_TCP)
+			net_set_state(NETLOOP_SUCCESS);
+
+		/*
+		 * Out-of-band console abort: a telnet session that received
+		 * Ctrl+C (or the web console "Abort" button) asked to stop
+		 * this network command.  The request is consumed here — at
+		 * loop level, outside any eth_rx() callback chain — and
+		 * handled below by the exact same code path as a serial
+		 * Ctrl+C (cleanup + eth_halt() + -EINTR).
+		 */
+		net_abort_console = mtk_tcp_abort_pending();
 #endif
 
 #if defined(CONFIG_PROT_TCP)

@@ -14,6 +14,7 @@
 #include <net/mtk_tcp.h>
 
 #define MTK_TCP_MSS			1440
+#define MTK_TCP_RCV_WND		65535
 
 struct mtk_tcp_hdr {
 	__be16 src;
@@ -78,7 +79,9 @@ enum mtk_tcp_state {
 /* Receive TCP packet */
 bool mtk_receive_tcp(struct ip_hdr *ip, int len, struct ethernet_hdr *et);
 
-/* Called periodically to check the TCP status & send packets */
-void mtk_tcp_periodic_check(void);
+/* Called periodically to check the TCP status & send packets.
+ * Returns 1 if all listeners and connections are done (can exit loop), 0 otherwise.
+ */
+int mtk_tcp_periodic_check(void);
 
 #endif /* __MTK_TCP_H__ */

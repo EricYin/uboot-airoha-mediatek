@@ -10,6 +10,10 @@
 #ifndef __NET_MTK_MTK_TCP_H__
 #define __NET_MTK_MTK_TCP_H__
 
+#ifdef __mips__
+#undef sp /* MIPS register name collision with struct field 'sp' */
+#endif
+
 enum mtk_tcp_cb_status {
 	MTK_TCP_CB_NONE,
 	MTK_TCP_CB_NEW_CONN,
@@ -18,7 +22,8 @@ enum mtk_tcp_cb_status {
 	MTK_TCP_CB_REMOTE_CLOSING,
 	MTK_TCP_CB_REMOTE_CLOSED,
 	MTK_TCP_CB_CLOSING,
-	MTK_TCP_CB_CLOSED
+	MTK_TCP_CB_CLOSED,
+	MTK_TCP_CB_POLL
 };
 
 struct mtk_tcp_cb_data {
@@ -63,10 +68,36 @@ int mtk_tcp_close_conn(const void *conn, int rst);
 /* Close all connections and then exit net loop */
 void mtk_tcp_close_all_conn(void);
 
+/*
+ * Close every connection still tracked for the given local port.
+ *
+ * Upper layers call this before releasing the state their per-connection
+ * data points to, so that no stale connection survives into the next
+ * session.
+ */
+void mtk_tcp_close_conn_by_port(__be16 port);
+
 /* Reset all connections and then exit net loop */
 void mtk_tcp_reset_all_conn(void);
 
 /* Return 1 if connection is in ESTABLISHED state */
 int mtk_tcp_conn_is_alive(const void *conn);
+
+/* Called periodically to check the TCP status & send packets.
+ * Returns 1 if all listeners and connections are done (can exit loop), 0 otherwise.
+ */
+int mtk_tcp_periodic_check(void);
+
+/*
+ * Out-of-band console abort (telnet Ctrl+C, web console "Abort" button).
+ *
+ * A console session that is blocked inside run_command() cannot reach the
+ * serial Ctrl+C path, so it records a request here instead.  net_loop()
+ * consumes it (mtk_tcp_abort_pending()) on the next iteration and takes
+ * the exact same exit path as a serial Ctrl+C.
+ */
+void mtk_tcp_abort_request(void);
+void mtk_tcp_abort_clear(void);
+bool mtk_tcp_abort_pending(void);
 
 #endif /* __NET_MTK_MTK_TCP_H__ */
