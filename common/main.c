@@ -19,6 +19,7 @@
 #include <net.h>
 #include <version_string.h>
 #include <efi_loader.h>
+#include <net_abort.h>
 #include <event.h>
 
 static void run_preboot_environment_command(void)
@@ -39,10 +40,41 @@ static void run_preboot_environment_command(void)
 	}
 }
 
+/*
+ * One-shot "abort" flag, the command line counterpart of the "failsafe"
+ * flag handled below.
+ *
+ * "setenv abort 1; saveenv; reset" (e.g. issued from the web console)
+ * stops the boot sequence: the flag is consumed here - cleared and saved -
+ * so that the next reset boots normally, and main_loop() then drops into
+ * the U-Boot command line instead of running the boot command.
+ */
+static bool boot_abort_requested(void)
+{
+	const char *ab = env_get("abort");
+	bool abort_boot;
+
+	if (!ab)
+		return false;
+
+	/*
+	 * Evaluate the value before deleting the variable: env_set(x, NULL)
+	 * frees the string that env_get() returned (_hdelete() -> free()),
+	 * so "ab" is a dangling pointer once the flag has been cleared.
+	 */
+	abort_boot = !strcmp(ab, "1");
+
+	env_set("abort", NULL);
+	env_save();
+
+	return abort_boot;
+}
+
 /* We come here after U-Boot is initialised and ready to process commands */
 void main_loop(void)
 {
 	const char *s;
+	bool stop_autoboot;
 
 	bootstage_mark_name(BOOTSTAGE_ID_MAIN_LOOP, "main_loop");
 
@@ -68,11 +100,61 @@ void main_loop(void)
 
 	process_button_cmds();
 
+	stop_autoboot = boot_abort_requested();
+
+#ifdef CONFIG_MTK_HTTPD
+	{
+		const char *fs = env_get("failsafe");
+
+		if (fs && !strcmp(fs, "1")) {
+			/*
+			 * Failsafe reboot requested via the web UI.
+			 * Clear the flag first so a subsequent normal
+			 * reboot does not re-enter failsafe mode, then
+			 * start the HTTP server.
+			 */
+			env_set("failsafe", NULL);
+			env_save();
+			run_command("httpd", 0);
+		} else if (fs) {
+			/* Stale flag with unexpected value: just clear it */
+			env_set("failsafe", NULL);
+			env_save();
+		}
+	}
+#endif
+
+	/*
+	 * One-shot "abort" flag consumed above: stop the boot sequence
+	 * here, before bootdelay_process() runs.  On this platform
+	 * CONFIG_AUTOBOOT_MENU_SHOW makes bootdelay_process() invoke
+	 * menu_show() -> bootmenu_show(), which either shows the boot
+	 * menu (auto-running its default entry after bootmenu_delay) or -
+	 * with bootdelay == 0 - directly executes the first menu entry;
+	 * either way the device boots regardless of an abort flag that is
+	 * only checked around autoboot_command().  Dropping straight into
+	 * the command line here is what actually interrupts the boot.
+	 */
+	if (stop_autoboot) {
+		printf("Boot aborted (env abort), entering command line\n");
+		cli_loop();
+		panic("No CLI available");
+	}
+
+	if (IS_ENABLED(CONFIG_CMD_BTNCHK))
+		run_command("btnchk", 0);
+
+	if (IS_ENABLED(CONFIG_MTK_NET_ABORT))
+		net_abort_prepare();
+
 	s = bootdelay_process();
 	if (cli_process_fdt(&s))
 		cli_secure_boot_cmd(s);
 
 	autoboot_command(s);
+
+	if (IS_ENABLED(CONFIG_MTK_NET_ABORT))
+		net_abort_finish();
 
 	/* if standard boot if enabled, assume that it will be able to boot */
 	if (IS_ENABLED(CONFIG_BOOTSTD_PROG)) {

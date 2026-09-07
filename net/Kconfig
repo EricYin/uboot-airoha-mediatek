@@ -303,6 +303,22 @@ config MTK_DNSD
 	  Domain is taken from the "dnsd_domain" environment variable,
 	  with a fallback to "failsafe.lan".
 
+config MTK_NET_ABORT
+	bool "Network boot abort (uBootEnter.py compatible)"
+	depends on MTK_HTTPD
+	default y
+	help
+	  Enable network based boot abort.  While the boot countdown runs,
+	  U-Boot listens for the "UBOOT:ABORT" magic packet (UDP port 37541)
+	  broadcast by the uBootEnter.py tool.  When it is received, the
+	  boot is interrupted, an "UBOOT:ABORTED" reply is broadcast from
+	  port 37540 and the blocking web failsafe (httpd) is entered.
+
+	  This allows entering web recovery without console access.
+
+	  Disable at runtime by setting the environment variable:
+	    setenv disable_net_abort 1
+
 endif   # if NET_LEGACY
 
 source "net/lwip/Kconfig"

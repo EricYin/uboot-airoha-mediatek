@@ -7,6 +7,9 @@
 #include <config.h>
 #include <ansi.h>
 #include <autoboot.h>
+#ifdef CONFIG_MTK_NET_ABORT
+#include <net_abort.h>
+#endif
 #include <bootretry.h>
 #include <cli.h>
 #include <command.h>
@@ -389,6 +392,13 @@ static int abortboot_single_key(int bootdelay)
 		abort = 1;	/* don't auto boot	*/
 	}
 
+#ifdef CONFIG_MTK_NET_ABORT
+	if (net_abort_detected()) {
+		print_boot_delay(0);
+		abort = 1;	/* don't auto boot	*/
+	}
+#endif
+
 	while ((bootdelay > 0) && (!abort)) {
 		--bootdelay;
 		/* delay 1000 ms */
@@ -405,6 +415,14 @@ static int abortboot_single_key(int bootdelay)
 				break;
 			}
 			udelay(10000);
+#ifdef CONFIG_MTK_NET_ABORT
+			net_abort_poll();
+			if (net_abort_detected()) {
+				abort = 1;	/* don't auto boot	*/
+				bootdelay = 0;	/* no more delay	*/
+				break;
+			}
+#endif
 		} while (!abort && get_timer(ts) < 1000);
 
 		print_boot_delay(bootdelay);
@@ -418,6 +436,12 @@ static int abortboot_single_key(int bootdelay)
 static int abortboot(int bootdelay)
 {
 	int abort = 0;
+
+#ifdef CONFIG_MTK_NET_ABORT
+	/* a network abort already triggered interrupts the boot */
+	if (net_abort_detected())
+		abort = 1;
+#endif
 
 	if (bootdelay >= 0) {
 		if (autoboot_keyed())

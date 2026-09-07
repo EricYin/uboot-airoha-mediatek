@@ -633,6 +633,9 @@ restart:
 	 *	Main packet reception loop.  Loop receiving packets until
 	 *	someone sets `net_state' to a state that terminates.
 	 */
+	{
+	bool net_abort_console = false;
+
 	for (;;) {
 		schedule();
 		if (arp_timeout_check() > 0)
@@ -680,7 +683,7 @@ restart:
 		/*
 		 *	Abort if ctrl-c was pressed.
 		 */
-		if (ctrlc()) {
+		if (ctrlc() || net_abort_console) {
 			/* cancel any ARP that may not have completed */
 			net_arp_wait_packet_ip.s_addr = 0;
 
@@ -758,6 +761,7 @@ restart:
 		case NETLOOP_CONTINUE:
 			continue;
 		}
+	}
 	}
 
 done:
