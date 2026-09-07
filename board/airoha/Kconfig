@@ -234,6 +234,117 @@ endif # AIROHA_BUILD_CHAINLOADER
 
 endif # BUILD_AIROHA
 
+menu "Airoha Failsafe Web recovery"
+
+config AIROHA_WEB_FAILSAFE
+	bool "Enable failsafe Web recovery"
+	select WEBUI_FAILSAFE
+	help
+	  Enable the Airoha failsafe Web recovery feature.
+
+menuconfig AIROHA_FAILSAFE_VALIDATE
+	bool "Enable failsafe image validation"
+	depends on AIROHA_WEB_FAILSAFE
+	help
+	  Master switch for all structural image validation performed by
+	  the failsafe Web recovery before flashing (failsafe_validate.c).
+
+	  When enabled (default), each uploaded image is checked against
+	  its format (FIP ToC / BL2 preloader / FIT / legacy uImage) and
+	  the generic capacity checks (the image, including the BL2 write
+	  offset, must fit inside the target MTD partition or the 'fip'
+	  UBI volume).  The per-image-type checks below can then be
+	  enabled or disabled individually.
+
+	  When disabled, no structural validation is performed at all:
+	  uploaded images are flashed as-is (only the empty-image check
+	  in failsafe.c remains).
+
+	  Independently of this compile-time switch, the runtime
+	  environment variable "failsafe_validate" can disable the
+	  structural validation on a running device (set it to 0/no);
+	  the generic storage capacity checks are always performed.
+
+if AIROHA_FAILSAFE_VALIDATE
+
+config AIROHA_FAILSAFE_VALIDATE_UBOOT
+	bool "Validate 'u-boot' (legacy 512 KiB) images"
+	depends on AIROHA_BUILD_LEGACY
+	default y
+	help
+	  Structurally validate uploaded 'u-boot' images before they are
+	  flashed.  The 'u-boot' MTD partition holds the legacy 512 KiB
+	  boot image in one of two flavours, depending on
+	  CONFIG_AIROHA_LEGACY_BL1:
+	    - with BL1 (bl1-bl2-bl31-uboot.bin): BL1 @0x0 + FIP @0x800,
+	    - without BL1 (bl2-bl31-uboot.bin, e.g. AN7563): the same
+	      self-contained FIP (BL2 + BL31 + U-Boot) behind a 2 KiB zero
+	      prefix instead of BL1, i.e. the legacy image without BL1.
+
+	  tools/airoha_pack_boot.sh places the FIP at 0x800 in both
+	  layouts, so the FIP ToC magic 0xAA640001 is expected at
+	  offset 0x800 either way.
+
+	  Both layouts carry the whole boot chain in one image, so this
+	  check inherently covers BL2 as well; no separate 'bl2' option
+	  exists in these modes.
+
+	  The image size is bounded by the generic MTD partition capacity
+	  check (must fit the 'u-boot' partition, no fixed size limit).
+
+config AIROHA_FAILSAFE_VALIDATE_BL2
+	bool "Validate 'bl2' (preloader) images"
+	depends on AIROHA_BUILD_MODERN
+	default y
+	help
+	  Structurally validate uploaded 'bl2' images before they are
+	  flashed.  Only meaningful in the modern layout, where BL2 lives
+	  in its own partition.  The flashed image is preloader.bin,
+	  produced by
+	  'fiptool create --tb-fw bl2.bin preloader.bin', i.e. a FIP
+	  container wrapping the raw preloader:
+	    - size >= 0x4000,
+	    - FIP container: ToC magic 0xAA640001 and a BL2 payload entry
+	      fully contained in the image,
+	    - bare preloader (legacy bootext images): LZMA-layout deep
+	      check - stage-1 (BL21) region not blank and the no-final-XOR
+	      CRC32 stored in the last 4 bytes covers the whole image
+	      (ALWAYS performed, no separate CRC option).
+
+config AIROHA_FAILSAFE_VALIDATE_FIP
+	bool "Validate 'fip' images"
+	depends on AIROHA_BUILD_MODERN
+	default y
+	help
+	  Structurally validate uploaded 'fip' (UBI static volume) images
+	  before they are flashed: FIP ToC magic 0xAA640001 at offset 0
+	  and a sane minimum header size.
+
+config AIROHA_FAILSAFE_VALIDATE_CHAINLOADER
+	bool "Validate 'chainloader' images"
+	depends on AIROHA_BUILD_CHAINLOADER && FIT
+	default y
+	help
+	  Validate uploaded 'chainloader' images before they are flashed.
+	  The chainloader partition holds one of two formats, depending
+	  on the board build method:
+	    - OpenWrt-style FIT: FIT checker (fit_check_format),
+	    - shim-based legacy uImage: header CRC + payload CRC.
+	  The image size is bounded by the generic MTD partition capacity
+	  check (must fit the 'chainloader' partition, no fixed size
+	  limit).
+
+config AIROHA_FAILSAFE_VALIDATE_FIRMWARE
+	bool "Validate 'firmware' images"
+	default y
+	depends on FIT
+	help
+	  Validate uploaded 'firmware' images (OpenWrt kernel/rootfs FIT,
+	  UBI volume) with the FIT checker (fit_check_format) before
+	  they are flashed.
+
+endif # AIROHA_FAILSAFE_VALIDATE
+
 endmenu # Airoha Failsafe Web recovery
 
 config AIROHA_DEFAULT_FIT_BOOT_CONF
