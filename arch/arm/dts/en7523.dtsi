@@ -3,7 +3,10 @@
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/leds/common.h>
 #include <dt-bindings/clock/en7523-clk.h>
+#include <dt-bindings/reset/airoha,en7523-reset.h>
+#include <dt-bindings/thermal/thermal.h>
 
 / {
 	interrupt-parent = <&gic>;
@@ -15,29 +18,29 @@
 		#size-cells = <1>;
 		ranges;
 
-		npu_binary@84000000 {
+		atf@80000000 {
 			no-map;
-			reg = <0x84000000 0xA00000>;
+			reg = <0x80000000 0x200000>;
 		};
 
-		npu_flag@84B0000 {
+		npu_binary: npu-binary@84000000 {
 			no-map;
-			reg = <0x84B00000 0x100000>;
+			reg = <0x84000000 0x00100000>;
 		};
 
-		npu_pkt@85000000 {
+		npu_pkt: npu-pkt@84d00000 {
 			no-map;
-			reg = <0x85000000 0x1A00000>;
+			reg = <0x84d00000 0x01600000>;
 		};
 
-		npu_phyaddr@86B00000 {
+		qdma0_buf: qdma0-buf@86400000 {
 			no-map;
-			reg = <0x86B00000 0x100000>;
+			reg = <0x86400000 0x02000000>;
 		};
 
-		npu_rxdesc@86D00000 {
+		qdma1_buf: qdma1-buf@88400000 {
 			no-map;
-			reg = <0x86D00000 0x100000>;
+			reg = <0x88400000 0x01000000>;
 		};
 	};
 
@@ -86,11 +89,37 @@
 		};
 	};
 
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x80000000 0x40000000>;
+	};
+
 	scu: system-controller@1fa20000 {
 		compatible = "airoha,en7523-scu";
 		reg = <0x1fa20000 0x400>,
 		      <0x1fb00000 0x1000>;
 		#clock-cells = <1>;
+		#reset-cells = <1>;
+	};
+
+	system-controller@1fbf0200 {
+		compatible = "syscon", "simple-mfd";
+		reg = <0x1fbf0200 0xc0>;
+
+		pinctrl: pinctrl {
+			compatible = "airoha,en7523-pinctrl";
+
+			interrupt-parent = <&gic>;
+			interrupts = <GIC_SPI 26 IRQ_TYPE_LEVEL_HIGH>;
+
+			gpio-controller;
+			#gpio-cells = <2>;
+
+			interrupt-controller;
+			#interrupt-cells = <2>;
+
+			gpio-ranges = <&pinctrl 0 12 30>;
+		};
 	};
 
 	gic: interrupt-controller@9000000 {
@@ -116,6 +145,21 @@
 			     <GIC_PPI 10 IRQ_TYPE_LEVEL_LOW>;
 	};
 
+	clk20m: clock-20000000 {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <20000000>;
+	};
+
+	thermal: thermal-sensor@1efbd000 {
+		compatible = "airoha,en7523-thermal";
+		reg = <0x1efbd000 0x0fff>;
+		interrupts = <GIC_SPI 23 IRQ_TYPE_LEVEL_HIGH>;
+		airoha,chip-scu = <&scu>;
+
+		#thermal-sensor-cells = <1>;
+	};
+
 	uart1: serial@1fbf0000 {
 		compatible = "ns16550";
 		reg = <0x1fbf0000 0x30>;
@@ -124,26 +168,7 @@
 		interrupts = <GIC_SPI 18 IRQ_TYPE_LEVEL_HIGH>;
 		clock-frequency = <1843200>;
 		status = "okay";
-	};
-
-	gpio0: gpio@1fbf0200 {
-		compatible = "airoha,en7523-gpio";
-		reg = <0x1fbf0204 0x4>,
-		      <0x1fbf0200 0x4>,
-		      <0x1fbf0220 0x4>,
-		      <0x1fbf0214 0x4>;
-		gpio-controller;
-		#gpio-cells = <2>;
-	};
-
-	gpio1: gpio@1fbf0270 {
-		compatible = "airoha,en7523-gpio";
-		reg = <0x1fbf0270 0x4>,
-		      <0x1fbf0260 0x4>,
-		      <0x1fbf0264 0x4>,
-		      <0x1fbf0278 0x4>;
-		gpio-controller;
-		#gpio-cells = <2>;
+		bootph-all;
 	};
 
 	pcie0: pcie@1fa91000 {
@@ -202,5 +227,82 @@
 			#address-cells = <0>;
 			#interrupt-cells = <1>;
 		};
+	};
+
+	eth: ethernet@1fb50000 {
+		compatible = "airoha,en7523-eth";
+		reg = <0x1fb50000 0x2600>,
+		      <0x1fb54000 0x2000>,
+		      <0x1fb56000 0x2000>;
+		reg-names = "fe", "qdma0", "qdma1";
+
+		resets = <&scu EN7523_FE_RST>,
+			 <&scu EN7523_FE_PDMA_RST>,
+			 <&scu EN7523_FE_QDMA_RST>,
+			 <&scu EN7523_DUAL_HSI0_MAC_RST>,
+			 <&scu EN7523_DUAL_HSI1_MAC_RST>,
+			 <&scu EN7523_HSI_MAC_RST>;
+		reset-names = "fe", "pdma", "qdma",
+			      "hsi0-mac", "hsi1-mac", "hsi-mac";
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		gdm1: ethernet@1 {
+			compatible = "airoha,eth-mac";
+			reg = <1>;
+			phy-mode = "internal";
+
+			fixed-link {
+				speed = <10000>;
+				full-duplex;
+				pause;
+			};
+		};
+	};
+
+	switch: switch@1fb58000 {
+		compatible = "airoha,en7523-switch";
+		reg = <0x1fb58000 0x8000>;
+
+		mdio: mdio {
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+	};
+
+	snfi: spi@1fa10000 {
+		compatible = "airoha,en7523-snand", "airoha,en7581-snand";
+		reg = <0x1fa10000 0x140>,
+		      <0x1fa11000 0x600>;
+
+		clocks = <&scu EN7523_CLK_SPI>;
+		clock-names = "spi";
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		spi_nand: nand@0 {
+			compatible = "spi-nand";
+			reg = <0>;
+
+			spi-max-frequency = <50000000>;
+			spi-tx-bus-width = <1>;
+			spi-rx-bus-width = <2>;
+		};
+	};
+
+	i2c0: i2c0@1fbf8000 {
+		compatible = "mediatek,mt7621-i2c";
+		reg = <0x1fbf8000 0x100>;
+
+		reseets = <&scu EN7523_I2C2RBUS_RST>;
+
+		clocks = <&clk20m>;
+		clock-frequency = <100000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		status = "disabled";
 	};
 };
