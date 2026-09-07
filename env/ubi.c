@@ -14,7 +14,12 @@
 #include <memalign.h>
 #include <search.h>
 #include <ubi_uboot.h>
+#include <vsprintf.h>
 #undef crc32
+
+#ifndef CONFIG_ENV_UBI_EXTRA_VOLUMES
+#define CONFIG_ENV_UBI_EXTRA_VOLUMES ""
+#endif
 
 #define _QUOTE(x) #x
 #define QUOTE(x) _QUOTE(x)
@@ -121,6 +126,92 @@ static int env_ubi_volume_create(const char *volume)
 	return ret;
 }
 
+/*
+ * Create user defined UBI volumes if they do not exist yet.
+ *
+ * The volume list is configured via CONFIG_ENV_UBI_EXTRA_VOLUMES using an
+ * mtdparts-like syntax, e.g. "-(factory),1M(misc)".  A size of '-' means
+ * the volume should occupy all remaining free space.  Fixed-size volumes
+ * are created in a first pass, and auto-sized ('-') volumes in a second
+ * pass, so that the auto-sized volumes can absorb the space left over.
+ */
+static void env_ubi_extra_volume_create(void)
+{
+	char buf[sizeof(CONFIG_ENV_UBI_EXTRA_VOLUMES)];
+	bool dynamic = !IS_ENABLED(CONFIG_ENV_UBI_VOLUME_STATIC);
+	char *p, *entry;
+	int pass;
+
+	if (!CONFIG_ENV_UBI_EXTRA_VOLUMES[0])
+		return;
+
+	for (pass = 0; pass < 2; pass++) {
+		strcpy(buf, CONFIG_ENV_UBI_EXTRA_VOLUMES);
+		p = buf;
+
+		while ((entry = strsep(&p, ",")) != NULL) {
+			char *name, *end;
+			int64_t size;
+			bool auto_size;
+			struct ubi_volume *vol;
+			int ret;
+
+			if (*entry == '\0')
+				continue;
+
+			name = strchr(entry, '(');
+			if (!name) {
+				printf("env: invalid extra volume entry '%s'\n",
+				       entry);
+				continue;
+			}
+			*name++ = '\0';
+
+			end = strchr(name, ')');
+			if (!end || end == name) {
+				printf("env: invalid extra volume entry '%s'\n",
+				       entry);
+				continue;
+			}
+			*end = '\0';
+
+			auto_size = entry[0] == '-';
+			/* fixed-size in pass 0, auto-sized in pass 1 */
+			if (auto_size != (pass == 1))
+				continue;
+
+			if (auto_size) {
+				size = -1;
+			} else {
+				const char *endp;
+
+				size = simple_strtoull(entry, (char **)&endp, 0);
+				if (endp == entry || *endp) {
+					printf("env: invalid size '%s' for "
+					       "volume '%s'\n", entry, name);
+					continue;
+				}
+			}
+
+			if (size == 0) {
+				printf("env: invalid size '%s' for volume "
+				       "'%s'\n", entry, name);
+				continue;
+			}
+
+			vol = ubi_find_volume(name);
+			if (vol)
+				continue;
+
+			ret = ubi_create_vol(name, size, dynamic,
+					     UBI_VOL_NUM_AUTO, false);
+			if (ret)
+				printf("Failed to create extra UBI volume "
+				       "'%s'\n", name);
+		}
+	}
+}
+
 #ifdef CONFIG_ENV_REDUNDANT
 static int env_ubi_load(void)
 {
@@ -157,6 +248,7 @@ static int env_ubi_load(void)
 			env_set_default(NULL, 0);
 			return -ENODEV;
 		}
+		env_ubi_extra_volume_create();
 	}
 
 	if (!create1_fail) {
@@ -210,6 +302,7 @@ static int env_ubi_load(void)
 			env_set_default(NULL, 0);
 			return -ENODEV;
 		}
+		env_ubi_extra_volume_create();
 	}
 
 	if (ubi_volume_read(CONFIG_ENV_UBI_VOLUME, buf, 0, CONFIG_ENV_SIZE)) {

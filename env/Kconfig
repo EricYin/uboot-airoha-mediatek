@@ -752,6 +752,27 @@ config ENV_UBI_VOLUME_CREATE
 	  If ENV_UBI_VOLUME_REDUND is also enabled, both volumes will be
 	  created.
 
+config ENV_UBI_EXTRA_VOLUMES
+	string "Extra UBI volumes to create if they do not exist"
+	depends on ENV_UBI_VOLUME_CREATE
+	help
+	  Comma separated list of UBI volumes to automatically create on
+	  the UBI partition when the environment is loaded and the volume
+	  does not exist yet, using the syntax "[SIZE](NAME)".
+
+	  SIZE may be '-' to use all remaining free space, or a fixed size
+	  in bytes given as a plain number (a 0x prefix selects hexadecimal
+	  notation, e.g. 0x4000). NAME is the name of the volume. The whole
+	  configuration string must be enclosed in quotes, e.g.
+	  CONFIG_ENV_UBI_EXTRA_VOLUMES="0x100000(misc)".
+
+	  Example: CONFIG_ENV_UBI_EXTRA_VOLUMES="0x100000(misc),-(factory)"
+	  creates a dynamic "factory" volume occupying all remaining free
+	  space and a 1 MiB "misc" volume.
+
+	  Fixed-size volumes are created before the auto-sized ones, so the
+	  auto-sized volumes absorb whatever free space is left over.
+
 config ENV_UBI_VOLUME_STATIC
 	bool "Create static UBI volume"
 	depends on ENV_UBI_VOLUME_CREATE
