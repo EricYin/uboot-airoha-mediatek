@@ -65,6 +65,24 @@ config TARGET_AN7563
 
 endchoice
 
+config AIROHA_DRAM_SIZE_PROBE
+	bool "Detect Airoha DRAM size by probing the memory"
+	depends on ARCH_AIROHA
+	help
+	  The DRAM size is normally taken from the NP-SCU global parameter
+	  register, where the first-stage bootloader stores the size it
+	  detected. Say Y here to additionally probe DRAM with
+	  get_ram_size(); the probed value wins whenever the two disagree.
+
+	  Probing writes a test pattern above every power of two boundary
+	  and relies on the DRAM controller aliasing accesses outside the
+	  populated range. It is only needed if the bootloader does not
+	  populate the register or populates it with a wrong value, so say
+	  N unless you have a reason to doubt the register content.
+
+	  On the 32-bit SoCs (EN7523, AN7563) probing is capped at 1 GiB,
+	  on the 64-bit ones (AN7581, AN7583) at 8 GiB.
+
 config SYS_SOC
 	default "en7523" if TARGET_EN7523
 	default "an7581" if TARGET_AN7581
