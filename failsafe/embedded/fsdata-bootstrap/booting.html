@@ -1,0 +1,61 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Booting from memory</title>
+	<script src="/theme.js"></script>
+	<link rel="stylesheet" href="/style.css">
+	<script src="/i18n.js"></script>
+	<script src="/main.js"></script>
+	<script>
+		function init() {
+			appInit('booting');
+
+			ajax({
+				url: '/result',
+				done: function (response) {
+					if (response == 'failed') {
+						location = '/fail.html'
+						return
+					}
+
+					document.getElementById('title').innerHTML = t('booting.title.done')
+					document.getElementById('info').innerHTML = t('booting.info.done')
+					var spinner = document.getElementById('l')
+					spinner && (spinner.style.display = 'none')
+				},
+				timeout: 30000
+			})
+		}
+	</script>
+</head>
+
+<body onload="init()" data-page="booting">
+	<div class="app">
+		<aside id="sidebar" class="sidebar"></aside>
+		<div class="main">
+			<div id="m">
+				<div class="card-main status-card">
+					<div class="status-hero" aria-hidden="true">
+						<svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+							<polygon points="5 3 19 12 5 21 5 3"></polygon>
+						</svg>
+					</div>
+					<h1 id="title" data-i18n="booting.title.in_progress">BOOTING FROM MEMORY</h1>
+					<p id="info" data-i18n-html="booting.info.in_progress">
+						Your file was successfully uploaded! Booting from memory is in progress, please wait...<br>
+						This page may be in not responding status for a short time.
+					</p>
+					<div class="status-feedback">
+						<div id="l"></div>
+					</div>
+				</div>
+			</div>
+			<div id="version"></div>
+		</div>
+	</div>
+</body>
+
+</html>

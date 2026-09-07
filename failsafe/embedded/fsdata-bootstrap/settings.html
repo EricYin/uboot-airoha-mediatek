@@ -1,0 +1,177 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title data-i18n="settings.title">SETTINGS</title>
+	<script src="/theme.js"></script>
+	<link rel="stylesheet" href="/style.css">
+	<script src="/i18n.js"></script>
+	<script src="/main.js"></script>
+	<script src="/settings_js.js"></script>
+</head>
+
+<body onload="appInit('settings')" data-page="settings">
+	<div class="app">
+		<aside id="sidebar" class="sidebar"></aside>
+		<div class="main">
+			<div id="m">
+				<div class="card-head">
+					<div class="upload-hero" aria-hidden="true">
+						<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+							<circle cx="12" cy="12" r="3"></circle>
+							<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+						</svg>
+					</div>
+					<h1 data-i18n="settings.title">SETTINGS</h1>
+					<p id="hint" data-i18n-html="settings.hint">
+						Configure <strong>failsafe environment</strong> through a visual form.<br>
+						Changes are written to the U-Boot environment and persisted to flash.
+					</p>
+				</div>
+				<div class="card-main">
+					<div class="settings-page">
+
+						<section class="settings-section">
+							<h2 class="settings-heading" data-i18n="settings.section.appearance">Appearance</h2>
+							<div id="settings_accent_host" class="settings-accent-host"></div>
+							<div class="settings-accent-host">
+								<div class="control-row">
+									<div data-i18n="settings.appearance.dark_variant">Default dark theme</div>
+									<select id="settings_dark_variant" class="field-control">
+										<option value="" data-i18n="theme.dark_variant.standard">Standard</option>
+										<option value="amoled" data-i18n="theme.dark_variant.amoled">AMOLED (Pure Black)</option>
+									</select>
+								</div>
+							</div>
+						</section>
+
+						<section class="settings-section">
+							<h2 class="settings-heading" data-i18n="settings.section.network">Network</h2>
+							<div class="form-row form-row-2">
+								<div class="field">
+									<label for="set_ipaddr" data-i18n="settings.network.ipaddr">U-Boot IP address (ipaddr):</label>
+									<input id="set_ipaddr" class="field-control" type="text"
+										data-env="ipaddr"
+										autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+										placeholder="192.168.1.1">
+								</div>
+								<div class="field">
+									<label for="set_netmask" data-i18n="settings.network.netmask">Netmask (netmask):</label>
+									<input id="set_netmask" class="field-control" type="text"
+										data-env="netmask"
+										autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+										placeholder="255.255.255.0">
+								</div>
+							</div>
+							<div class="form-row">
+								<div class="field">
+									<label for="set_serverip" data-i18n="settings.network.serverip">TFTP server IP (serverip):</label>
+									<input id="set_serverip" class="field-control" type="text"
+										data-env="serverip"
+										autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+										placeholder="192.168.1.254">
+								</div>
+							</div>
+							<p class="settings-help" data-i18n="settings.network.help">serverip is auto-synced to the same subnet as ipaddr when ipaddr or netmask changes.</p>
+						</section>
+
+						<section class="settings-section">
+							<h2 class="settings-heading" data-i18n="settings.section.failsafe">Failsafe</h2>
+							<div class="form-row">
+								<div class="field">
+									<label for="set_auto_reboot" data-i18n="settings.failsafe.auto_reboot">Auto reboot after upgrade:</label>
+									<select id="set_auto_reboot" class="field-control" data-env="failsafe_auto_reboot" data-type="bool">
+										<option value="" data-i18n="settings.value.default">Default</option>
+										<option value="1" data-i18n="settings.value.on">On</option>
+										<option value="0" data-i18n="settings.value.off">Off</option>
+									</select>
+								</div>
+							</div>
+						</section>
+
+						<section class="settings-section">
+							<h2 class="settings-heading" data-i18n="settings.section.telnet">Telnet</h2>
+							<div class="form-row form-row-2">
+								<div class="field">
+									<label for="set_telnet_enable" data-i18n="settings.telnet.enable">Enabled:</label>
+									<select id="set_telnet_enable" class="field-control" data-env="telnet_enable" data-type="bool">
+										<option value="" data-i18n="settings.value.default">Default</option>
+										<option value="1" data-i18n="settings.value.on">On</option>
+										<option value="0" data-i18n="settings.value.off">Off</option>
+									</select>
+								</div>
+								<div class="field">
+									<label for="set_telnet_port" data-i18n="settings.telnet.port">Port:</label>
+									<input id="set_telnet_port" class="field-control" type="number" min="1" max="65535"
+										data-env="telnet_port" placeholder="23">
+								</div>
+							</div>
+						</section>
+
+						<section class="settings-section">
+							<h2 class="settings-heading" data-i18n="settings.section.dnsd">DNS Server</h2>
+							<div class="form-row">
+								<div class="field">
+									<label for="set_dnsd_domain" data-i18n="settings.dnsd.domain">Resolve domain (dnsd_domain):</label>
+									<input id="set_dnsd_domain" class="field-control" type="text"
+										data-env="dnsd_domain"
+										autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+										placeholder="failsafe.lan">
+								</div>
+							</div>
+							<p class="settings-help" data-i18n="settings.dnsd.help">DNS queries for this domain will resolve to the device IP address. Leave empty to use the default (failsafe.lan).</p>
+						</section>
+
+						<section class="settings-section">
+							<h2 class="settings-heading" data-i18n="settings.section.dhcpd">DHCP Server</h2>
+							<div class="form-row form-row-2">
+								<div class="field">
+									<label for="set_dhcpd_pool_start" data-i18n="settings.dhcpd.pool_start">Pool start host (dhcpd_pool_start):</label>
+									<input id="set_dhcpd_pool_start" class="field-control" type="number" min="1" max="65534"
+										data-env="dhcpd_pool_start" placeholder="100">
+								</div>
+								<div class="field">
+									<label for="set_dhcpd_pool_size" data-i18n="settings.dhcpd.pool_size">Pool size (dhcpd_pool_size):</label>
+									<input id="set_dhcpd_pool_size" class="field-control" type="number" min="1" max="65535"
+										data-env="dhcpd_pool_size" placeholder="101">
+								</div>
+							</div>
+							<div class="form-row">
+								<div class="field">
+									<label for="set_dhcpd_verbose" data-i18n="settings.dhcpd.verbose">Verbose log:</label>
+									<select id="set_dhcpd_verbose" class="field-control" data-env="dhcpd_verbose" data-type="bool">
+										<option value="" data-i18n="settings.value.default">Default</option>
+										<option value="1" data-i18n="settings.value.on">On</option>
+										<option value="0" data-i18n="settings.value.off">Off</option>
+									</select>
+								</div>
+							</div>
+							<p class="settings-help" data-i18n="settings.dhcpd.help">Pool host index is relative to the current network. Empty keeps the device default.</p>
+						</section>
+
+						<div class="form-actions">
+							<button type="button" class="button" onclick="settingsSave()" data-i18n="settings.action.save">Save</button>
+							<button type="button" class="button" onclick="settingsRefresh()" data-i18n="settings.action.refresh">Refresh</button>
+						</div>
+						<p id="settings_status" class="console-status settings-status"></p>
+					</div>
+				</div>
+				<div class="card-foot">
+					<div class="i w">
+						<strong data-i18n="common.warnings">WARNINGS</strong>
+						<ul>
+							<li data-i18n="settings.warn.1">Changes are persisted to the U-Boot environment.</li>
+							<li data-i18n="settings.warn.2">Pick "Default" or clear a text field to remove that variable.</li>
+							<li data-i18n="settings.warn.3">Some changes (Telnet, DHCP) only take effect after a reboot or service restart.</li>
+						</ul>
+					</div>
+				</div>
+			</div>
+			<div id="version"></div>
+		</div>
+	</div>
+</body>
+
+</html>

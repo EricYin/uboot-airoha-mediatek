@@ -1,0 +1,116 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Rebooting device</title>
+	<script src="/theme.js"></script>
+	<link rel="stylesheet" href="/style.css">
+	<script src="/i18n.js"></script>
+	<script src="/main.js"></script>
+	<script>
+		function init() {
+			appInit('reboot');
+		}
+
+		function requestReboot(mode) {
+			var status = document.getElementById('reboot_status');
+			var btnNormal = document.getElementById('btn_reboot');
+			var btnFailsafe = document.getElementById('btn_reboot_failsafe');
+			var spinner = document.getElementById('l');
+			var pollTimer = null;
+			var pollStart = Date.now();
+			var confirmKey = mode === 'failsafe' ? 'reboot.confirm_failsafe' : 'reboot.confirm';
+			var statusKey = mode === 'failsafe' ? 'reboot.status.failsafe' : 'reboot.status.normal';
+			var url = mode === 'failsafe' ? '/reboot-failsafe' : '/reboot';
+
+			if (!confirm(t(confirmKey)))
+				return;
+
+			if (btnNormal) btnNormal.disabled = true;
+			if (btnFailsafe) btnFailsafe.disabled = true;
+			if (spinner) spinner.style.display = 'block';
+
+			if (status) {
+				status.setAttribute('data-i18n', statusKey);
+				status.textContent = t(statusKey);
+			}
+
+			ajax({
+				url: url,
+				done: function () {
+					/* server may already be rebooting; keep the page as-is */
+				},
+				timeout: 30000
+			});
+
+			if (mode === 'failsafe') {
+				var pollOnce = async function () {
+					try {
+						var r = await fetch('/version', { method: 'GET', cache: 'no-store' });
+						if (r && r.ok) {
+							location.href = '/';
+							return;
+						}
+					} catch (e) {
+						/* ignore until device is back */
+					}
+					if (Date.now() - pollStart > 120000) {
+						if (pollTimer) {
+							clearTimeout(pollTimer);
+							pollTimer = null;
+						}
+						return;
+					}
+					pollTimer = setTimeout(pollOnce, 1500);
+				};
+				pollTimer = setTimeout(pollOnce, 1500);
+			}
+		}
+	</script>
+</head>
+
+<body onload="init()" data-page="reboot">
+	<div class="app">
+		<aside id="sidebar" class="sidebar"></aside>
+		<div class="main">
+			<div id="m">
+				<div class="card-main reboot-card">
+					<div class="reboot-hero" aria-hidden="true">
+						<svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor"
+							stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M21 12a9 9 0 1 1-3.2-6.9"></path>
+							<polyline points="21 4 21 10 15 10"></polyline>
+						</svg>
+					</div>
+					<h1 id="title" data-i18n="reboot.title">REBOOT DEVICE</h1>
+					<p id="info" data-i18n-html="reboot.info">
+						Choose how you want to reboot. Failsafe reboot only takes effect once.
+					</p>
+					<div class="reboot-options">
+						<button id="btn_reboot" class="button reboot-option" onclick="requestReboot('normal')">
+							<span class="reboot-option-title" data-i18n="reboot.action.normal">Reboot normally</span>
+							<span class="reboot-option-hint" data-i18n="reboot.hint.normal">Boot into the installed
+								firmware</span>
+						</button>
+						<button id="btn_reboot_failsafe" class="button button-warn reboot-option"
+							onclick="requestReboot('failsafe')">
+							<span class="reboot-option-title" data-i18n="reboot.action.failsafe">Reboot into
+								failsafe</span>
+							<span class="reboot-option-hint" data-i18n="reboot.hint.failsafe">One-time entry into the
+								recovery UI</span>
+						</button>
+					</div>
+					<div class="reboot-feedback">
+						<div id="l" style="display:none"></div>
+						<p id="reboot_status" class="console-status"></p>
+					</div>
+				</div>
+			</div>
+			<div id="version"></div>
+		</div>
+	</div>
+</body>
+
+</html>

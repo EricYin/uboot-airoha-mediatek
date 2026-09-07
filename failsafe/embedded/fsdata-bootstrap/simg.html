@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title data-i18n="simg.title">SIMG / ROM DUMP</title>
+	<script src="/theme.js"></script>
+	<link rel="stylesheet" href="/style.css">
+	<script src="/i18n.js"></script>
+	<script src="/main.js"></script>
+	<script src="/simg_js.js"></script>
+</head>
+
+<body onload="appInit('simg')" data-page="simg">
+	<div class="app">
+		<aside id="sidebar" class="sidebar"></aside>
+		<div class="main">
+			<div id="m">
+				<div class="card-head">
+					<div class="upload-hero" aria-hidden="true">
+						<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+							<rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect>
+							<path d="M6 8h4M6 12h4M6 16h4"></path>
+							<path d="M14 8h4M14 12h4M14 16h4"></path>
+						</svg>
+					</div>
+					<h1 data-i18n="simg.title">SIMG / ROM DUMP</h1>
+					<p id="hint" data-i18n-html="simg.desc">
+						Upload a single raw flash image (ROM dump) and write it to the whole flash chip.
+					</p>
+				</div>
+				<div class="card-main">
+					<div class="settings-page">
+
+						<section class="settings-section">
+							<h2 class="settings-heading" data-i18n="simg.flash.title">Flash Device</h2>
+							<div id="simg_info" class="sysinfo">
+								<span data-i18n="simg.loading">Loading...</span>
+							</div>
+							<div class="form-actions">
+								<button type="button" id="simg_btn_refresh" class="button" data-i18n="simg.btn.refresh">Refresh</button>
+							</div>
+						</section>
+
+						<section class="settings-section">
+							<h2 class="settings-heading" data-i18n="simg.write.title">Write SIMG</h2>
+							<div class="form-row">
+								<div class="field">
+									<label for="simg_file" data-i18n="simg.write.file">ROM dump image:</label>
+									<input id="simg_file" class="field-control" type="file" name="data" accept=".bin,.img">
+								</div>
+							</div>
+							<div class="form-row">
+								<div class="field">
+									<label data-i18n="simg.write.detected">Detected:</label>
+									<div id="simg_file_info" class="sysinfo"></div>
+								</div>
+							</div>
+							<p data-i18n="simg.write.hint">The image is streamed to the flash in erase-block sized chunks, starting at offset 0x0.</p>
+							<div class="form-actions">
+								<button type="button" id="simg_btn_write" class="button button-danger" data-i18n="simg.btn.write">Write SIMG</button>
+							</div>
+							<div class="bar" id="simg_bar" style="display: none; --percent: 0;"></div>
+							<p id="simg_status" class="settings-status"></p>
+						</section>
+					</div>
+				</div>
+				<div class="card-foot">
+					<div class="i w">
+						<strong data-i18n="common.warnings">WARNINGS</strong>
+						<ul>
+							<li data-i18n="simg.warn.1">writing a wrong image will overwrite the whole flash, including bootloaders</li>
+							<li data-i18n="simg.warn.2">do not power off the device while the image is being written</li>
+							<li data-i18n="simg.warn.3">a full dump may take several minutes, do not close the browser</li>
+							<li data-i18n="simg.warn.4">bad blocks are skipped, a dump taken from another unit may not boot</li>
+						</ul>
+					</div>
+				</div>
+			</div>
+			<div id="version"></div>
+		</div>
+	</div>
+</body>
+
+</html>

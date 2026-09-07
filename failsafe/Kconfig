@@ -1,0 +1,149 @@
+#
+# Failsafe Web UI
+#
+
+menuconfig WEBUI_FAILSAFE
+	bool "Enable Failsafe Web UI"
+	select MTK_TCP
+	select MTK_HTTPD
+	select MTK_DHCPD
+	select MD5
+	default n
+	help
+	  Enable the failsafe Web UI, a minimal Web server (httpd + dhcpd +
+	  dnsd) that allows a device without a functional system image to be
+	  recovered over the network: firmware / bootloader (the 512 KiB
+	  u-boot image or the FIP) / preloader (bl2) / initramfs can be
+	  uploaded and written to the corresponding storage.
+
+	  The Web UI resources (fsdata) and the individual pages are selected
+	  by the options below: each page is only embedded when the matching
+	  option is enabled, and the UI dynamically shows the available
+	  entries.
+
+if WEBUI_FAILSAFE
+
+config WEB_FAILSAFE_AFTER_BOOT_FAILURE
+	bool "Automatically start failsafe after booting failure"
+	default y
+	help
+	  This option allow user to upgrade a workable firmware image if no
+	  firmware image available for boot.
+
+	  It also enables the "bootfailsafe" command, which the boot scripts
+	  run before their TFTP recovery fallback so that a failed boot has
+	  priority over the (endless) TFTP recovery loop.
+
+choice
+	prompt "Failsafe layout"
+	default WEBUI_FAILSAFE_LAYOUT_UBOOT
+	help
+	  Select the bootloader layout the failsafe covers, which also
+	  decides its feature set and the embedded web resources (fsdata).
+
+config WEBUI_FAILSAFE_LAYOUT_UBOOT
+	bool "U-Boot layout (u-boot MTD partition)"
+	help
+	  512 KiB boot image layout:
+	    - System firmware upgrade  (UBI FIT volume "fit")
+	    - U-Boot upgrade           (u-boot MTD partition)
+	    - Initramfs RAM boot
+
+config WEBUI_FAILSAFE_LAYOUT_FIP
+	bool "FIP layout (bl2 + fip partitions)"
+	help
+	  Split FIP layout:
+	    - System firmware upgrade  (UBI FIT volume "fit")
+	    - Preloader upgrade        (bl2 MTD partition)
+	    - FIP upgrade              (UBI volume "fip")
+	    - Initramfs RAM boot
+
+config WEBUI_FAILSAFE_LAYOUT_CHAINLOADER
+	bool "Chainloader layout (bl2 + chainloader partitions)"
+	help
+	  Chainloader failsafe:
+	    - System firmware upgrade  (UBI FIT volume "fit")
+	    - Preloader upgrade        (bl2 MTD partition)
+	    - Chainloader upgrade      (chainloader MTD partition)
+	    - Initramfs RAM boot
+
+endchoice
+
+choice
+	prompt "Failsafe Web UI style"
+	default WEBUI_FAILSAFE_UI_BOOTSTRAP
+	help
+	  Select which Web UI resources to embed into the failsafe firmware
+	  image.
+
+config WEBUI_FAILSAFE_UI_BOOTSTRAP
+	bool "Bootstrap UI (fsdata-bootstrap)"
+
+endchoice
+
+config WEBUI_FAILSAFE_BUILD_VARIANT
+	string "Failsafe build variant tag"
+	default ""
+	help
+	  Optional build variant string shown in the failsafe sysinfo page,
+	  e.g. "wifi7" or a customer specific tag.
+
+config WEBUI_FAILSAFE_I18N
+	bool "Enable I18N dictionary for Web UI"
+	default y
+	help
+	  Embed the i18n.js dictionary so the Web UI can be localized.
+
+config WEBUI_FAILSAFE_ADVANCED
+	bool "Enable advanced features"
+	default n
+	help
+	  Advanced failsafe features: Web console, U-Boot environment
+	  management, UBI volume management, RF-EEPROM / single-image
+	  upgrade pages.
+
+if WEBUI_FAILSAFE_ADVANCED
+
+config WEBUI_FAILSAFE_CONSOLE
+	bool "Enable Web console"
+	select CONSOLE_RECORD
+	default y
+	help
+	  Enable the Web console page. Requires a UART console driver.
+
+config WEBUI_FAILSAFE_ENV
+	bool "Enable U-Boot environment management"
+	default y
+	help
+	  Enable the U-Boot environment page: read / write / reset
+	  environment variables from the Web UI.
+
+config WEBUI_FAILSAFE_UBI
+	bool "Enable UBI volume management"
+	default y
+	depends on MTD && !ENV_IS_IN_MMC
+	select CMD_UBI
+	help
+	  Enable the UBI volume management page: list / attach / detach /
+	  remove / resize UBI volumes. Useful on SPI-NAND / SPI-NOR boards
+	  where the system image lives in a UBI volume.
+
+config WEBUI_FAILSAFE_SIMG
+	bool "Enable SIMG (ROM dump) restore"
+	default n
+	depends on MTD
+	help
+	  Enable the SIMG page: upload a single raw image (a full ROM dump
+	  of the flash chip) and write it to the whole flash device.
+
+	  The image is streamed to the device in erase-block aligned
+	  chunks, so a full dump can be restored without staging it in
+	  RAM.  There is no read / erase / offset editing: the only
+	  operation is "upload a SIMG and write it".
+
+	  WARNING: writing a wrong image overwrites the whole flash,
+	  including bootloaders and calibration data.
+
+endif # WEBUI_FAILSAFE_ADVANCED
+
+endif # WEBUI_FAILSAFE

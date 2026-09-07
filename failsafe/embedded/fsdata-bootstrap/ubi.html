@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title data-i18n="ubi.title">UBI Volume Management</title>
+	<link rel="stylesheet" href="/style.css">
+	<script src="/theme.js"></script>
+	<script src="/i18n.js"></script>
+	<script src="/main.js"></script>
+	<script src="/ubi_js.js"></script>
+</head>
+
+<body onload="appInit('ubi')" data-page="ubi">
+	<div class="app">
+		<aside id="sidebar" class="sidebar"></aside>
+		<div class="main">
+			<div id="m">
+				<div class="card-head">
+					<div class="upload-hero" aria-hidden="true">
+						<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+							<rect x="2" y="2" width="20" height="20" rx="2" ry="2"></rect>
+							<path d="M7 2v20M17 2v20M2 12h20M2 7h20M2 17h20"></path>
+						</svg>
+					</div>
+					<h1 data-i18n="ubi.title">UBI Volume Management</h1>
+					<p id="hint" data-i18n="ubi.desc">Manage UBI volumes on NAND flash. Attach MTD partitions, create/remove/rename volumes.</p>
+				</div>
+				<div class="card-main">
+					<div class="settings-page">
+
+					<section class="settings-section">
+						<h2 class="settings-heading" data-i18n="ubi.device.title">UBI Device</h2>
+						<div id="ubi_device_info" class="sysinfo">
+							<span data-i18n="ubi.loading">Loading...</span>
+						</div>
+						<div class="form-actions">
+							<button type="button" id="btn_refresh" class="button" data-i18n="ubi.btn.refresh">Refresh</button>
+						</div>
+					</section>
+
+					<section class="settings-section">
+						<h2 class="settings-heading" data-i18n="ubi.attach.title">Attach MTD Partition</h2>
+						<div class="form-row">
+							<div class="field">
+								<label for="mtd_select" data-i18n="ubi.attach.mtd">MTD Partition:</label>
+								<select id="mtd_select" class="field-control">
+									<option value="" data-i18n="ubi.attach.select_mtd">Select MTD partition...</option>
+								</select>
+							</div>
+						</div>
+						<div class="form-actions">
+							<button type="button" id="btn_attach" class="button" data-i18n="ubi.btn.attach">Attach</button>
+							<button type="button" id="btn_detach" class="button button-danger" data-i18n="ubi.btn.detach">Detach</button>
+						</div>
+					</section>
+
+					<section class="settings-section">
+						<h2 class="settings-heading" data-i18n="ubi.volumes.title">UBI Volumes</h2>
+						<div id="ubi_volume_list" class="table-wrap">
+							<table class="data-table">
+								<thead>
+									<tr>
+										<th data-i18n="ubi.col.id">ID</th>
+										<th data-i18n="ubi.col.name">Name</th>
+										<th data-i18n="ubi.col.size">Size</th>
+										<th data-i18n="ubi.col.used">Used</th>
+										<th data-i18n="ubi.col.type">Type</th>
+										<th data-i18n="ubi.col.status">Status</th>
+										<th data-i18n="ubi.col.crc">CRC Check</th>
+										<th data-i18n="ubi.col.actions">Actions</th>
+									</tr>
+								</thead>
+								<tbody id="ubi_volume_tbody">
+									<tr>
+										<td colspan="8" class="table-empty" data-i18n="ubi.no_device">No UBI device attached</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</section>
+					
+					<p id="ubi_status" class="settings-status"></p>
+					<div class="bar" id="ubi_backup_bar" style="display: none; --percent: 0;"></div>
+					<div id="ubi_backup_status" style="display: none;"></div>
+
+					<section class="settings-section">
+						<h2 class="settings-heading" data-i18n="ubi.create.title">Create Volume</h2>
+						<div class="form-row">
+							<div class="field">
+								<label for="vol_name" data-i18n="ubi.create.name">Volume Name:</label>
+								<input id="vol_name" class="field-control" type="text" placeholder="e.g. rootfs" maxlength="127">
+							</div>
+						</div>
+						<div class="form-row form-row-2">
+							<div class="field">
+								<label for="vol_size" data-i18n="ubi.create.size">Size (bytes, empty for max):</label>
+								<input id="vol_size" class="field-control" type="text" placeholder="e.g. 0x1000000 or 16777216">
+							</div>
+							<div class="field">
+								<label for="vol_type" data-i18n="ubi.create.type">Type:</label>
+								<select id="vol_type" class="field-control">
+									<option value="dynamic" data-i18n="ubi.type.dynamic">Dynamic</option>
+									<option value="static" data-i18n="ubi.type.static">Static</option>
+								</select>
+							</div>
+						</div>
+						<div class="form-row">
+							<div class="checkbox-row">
+								<input type="checkbox" id="vol_skipcheck">
+								<span class="checkbox-hint" data-i18n="ubi.create.skipcheck">Skip CRC check</span>
+							</div>
+						</div>
+						<div class="form-actions">
+							<button type="button" id="btn_create" class="button" data-i18n="ubi.btn.create">Create Volume</button>
+						</div>
+					</section>
+
+					<section class="settings-section">
+						<h2 class="settings-heading" data-i18n="ubi.write.title">Write Volume</h2>
+						<div class="form-row">
+							<div class="field">
+								<label for="write_vol_select" data-i18n="ubi.write.name">Volume:</label>
+								<select id="write_vol_select" class="field-control">
+									<option value="" data-i18n="ubi.write.select">Select volume...</option>
+								</select>
+							</div>
+						</div>
+						<div class="form-row">
+							<div class="field">
+								<label for="write_file" data-i18n="ubi.write.file">Image File:</label>
+								<input id="write_file" class="field-control" type="file" name="data">
+							</div>
+						</div>
+						<div class="form-row form-row-2">
+							<div class="field">
+								<label for="write_offset" data-i18n="ubi.write.offset">Offset (bytes, optional):</label>
+								<input id="write_offset" class="field-control" type="text" placeholder="e.g. 0x10000">
+							</div>
+							<div class="field">
+								<label for="write_full_size" data-i18n="ubi.write.full_size">Full Size (bytes, optional):</label>
+								<input id="write_full_size" class="field-control" type="text" placeholder="e.g. 0x800000">
+							</div>
+						</div>
+						<p data-i18n="ubi.write.hint">Writing overwrites the selected volume. Use Offset/Full Size for partial updates.</p>
+						<div class="form-actions">
+							<button type="button" id="btn_write" class="button" data-i18n="ubi.btn.write.submit">Write</button>
+						</div>
+						<div class="bar" id="ubi_write_bar" style="display: none; --percent: 0;"></div>
+						<div id="ubi_write_status" style="display: none;"></div>
+					</section>
+				</div>
+			</div>
+				<div class="card-foot">
+					<div class="i w">
+						<strong data-i18n="common.warnings">WARNINGS</strong>
+						<ul>
+							<li data-i18n="ubi.warn.detach">Detaching will erase all volume metadata. Volumes will be inaccessible until re-attached.</li>
+							<li data-i18n="ubi.warn.remove">Removing a volume permanently deletes its data.</li>
+							<li data-i18n="ubi.warn.static">Static volumes cannot be written to after creation.</li>
+							<li data-i18n="ubi.warn.backup">Do not power off the device during backup.</li>
+							<li data-i18n="ubi.warn.write">Writing overwrites the volume contents. Do not power off during write.</li>
+						</ul>
+					</div>
+				</div>
+			</div>
+			<div id="version"></div>
+		</div>
+	</div>
+</body>
+
+</html>

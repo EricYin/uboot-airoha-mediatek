@@ -1,0 +1,69 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Chainloader update</title>
+	<script src="/theme.js"></script>
+	<link rel="stylesheet" href="/style.css">
+	<script src="/i18n.js"></script>
+	<script src="/main.js"></script>
+</head>
+
+<body onload="appInit('chainloader')" data-page="chainloader">
+	<div class="app">
+		<aside id="sidebar" class="sidebar"></aside>
+		<div class="main">
+			<div id="m">
+				<div class="card-head">
+					<div id="upload_hero" class="upload-hero" aria-hidden="true">
+						<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+							<polyline points="9 12 11 14 15 10"></polyline>
+						</svg>
+					</div>
+					<h1 data-i18n="chainloader.title">CHAINLOADER UPDATE</h1>
+					<p id="hint" data-i18n-html="chainloader.hint">
+						You are going to update the <strong>chainloader</strong> (second-stage U-Boot FIT) on the device.<br>
+						Please, choose file from your local hard drive and click <strong>Upload</strong> button.
+					</p>
+				</div>
+				<div class="card-main">
+					<form id="form">
+						<input id="file" type="file" name="chainloader">
+						<input type="button" value="Upload" data-i18n-attr="value:common.upload"
+							onclick="upload('chainloader')">
+					</form>
+					<div class="bar" id="bar" style="display: none; --percent: 0;"></div>
+					<span class="bar-text" id="bar_text"></span>
+					<div id="filename" style="display: none;">File: xxxx</div>
+					<div id="size" style="display: none;">Size: xxxx</div>
+					<div id="md5" style="display: none;">MD5: xxxx</div>
+					<div id="upgrade" style="display: none;">
+						<p data-i18n="chainloader.upgrade_hint">If all information above is correct, click "Update".</p>
+						<button class="button" data-i18n="common.update"
+							onclick="location = '/flashing.html'">Update</button>
+					</div>
+				</div>
+				<div class="card-foot">
+					<div class="i w">
+						<strong data-i18n="common.warnings">WARNINGS</strong>
+						<ul>
+							<li data-i18n="chainloader.warn.1">do not power off the device during update</li>
+							<li data-i18n="chainloader.warn.2">if everything goes well, you can reboot the device manually</li>
+							<li data-i18n="chainloader.warn.3">you can upload whatever you want, so be sure that you choose
+								proper
+								chainloader image for your device</li>
+							<li data-i18n="chainloader.warn.4">updating the chainloader is a very dangerous operation and may
+								damage your device!</li>
+						</ul>
+					</div>
+				</div>
+			</div>
+			<div id="version"></div>
+		</div>
+	</div>
+</body>
+
+</html>
