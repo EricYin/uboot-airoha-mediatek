@@ -98,6 +98,32 @@ config WEBUI_FAILSAFE_I18N
 	help
 	  Embed the i18n.js dictionary so the Web UI can be localized.
 
+if WEBUI_FAILSAFE_I18N
+
+comment "Embedded languages"
+
+config WEBUI_FAILSAFE_I18N_EN
+	bool "English"
+	default y
+	help
+	  English is the fallback language of the Web UI and should stay
+	  enabled.  Disabling it only removes it from the language
+	  switcher; the UI then falls back to another embedded language.
+
+config WEBUI_FAILSAFE_I18N_ZH_CN
+	bool "Simplified Chinese"
+	default n
+	help
+	  Embed the zh-cn dictionary (about 5 KiB of compressed data).
+
+config WEBUI_FAILSAFE_I18N_RU
+	bool "Russian"
+	default n
+	help
+	  Embed the ru dictionary (about 5 KiB of compressed data).
+
+endif # WEBUI_FAILSAFE_I18N
+
 config WEBUI_FAILSAFE_ADVANCED
 	bool "Enable advanced features"
 	default n

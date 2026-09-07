@@ -39,6 +39,16 @@ WEBUI_FAILSAFE_JS_MINIFY_SCRIPT = $(srctree)/$(src)/../minify-js.cjs
 WEBUI_FAILSAFE_CSS_MINIFY_SCRIPT = $(srctree)/$(src)/../minify-css.cjs
 WEBUI_FAILSAFE_HTML_MINIFY_SCRIPT = $(srctree)/$(src)/../minify-html.cjs
 WEBUI_FAILSAFE_GZIP_SCRIPT = $(srctree)/$(src)/../gzip-compress.cjs
+WEBUI_FAILSAFE_I18N_FILTER_SCRIPT = $(srctree)/$(src)/../filter-i18n.cjs
+
+# Languages kept in i18n.js (see the WEBUI_FAILSAFE_I18N_* options).
+WEBUI_FAILSAFE_I18N_LANGS := $(strip \
+	$(if $(CONFIG_WEBUI_FAILSAFE_I18N_EN),en) \
+	$(if $(CONFIG_WEBUI_FAILSAFE_I18N_ZH_CN),zh zh-cn) \
+	$(if $(CONFIG_WEBUI_FAILSAFE_I18N_RU),ru))
+
+quiet_cmd_i18n_filter = I18N    $@
+cmd_i18n_filter = mkdir -p $(dir $@) && node $(WEBUI_FAILSAFE_I18N_FILTER_SCRIPT) --langs="$(WEBUI_FAILSAFE_I18N_LANGS)" $< $@
 
 quiet_cmd_minify_css = CLEANCSS $@
 cmd_minify_css = mkdir -p $(dir $@) && node $(WEBUI_FAILSAFE_CSS_MINIFY_SCRIPT) $< $@
@@ -64,6 +74,14 @@ cmd_as_o_html = $(CC) $(a_flags) -c -o $@ \
 		-DUBOOT_LIST_SECT_NAME="\"__u_boot_list_2_fs_2_$(call strip_path,$(FSPATH_$(@F)))\"" \
 		-DUBOOT_LIST_NAME="fsdata_ulist_$(call strip_path,$(FSPATH_$(@F)))" \
 		$(srctree)/$(src)/embed.S
+
+# Step 0: drop the languages that are not configured.
+$(obj)/.min/i18n.js: $(obj)/.i18n/i18n.js $(WEBUI_FAILSAFE_JS_MINIFY_SCRIPT) FORCE
+	$(call cmd,force_checksrc)
+	$(call if_changed,minify_js)
+
+$(obj)/.i18n/%.js: $(src)/%.js $(WEBUI_FAILSAFE_I18N_FILTER_SCRIPT) FORCE
+	$(call if_changed,i18n_filter)
 
 # Step 1: Minify source files
 $(obj)/.min/%.html: $(src)/%.html $(WEBUI_FAILSAFE_HTML_MINIFY_SCRIPT) FORCE
