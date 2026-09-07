@@ -113,37 +113,6 @@ static const char *failsafe_guess_content_type(const char *path)
 	return "application/octet-stream";
 }
 
-static int output_binary_file(struct httpd_response *response,
-	const char *filename, const char *content_type)
-{
-	const struct fs_desc *file;
-	int ret = 0;
-
-	file = fs_find_file(filename);
-
-	response->status = HTTP_RESP_STD;
-
-	if (file) {
-		response->data = file->data;
-		response->size = file->size;
-		/* embedded binary assets are gzip-compressed at build time */
-		response->info.content_encoding = "gzip";
-	} else {
-		response->data = "Not Found";
-		response->size = strlen(response->data);
-		response->info.code = 404;
-		response->info.content_encoding = NULL;
-		ret = 1;
-	}
-
-	if (!response->info.code)
-		response->info.code = 200;
-	response->info.connection_close = 1;
-	response->info.content_type = content_type ? content_type : "application/octet-stream";
-
-	return ret;
-}
-
 void picture_handler(enum httpd_uri_handler_status status,
 	struct httpd_request *request,
 	struct httpd_response *response)
@@ -172,9 +141,9 @@ void picture_handler(enum httpd_uri_handler_status status,
 		fallback = "favicon.svg";
 
 	ctype = failsafe_guess_content_type(file);
-	if (output_binary_file(response, file, ctype) && fallback) {
+	if (failsafe_output_binary(response, file, ctype) && fallback) {
 		ctype = failsafe_guess_content_type(fallback);
-		output_binary_file(response, fallback, ctype);
+		failsafe_output_binary(response, fallback, ctype);
 	}
 }
 

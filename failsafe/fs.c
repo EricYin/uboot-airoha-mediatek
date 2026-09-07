@@ -28,9 +28,16 @@ const struct fs_desc *fs_find_file(const char *path)
 	return NULL;
 }
 
-int failsafe_output_file(struct httpd_response *response,
-			 const char *filename,
-			 const char *content_type)
+/*
+ * Shared tail of failsafe_output_file() / failsafe_output_binary(): both
+ * only differ in the default MIME type and in the 404 body, so keeping a
+ * single copy avoids duplicating the response setup in every caller.
+ */
+static int output_file_common(struct httpd_response *response,
+			      const char *filename,
+			      const char *content_type,
+			      const char *default_type,
+			      const char *not_found_body)
 {
 	const struct fs_desc *file;
 
@@ -41,18 +48,36 @@ int failsafe_output_file(struct httpd_response *response,
 	if (file) {
 		response->data = file->data;
 		response->size = file->size;
-		/* embedded assets are gzip-compressed at build time */
-		response->info.content_encoding = "gzip";
-		response->info.code = 200;
+		/* embedded assets are compressed at build time */
+		response->info.content_encoding = FAILSAFE_CONTENT_ENCODING;
 	} else {
-		response->data = "Error: file not found";
+		response->data = not_found_body;
 		response->size = strlen(response->data);
 		response->info.content_encoding = NULL;
 		response->info.code = 404;
 	}
 
+	if (!response->info.code)
+		response->info.code = 200;
+
 	response->info.connection_close = 1;
-	response->info.content_type = content_type ? content_type : "text/html";
+	response->info.content_type = content_type ? content_type : default_type;
 
 	return file ? 0 : 1;
+}
+
+int failsafe_output_file(struct httpd_response *response,
+			 const char *filename,
+			 const char *content_type)
+{
+	return output_file_common(response, filename, content_type,
+				  "text/html", "Error: file not found");
+}
+
+int failsafe_output_binary(struct httpd_response *response,
+			   const char *filename,
+			   const char *content_type)
+{
+	return output_file_common(response, filename, content_type,
+				  "application/octet-stream", "Not Found");
 }

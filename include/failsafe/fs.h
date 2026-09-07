@@ -24,11 +24,25 @@ const struct fs_desc *fs_find_file(const char *path);
  * @filename: path in the embedded filesystem (e.g. "index.html")
  * @content_type: MIME type (NULL defaults to "text/html")
  *
- * Sets response->info.content_encoding = "gzip" when the file exists.
- * Returns 0 on success, 1 if the file was not found.
+ * Sets response->info.content_encoding to FAILSAFE_CONTENT_ENCODING
+ * when the file exists.  Returns 0 on success, 1 if not found.
  */
 int failsafe_output_file(struct httpd_response *response,
 			 const char *filename,
 			 const char *content_type);
+
+/**
+ * failsafe_output_binary - serve an embedded file with a guessed MIME type
+ * @response: HTTP response structure
+ * @filename: path in the embedded filesystem (e.g. "favicon.svg")
+ * @content_type: MIME type (NULL defaults to "application/octet-stream")
+ *
+ * Same as failsafe_output_file() but defaults to a binary MIME type and
+ * does not force the response code when the file exists.
+ * Returns 0 on success, 1 if the file was not found.
+ */
+int failsafe_output_binary(struct httpd_response *response,
+			   const char *filename,
+			   const char *content_type);
 
 #endif /* _FAILSAFE_FS_H_ */
