@@ -273,6 +273,21 @@ mkeficapsule-objs := generated/lib/uuid.o \
 	mkeficapsule.o
 hostprogs-always-$(CONFIG_TOOLS_MKEFICAPSULE) += mkeficapsule
 
+# fiptool for ARM Trusted Firmware FIP image manipulation
+hostprogs-always-$(CONFIG_TOOLS_FIPTOOL) += fiptool
+fiptool-objs := fiptool_src/fiptool.o fiptool_src/tbbr_config.o
+
+FIPTOOL_INCLUDE_DIRS := \
+	-I$(srctree)/tools/fiptool_src \
+	-I$(srctree)/tools/fiptool_src/include/tools_share \
+	-I$(srctree)/tools/fiptool_src/include
+
+HOSTCFLAGS_fiptool_src/fiptool.o += $(FIPTOOL_INCLUDE_DIRS)
+HOSTCFLAGS_fiptool_src/tbbr_config.o += $(FIPTOOL_INCLUDE_DIRS)
+
+HOSTLDLIBS_fiptool += \
+	$(shell pkg-config --libs libssl libcrypto 2> /dev/null || echo "-lssl -lcrypto")
+
 include tools/fwumdata_src/fwumdata.mk
 
 # We build some files with extra pedantic flags to try to minimize things

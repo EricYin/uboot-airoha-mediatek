@@ -106,6 +106,15 @@ config TOOLS_SHA512
 	help
 	  Enable SHA512 support in the tools builds
 
+config TOOLS_FIPTOOL
+	bool "Build fiptool for ARM Trusted Firmware FIP image manipulation"
+	default y if ARM
+	help
+	  Enable building fiptool, which allows creation and inspection
+	  of ARM Trusted Firmware FIP (Firmware Image Package) images.
+	  FIP images bundle BL2, BL31, BL32, BL33 and other firmware
+	  components used by the ARM secure boot chain.
+
 config TOOLS_MKEFICAPSULE
 	bool "Build efimkcapsule command"
 	default y if EFI_LOADER
