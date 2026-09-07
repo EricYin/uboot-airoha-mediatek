@@ -6,30 +6,17 @@
  */
 
 #ifndef __UBOOT__
-#include <malloc.h>
 #include <linux/device.h>
 #include <linux/kernel.h>
 #endif
-#include <linux/bitops.h>
 #include <linux/mtd/spinand.h>
 
 #define SPINAND_MFR_FMSH		0xA1
-
-#define FM25S01B_STATUS_ECC_MASK		(7 << 4)
-#define STATUS_ECC_1_3_BITFLIPS	(1 << 4)
-#define STATUS_ECC_4_6_BITFLIPS	(3 << 4)
-#define STATUS_ECC_7_8_BITFLIPS	(5 << 4)
 
 static SPINAND_OP_VARIANTS(read_cache_variants,
 		SPINAND_PAGE_READ_FROM_CACHE_1S_4S_4S_OP(0, 2, NULL, 0, 0),
 		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_4S_OP(0, 1, NULL, 0, 0),
 		SPINAND_PAGE_READ_FROM_CACHE_1S_2S_2S_OP(0, 1, NULL, 0, 0),
-		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_2S_OP(0, 1, NULL, 0, 0),
-		SPINAND_PAGE_READ_FROM_CACHE_FAST_1S_1S_1S_OP(0, 1, NULL, 0, 0),
-		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_1S_OP(0, 1, NULL, 0, 0));
-
-static SPINAND_OP_VARIANTS(read_cache_variants_s01b,
-		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_4S_OP(0, 1, NULL, 0, 0),
 		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_2S_OP(0, 1, NULL, 0, 0),
 		SPINAND_PAGE_READ_FROM_CACHE_FAST_1S_1S_1S_OP(0, 1, NULL, 0, 0),
 		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_1S_OP(0, 1, NULL, 0, 0));
@@ -60,8 +47,13 @@ static int fm25s01a_ooblayout_free(struct mtd_info *mtd, int section,
 	return 0;
 }
 
-static int fm25s01b_ooblayout_ecc(struct mtd_info *mtd, int section,
-				      struct mtd_oob_region *region)
+static const struct mtd_ooblayout_ops fm25s01a_ooblayout = {
+	.ecc = fm25s01a_ooblayout_ecc,
+	.rfree = fm25s01a_ooblayout_free,
+};
+
+static int fm25s01_ooblayout_ecc(struct mtd_info *mtd, int section,
+				 struct mtd_oob_region *region)
 {
 	if (section)
 		return -ERANGE;
@@ -72,52 +64,122 @@ static int fm25s01b_ooblayout_ecc(struct mtd_info *mtd, int section,
 	return 0;
 }
 
-static int fm25s01b_ooblayout_free(struct mtd_info *mtd, int section,
-				       struct mtd_oob_region *region)
+static int fm25s01_ooblayout_free(struct mtd_info *mtd, int section,
+				  struct mtd_oob_region *region)
 {
-	if (section > 3)
+	if (section)
 		return -ERANGE;
 
-	region->offset = (16 * section) + 4;
-	region->length = 12;
+	region->offset = 2;
+	region->length = 62;
 
 	return 0;
 }
 
-static const struct mtd_ooblayout_ops fm25s01a_ooblayout = {
-	.ecc = fm25s01a_ooblayout_ecc,
-	.rfree = fm25s01a_ooblayout_free,
+static const struct mtd_ooblayout_ops fm25s01_ooblayout = {
+	.ecc = fm25s01_ooblayout_ecc,
+	.rfree = fm25s01_ooblayout_free,
 };
 
-static const struct mtd_ooblayout_ops fm25s01b_ooblayout = {
-	.ecc = fm25s01b_ooblayout_ecc,
-	.rfree = fm25s01b_ooblayout_free,
-};
-
-static int fm25s01b_ecc_get_status(struct spinand_device *spinand,
-				       u8 status)
+/*
+ * ecc bits: 0xC0[4,6]
+ * [0b000], No bit errors were detected;
+ * [0b001] and [0b011], 1~6 Bit errors were detected and corrected. Not
+ *	reach Flipping Bits;
+ * [0b101], Bit error count equals the bit flip
+ *	detection threshold
+ * [0b010], Multiple bit errors were detected and
+ *	not corrected.
+ * others, Reserved.
+ */
+static int fm25s01bi3_ecc_ecc_get_status(struct spinand_device *spinand,
+					u8 status)
 {
-	switch (status & FM25S01B_STATUS_ECC_MASK) {
-	case STATUS_ECC_NO_BITFLIPS:
-		return 0;
+	struct nand_device *nand = spinand_to_nand(spinand);
+	u8 eccsr = (status & GENMASK(6, 4)) >> 4;
 
-	case STATUS_ECC_UNCOR_ERROR:
+	if (eccsr <= 1 || eccsr == 3)
+		return eccsr;
+	else if (eccsr == 5)
+		return nanddev_get_ecc_conf(nand)->strength;
+	else
 		return -EBADMSG;
+}
 
-	case STATUS_ECC_1_3_BITFLIPS:
-		return 3;
+static int fm25g0xd_ooblayout_ecc(struct mtd_info *mtd, int section,
+				  struct mtd_oob_region *region)
+{
+	if (section)
+		return -ERANGE;
 
-	case STATUS_ECC_4_6_BITFLIPS:
-		return 6;
+	region->offset = 64;
+	region->length = 64;
 
-	case STATUS_ECC_7_8_BITFLIPS:
-		return 8;
+	return 0;
+}
 
-	default:
-		break;
-	}
+static int fm25g0xd_ooblayout_free(struct mtd_info *mtd, int section,
+				   struct mtd_oob_region *region)
+{
+	if (section)
+		return -ERANGE;
 
-	return -EINVAL;
+	/* Reserve 2 bytes for the BBM. */
+	region->offset = 2;
+	region->length = 62;
+
+	return 0;
+}
+
+static const struct mtd_ooblayout_ops fm25g0xd_ooblayout = {
+	.ecc = fm25g0xd_ooblayout_ecc,
+	.rfree = fm25g0xd_ooblayout_free,
+};
+
+/*
+ * ecc bits: 0xC0[4,6]
+ * [0x0], No bit errors were detected;
+ * [0x001, 0x011], Bit errors were detected and corrected. Not
+ *	reach Flipping Bits;
+ * [0x100], Bit error count equals the bit flip
+ *	detectionthreshold
+ * [0x101, 0x110], Reserved;
+ * [0x111], Multiple bit errors were detected and
+ *	not corrected.
+ */
+static int fm25g0xd_ecc_get_status(struct spinand_device *spinand,
+				   u8 status)
+{
+	struct nand_device *nand = spinand_to_nand(spinand);
+	u8 eccsr = (status & GENMASK(6, 4)) >> 4;
+
+	if (eccsr <= 3)
+		return 0;
+	else if (eccsr == 4)
+		return nanddev_get_ecc_conf(nand)->strength;
+	else
+		return -EBADMSG;
+}
+
+/*
+ * ecc bits: 0xC0[4,6]
+ * [0b000], No bit errors were detected;
+ * [0b001, 0b101], 3~7 Bit errors were detected and corrected. Not
+ *	reach Flipping Bits;
+ * [0b110], Bit error count equals the bit flip detection threshold
+ * [0b111], Bit errors greater than ECC capability(8 bits) and not corrected;
+ */
+static int fm25g02bi3_ecc_get_status(struct spinand_device *spinand, u8 status)
+{
+	struct nand_device *nand = spinand_to_nand(spinand);
+	u8 eccsr = (status & GENMASK(6, 4)) >> 4;
+
+	if (eccsr < 6)
+		return 0;
+	else if (eccsr == 6)
+		return nanddev_get_ecc_conf(nand)->strength;
+	else
+		return -EBADMSG;
 }
 
 static const struct spinand_info fmsh_spinand_table[] = {
@@ -130,16 +192,78 @@ static const struct spinand_info fmsh_spinand_table[] = {
 					      &update_cache_variants),
 		     0,
 		     SPINAND_ECCINFO(&fm25s01a_ooblayout, NULL)),
-	SPINAND_INFO("FM25S01B",
-		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xD4),
-		     NAND_MEMORG(1, 2048, 128, 64, 1024, 20, 1, 1, 1),
-		     NAND_ECCREQ(8, 512),
-		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants_s01b,
+	SPINAND_INFO("FM25S02A",
+		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xE5),
+		     NAND_MEMORG(1, 2048, 64, 64, 2048, 40, 2, 1, 1),
+		     NAND_ECCREQ(1, 512),
+		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
 					      &write_cache_variants,
 					      &update_cache_variants),
 		     SPINAND_HAS_QE_BIT,
-		     SPINAND_ECCINFO(&fm25s01b_ooblayout,
-				     fm25s01b_ecc_get_status)),
+		     SPINAND_ECCINFO(&fm25s01a_ooblayout, NULL)),
+	SPINAND_INFO("FM25S01",
+		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xA1),
+		     NAND_MEMORG(1, 2048, 128, 64, 1024, 20, 1, 1, 1),
+		     NAND_ECCREQ(1, 512),
+		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+					      &write_cache_variants,
+					      &update_cache_variants),
+		     0,
+		     SPINAND_ECCINFO(&fm25s01_ooblayout, NULL)),
+	SPINAND_INFO("FM25LS01",
+		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xA5),
+		     NAND_MEMORG(1, 2048, 128, 64, 1024, 20, 1, 1, 1),
+		     NAND_ECCREQ(1, 512),
+		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+					      &write_cache_variants,
+					      &update_cache_variants),
+		     0,
+		     SPINAND_ECCINFO(&fm25s01_ooblayout, NULL)),
+	SPINAND_INFO("FM25S01BI3",
+		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xD4),
+		     NAND_MEMORG(1, 2048, 128, 64, 1024, 20, 1, 1, 1),
+		     NAND_ECCREQ(8, 512),
+		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+					      &write_cache_variants,
+					      &update_cache_variants),
+		     SPINAND_HAS_QE_BIT,
+		     SPINAND_ECCINFO(&fm25s01_ooblayout, fm25s01bi3_ecc_ecc_get_status)),
+	SPINAND_INFO("FM25S02BI3-DND-A-G3",
+		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xD6),
+		     NAND_MEMORG(1, 2048, 128, 64, 1024, 20, 1, 1, 1),
+		     NAND_ECCREQ(8, 512),
+		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+					      &write_cache_variants,
+					      &update_cache_variants),
+		     SPINAND_HAS_QE_BIT,
+		     SPINAND_ECCINFO(&fm25s01_ooblayout, fm25s01bi3_ecc_ecc_get_status)),
+	SPINAND_INFO("FM25G02D",
+		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xF2),
+		     NAND_MEMORG(1, 2048, 64, 64, 2048, 40, 1, 1, 1),
+		     NAND_ECCREQ(4, 512),
+		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+					      &write_cache_variants,
+					      &update_cache_variants),
+		     SPINAND_HAS_QE_BIT,
+		     SPINAND_ECCINFO(&fm25g0xd_ooblayout, fm25g0xd_ecc_get_status)),
+	SPINAND_INFO("FM25G01B",
+		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xD1),
+		     NAND_MEMORG(1, 2048, 128, 64, 1024, 20, 1, 1, 1),
+		     NAND_ECCREQ(8, 512),
+		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+					      &write_cache_variants,
+					      &update_cache_variants),
+		     SPINAND_HAS_QE_BIT,
+		     SPINAND_ECCINFO(&fm25s01_ooblayout, fm25g02bi3_ecc_get_status)),
+	SPINAND_INFO("FM25G02BI3",
+		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xD2),
+		     NAND_MEMORG(1, 2048, 128, 64, 2048, 40, 1, 1, 1),
+		     NAND_ECCREQ(8, 512),
+		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+					      &write_cache_variants,
+					      &update_cache_variants),
+		     SPINAND_HAS_QE_BIT,
+		     SPINAND_ECCINFO(&fm25s01_ooblayout, fm25g02bi3_ecc_get_status)),
 };
 
 static const struct spinand_manufacturer_ops fmsh_spinand_manuf_ops = {
