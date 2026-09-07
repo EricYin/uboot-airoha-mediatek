@@ -10,6 +10,25 @@
 
 #include <net/mtk_httpd.h>
 
+/*
+ * Content-Encoding advertised for the embedded assets.
+ *
+ * The build compresses every embedded HTML / CSS / JS / SVG file with
+ * gzip, or stores the minified assets as-is
+ * (see CONFIG_WEBUI_FAILSAFE_COMPRESS_*); the data is stored as-is and
+ * passed straight through to the HTTP client.
+ *
+ * The httpd does no Accept-Encoding negotiation, so whatever is selected
+ * here is what every client must understand.  Brotli must not be added
+ * back: browsers never advertise "br" over plain HTTP, so a brotli
+ * payload always fails to decode on the client.
+ */
+#if defined(CONFIG_WEBUI_FAILSAFE_COMPRESS_NONE)
+#define FAILSAFE_CONTENT_ENCODING	NULL
+#else
+#define FAILSAFE_CONTENT_ENCODING	"gzip"
+#endif
+
 struct fs_desc {
 	const char *path;
 	size_t size;

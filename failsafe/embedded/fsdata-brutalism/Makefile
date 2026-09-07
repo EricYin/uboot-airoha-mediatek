@@ -5,32 +5,41 @@
 # FILE_XXXX.o := YYYY.html <- actual html file to be embedded
 # FSPATH_XXXX.o := ZZZ/WWW.EXT <- virtual fs path to be used inside u-boot
 
+# Compression algorithm for the embedded assets (see WEBUI_FAILSAFE_COMPRESS_*).
+ifeq ($(CONFIG_WEBUI_FAILSAFE_COMPRESS_NONE),y)
+WEBUI_FAILSAFE_ZSUF := .raw
+WEBUI_FAILSAFE_ZFLAG := --none
+else
+WEBUI_FAILSAFE_ZSUF := .gz
+WEBUI_FAILSAFE_ZFLAG := --gzip
+endif
+
 obj-y += 404.o
-FILE_404.o := .min/404.html.gz
+FILE_404.o := .min/404.html$(WEBUI_FAILSAFE_ZSUF)
 FSPATH_404.o := 404.html
 
 obj-y += flashing.o
-FILE_flashing.o := .min/flashing.html.gz
+FILE_flashing.o := .min/flashing.html$(WEBUI_FAILSAFE_ZSUF)
 FSPATH_flashing.o := flashing.html
 
 obj-y += index.o
-FILE_index.o := .min/index.html.gz
+FILE_index.o := .min/index.html$(WEBUI_FAILSAFE_ZSUF)
 FSPATH_index.o := index.html
 
 obj-y += style.o
-FILE_style.o := .min/style.css.gz
+FILE_style.o := .min/style.css$(WEBUI_FAILSAFE_ZSUF)
 FSPATH_style.o := style.css
 
 obj-y += main.o
-FILE_main.o := .min/main.js.gz
+FILE_main.o := .min/main.js$(WEBUI_FAILSAFE_ZSUF)
 FSPATH_main.o := main.js
 
 obj-y += reboot.o
-FILE_reboot.o := .min/reboot.html.gz
+FILE_reboot.o := .min/reboot.html$(WEBUI_FAILSAFE_ZSUF)
 FSPATH_reboot.o := reboot.html
 
 obj-$(CONFIG_WEBUI_FAILSAFE_I18N) += i18n.o
-FILE_i18n.o := .min/i18n.js.gz
+FILE_i18n.o := .min/i18n.js$(WEBUI_FAILSAFE_ZSUF)
 FSPATH_i18n.o := i18n.js
 
 # customized build rules
@@ -59,8 +68,8 @@ cmd_minify_html = mkdir -p $(dir $@) && node $(WEBUI_FAILSAFE_HTML_MINIFY_SCRIPT
 quiet_cmd_minify_js = UGLIFY  $@
 cmd_minify_js = mkdir -p $(dir $@) && node $(WEBUI_FAILSAFE_JS_MINIFY_SCRIPT) $< $@
 
-quiet_cmd_fsdata_gzembed = GZIP    $@
-cmd_fsdata_gzembed = node $(WEBUI_FAILSAFE_GZIP_SCRIPT) $< $@
+quiet_cmd_fsdata_gzembed = COMPRESS $@
+cmd_fsdata_gzembed = node $(WEBUI_FAILSAFE_GZIP_SCRIPT) $(WEBUI_FAILSAFE_ZFLAG) $< $@
 
 quiet_cmd_as_o_html = AS      $@
 cmd_as_o_html = $(CC) $(a_flags) -c -o $@ \
@@ -97,23 +106,24 @@ $(obj)/.min/%.js: $(src)/%.js $(WEBUI_FAILSAFE_JS_MINIFY_SCRIPT) FORCE
 	$(call if_changed,minify_js)
 
 # Step 2: GZip-compress minified files
-$(obj)/.min/%.html.gz: $(obj)/.min/%.html $(WEBUI_FAILSAFE_GZIP_SCRIPT) FORCE
+$(obj)/.min/%.html$(WEBUI_FAILSAFE_ZSUF): $(obj)/.min/%.html $(WEBUI_FAILSAFE_GZIP_SCRIPT) FORCE
 	$(call if_changed,fsdata_gzembed)
 
-$(obj)/.min/%.css.gz: $(obj)/.min/%.css $(WEBUI_FAILSAFE_GZIP_SCRIPT) FORCE
+$(obj)/.min/%.css$(WEBUI_FAILSAFE_ZSUF): $(obj)/.min/%.css $(WEBUI_FAILSAFE_GZIP_SCRIPT) FORCE
 	$(call if_changed,fsdata_gzembed)
 
-$(obj)/.min/%.js.gz: $(obj)/.min/%.js $(WEBUI_FAILSAFE_GZIP_SCRIPT) FORCE
+$(obj)/.min/%.js$(WEBUI_FAILSAFE_ZSUF): $(obj)/.min/%.js $(WEBUI_FAILSAFE_GZIP_SCRIPT) FORCE
 	$(call if_changed,fsdata_gzembed)
 
 # Step 3: Embed GZip-compressed files into object files
-$(obj)/%.o: $(obj)/.min/%.html.gz FORCE
+$(obj)/%.o: $(obj)/.min/%.html$(WEBUI_FAILSAFE_ZSUF) FORCE
 	$(call if_changed_dep,as_o_html)
 
-$(obj)/%.o: $(obj)/.min/%.css.gz FORCE
+$(obj)/%.o: $(obj)/.min/%.css$(WEBUI_FAILSAFE_ZSUF) FORCE
 	$(call if_changed_dep,as_o_html)
 
-$(obj)/%.o: $(obj)/.min/%.js.gz FORCE
+$(obj)/%.o: $(obj)/.min/%.js$(WEBUI_FAILSAFE_ZSUF) FORCE
 	$(call if_changed_dep,as_o_html)
 
 clean-files += .min/*
+clean-files += .i18n/*
