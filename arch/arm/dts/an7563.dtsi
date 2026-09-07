@@ -18,6 +18,7 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/clock/en7523-clk.h>
 #include <dt-bindings/reset/airoha,en7581-reset.h>
+#include <dt-bindings/thermal/thermal.h>
 
 / {
 	interrupt-parent = <&gic>;
@@ -128,6 +129,15 @@
 		clock-frequency = <1843200>;
 		bootph-all;
 		status = "okay";
+	};
+
+	thermal: thermal-sensor@1efbd000 {
+		compatible = "airoha,en7581-thermal";
+		reg = <0x1efbd000 0xd5c>;
+		interrupts = <GIC_SPI 23 IRQ_TYPE_LEVEL_HIGH>;
+		airoha,chip-scu = <&chip_scu>;
+
+		#thermal-sensor-cells = <0>;
 	};
 
 	system-controller@1fbf0200 {
