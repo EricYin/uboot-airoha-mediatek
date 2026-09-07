@@ -44,6 +44,7 @@ struct bootmenu_data {
 	int count;			/* total count of menu entries */
 	struct bootmenu_entry *first;	/* first menu entry */
 	char *mtitle;			/* custom menu title */
+	char *subtitle;			/* optional second title line */
 };
 
 /** enum bootmenu_key - keys that can be returned by the bootmenu */
