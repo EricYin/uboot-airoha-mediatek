@@ -1823,6 +1823,14 @@ config CMD_TEMPERATURE
 	help
 	  Provides a way to list thermal sensors and to get their readings.
 
+config CMD_AIROHA_THERMAL
+	bool "airoha-thermal - display Airoha thermal sensor temperature"
+	depends on AIROHA_THERMAL
+	help
+	  Display the current temperature of Airoha thermal sensors
+	  (en7581 / an7583 / en7523). With an optional argument it samples
+	  the sensor several times and reports the average.
+
 config CMD_UFS
 	bool "ufs - Universal Flash Storage commands"
 	depends on UFS
