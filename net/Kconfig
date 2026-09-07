@@ -246,6 +246,17 @@ config MTK_HTTPD
 	help
 	  Enable mediatek httpd framework that allows some customized features.
 
+config MTK_TELNETD
+	bool "Minimal telnet server for MediaTek web failsafe"
+	default n
+	depends on MTK_TCP
+	select CONSOLE_RECORD
+	help
+	  Enable a minimal telnet server (RFC 854) that provides a U-Boot
+	  command-line interface over TCP port 23.  Uses the mtk_tcp
+	  framework and the console recording infrastructure to capture
+	  and forward command output.
+
 config MTK_DHCPD
 	bool "Minimal DHCP server for MediaTek web failsafe"
 	default y

@@ -7,6 +7,19 @@
 
 ifeq ($(CONFIG_NET_LEGACY),y)
 
+TELNET_GIT_HASH := $(or $(strip $(shell \
+    for try in . .. ../..; do \
+        git -C $(srctree)/$$try rev-parse --short=7 HEAD 2>/dev/null && break; \
+    done)),unknown)
+
+TELNET_GIT_DIRTY := $(or $(strip $(shell \
+    for try in . .. ../..; do \
+        if git -C $(srctree)/$$try rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+            test -n "$$(git -C $(srctree)/$$try status --porcelain --untracked-files=no 2>/dev/null)" && echo 1 || echo 0; \
+            break; \
+        fi; \
+    done)),0)
+
 obj-$(CONFIG_NET_LEGACY)      += arp.o
 obj-$(CONFIG_CMD_BOOTP) += bootp.o
 obj-$(CONFIG_CMD_CDP)  += cdp.o
@@ -32,6 +45,9 @@ obj-$(CONFIG_WGET) += wget.o
 obj-$(CONFIG_MTK_TCP)  += mtk_tcp.o
 obj-$(CONFIG_MTK_HTTPD)  += mtk_httpd.o
 obj-$(CONFIG_MTK_DHCPD)  += mtk_dhcpd.o
+obj-$(CONFIG_MTK_TELNETD)  += mtk_telnetd.o
+CFLAGS_mtk_telnetd.o += -DTELNET_GIT_HASH=\"$(TELNET_GIT_HASH)\"
+CFLAGS_mtk_telnetd.o += -DTELNET_GIT_DIRTY=$(TELNET_GIT_DIRTY)
 
 # Disable this warning as it is triggered by:
 # sprintf(buf, index ? "foo%d" : "foo", index)
