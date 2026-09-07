@@ -233,14 +233,23 @@ config IPV6
 	  address and find it, it will force using IPv6 in the network stack.
 
 config MTK_TCP
-	bool
+	bool "Enable Mediatek TCP framework"
 	select PROT_TCP
 	default n
 	help
 	  Enable mediatek tcp framework that allows some customized features.
 
+config MTK_TCP_VERBOSE
+	bool "Enable verbose logging for MTK TCP stack"
+	default n
+	depends on MTK_TCP
+	help
+	  Enable verbose debug logging for the MTK TCP stack. This can be
+	  overridden at runtime using the "mtk_tcp_verbose" environment variable.
+	  Set the variable to "1", "true", "yes", or "on" to enable logging.
+
 config MTK_HTTPD
-	bool
+	bool "Enable Mediatek HTTPD framework"
 	default n
 	depends on MTK_TCP
 	help
