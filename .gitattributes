@@ -6,3 +6,10 @@
 *.ttf binary
 *.gz binary
 *.png binary
+*.xz binary
+*.o binary
+*.a binary
+*.elf binary
+*.so binary
+*.ko binary
+*.lzma binary
