@@ -94,6 +94,7 @@ struct mtk_tcp_conn {
 	u32 ack_calc_rtt;
 
 	void *pdata;
+	int dying;
 };
 
 struct mtk_tcp_listen {
@@ -111,9 +112,11 @@ static int mtk_tcp_send_packet(struct mtk_tcp_conn *c, u16 flags, u32 seq, u32 a
 static int mtk_tcp_send_packet_ctrl(struct mtk_tcp_conn *c, u16 flags);
 static void mtk_tcp_conn_finish(struct mtk_tcp_conn *c,
 				enum mtk_tcp_cb_status status);
+static void mtk_tcp_conn_reap(void);
 
 static LIST_HEAD(listen_head);
 static LIST_HEAD(conn_head);
+static LIST_HEAD(dead_head);
 
 static int mtk_tcp_stop;
 static u16 mtk_tcp_port_seq = 50000;
@@ -158,6 +161,14 @@ void mtk_tcp_start(void)
 	 */
 	if (arp_is_waiting())
 		arp_wait_clear();
+
+	/*
+	 * A session that ended without a final mtk_tcp_periodic_check()
+	 * may have left connections parked on dead_head.  Nobody is
+	 * holding a pointer to them any more, so release them before the
+	 * new session starts.
+	 */
+	mtk_tcp_conn_reap();
 
 	mtk_tcp_stop = 0;
 	mtk_tcp_log("[MTK_TCP] mtk_tcp_start: stop=%d\n", mtk_tcp_stop);
@@ -235,13 +246,87 @@ static struct mtk_tcp_conn *mtk_tcp_conn_find(__be32 remoteip, __be16 remoteport
 	return NULL;
 }
 
-static void mtk_tcp_conn_del(struct mtk_tcp_conn *c)
+/*
+ * Take @c out of service without freeing it.
+ *
+ * A connection is always killed from inside a callback chain: either the
+ * stack called the upper layer (mtk_receive_tcp(), mtk_tcp_conn_check())
+ * and that layer closed the connection, or an upper layer asked the stack
+ * to close one.  Freeing the object right there leaves every caller above
+ * it -- and the list_for_each_safe() that is currently walking conn_head --
+ * holding a dangling pointer, and lets a second (nested) teardown free the
+ * very same object twice.
+ *
+ * Parking the connection on dead_head and freeing it later, once the whole
+ * chain has unwound, removes both hazards.  The object stays valid (and
+ * thus safe to dereference) until mtk_tcp_conn_reap() runs.
+ */
+static void mtk_tcp_conn_zombify(struct mtk_tcp_conn *c)
 {
-	mtk_tcp_log("[MTK_TCP] conn_del: %pI4:%d -> %d, status=%d\n",
+	mtk_tcp_log("[MTK_TCP] conn_zombify: %pI4:%d -> %d, status=%d\n",
 		    &c->ip_remote, ntohs(c->port_remote), ntohs(c->port_local),
 		    c->status);
+
+	if (c->dying)
+		return;
+
+	/*
+	 * The ARP wait state may still point into this connection:
+	 * mtk_tcp_send_packet_opt() stores arp_wait_packet_ethaddr =
+	 * c->ethaddr while it resolves the peer MAC.  Drop that state so a
+	 * late ARP reply cannot write into the connection after it has
+	 * been freed.  The web failsafe pumps eth_rx() from its own poll
+	 * loop and never runs arp_timeout_check(), so this state would
+	 * otherwise survive the session.
+	 */
+	if (arp_wait_packet_ethaddr == c->ethaddr && arp_is_waiting())
+		arp_wait_clear();
+
+	c->dying = 1;
 	list_del(&c->node);
-	free(c);
+	list_add_tail(&c->node, &dead_head);
+}
+
+/*
+ * Free every connection parked by mtk_tcp_conn_zombify().
+ *
+ * Must only be called from a place where no connection pointer is in use,
+ * i.e. outside any callback chain.
+ */
+static void mtk_tcp_conn_reap(void)
+{
+	struct list_head *lh, *n;
+	struct mtk_tcp_conn *c;
+
+	list_for_each_safe(lh, n, &dead_head) {
+		c = list_entry(lh, struct mtk_tcp_conn, node);
+		list_del(&c->node);
+		free(c);
+	}
+}
+
+static void mtk_tcp_conn_del(struct mtk_tcp_conn *c)
+{
+	mtk_tcp_conn_zombify(c);
+}
+
+/*
+ * Deliver @cbd to the upper layer of @c, unless the connection has already
+ * been taken out of service.
+ *
+ * Every call site must use this instead of touching c->cb directly: the
+ * callback is allowed to close (and thus invalidate) the connection it was
+ * invoked on, and c->cb is cleared as soon as that happens.
+ */
+static void mtk_tcp_cb_call(struct mtk_tcp_conn *c, struct mtk_tcp_cb_data *cbd)
+{
+	mtk_tcp_conn_cb cb = c->cb;
+
+	if (!cb || c->dying)
+		return;
+
+	assert((size_t)cb > gd->ram_base);
+	cb(cbd);
 }
 
 static u16 mtk_tcp_checksum_compute(void *data, int len, __be32 sip, __be32 dip)
@@ -368,8 +453,17 @@ static struct mtk_tcp_conn *mtk_tcp_conn_create(__be32 remoteip, struct mtk_tcp_
 	c->cb = cb;
 
 	if (c == &tmp_c) {
-		/* malloc fail, try to send MTK_TCP_RST to peer and return NULL */
+		/*
+		 * malloc fail, try to send MTK_TCP_RST to peer and return
+		 * NULL.  tmp_c only ever existed to be able to build that
+		 * reset packet, it must not stay on conn_head: it lives on
+		 * the stack of this function and every later walk of the
+		 * list (mtk_tcp_periodic_check(), mtk_tcp_conn_find(), ...)
+		 * would dereference dead stack memory.
+		 */
 		mtk_tcp_send_packet(c, MTK_TCP_RST | MTK_TCP_ACK, 1, c->peer_seq, NULL, 0);
+
+		list_del(&c->node);
 
 		return NULL;
 	}
@@ -644,8 +738,7 @@ bool mtk_receive_tcp(struct ip_hdr *ip, int len, struct ethernet_hdr *et)
 					    c->peer_seq, NULL, 0);
 
 			cbd.status = MTK_TCP_CB_CLOSED;
-			assert((size_t)c->cb > gd->ram_base);
-			c->cb(&cbd);
+			mtk_tcp_cb_call(c, &cbd);
 
 			mtk_tcp_conn_del(c);
 			break;
@@ -677,8 +770,16 @@ bool mtk_receive_tcp(struct ip_hdr *ip, int len, struct ethernet_hdr *et)
 		c->status = ESTABLISHED;
 
 		cbd.status = MTK_TCP_CB_NEW_CONN;
-		assert((size_t)c->cb > gd->ram_base);
-		c->cb(&cbd);
+		mtk_tcp_cb_call(c, &cbd);
+
+		/*
+		 * The upper layer may have closed the connection from
+		 * inside the callback (mtk_tcp_close_conn(conn, 1)).  @c
+		 * is no longer part of conn_head then, and everything
+		 * below would be writing to a stale connection.
+		 */
+		if (c->dying)
+			return true;
 
 		if (!data_size)
 			break;
@@ -741,8 +842,10 @@ bool mtk_receive_tcp(struct ip_hdr *ip, int len, struct ethernet_hdr *et)
 				c->tx = NULL;
 				c->txlen = 0;
 				cbd.status = MTK_TCP_CB_DATA_SENT;
-				assert((size_t) c->cb > gd->ram_base);
-				c->cb(&cbd);
+				mtk_tcp_cb_call(c, &cbd);
+
+				if (c->dying)
+					return true;
 			}
 		} else {
 			/*
@@ -777,8 +880,10 @@ bool mtk_receive_tcp(struct ip_hdr *ip, int len, struct ethernet_hdr *et)
 			cbd.status = MTK_TCP_CB_DATA_RCVD;
 			cbd.data = data;
 			cbd.datalen = data_size;
-			assert((size_t)c->cb > gd->ram_base);
-			c->cb(&cbd);
+			mtk_tcp_cb_call(c, &cbd);
+
+			if (c->dying)
+				return true;
 		}
 
 		if (flags & MTK_TCP_FIN) {
@@ -787,8 +892,7 @@ bool mtk_receive_tcp(struct ip_hdr *ip, int len, struct ethernet_hdr *et)
 				    &c->ip_remote, ntohs(c->port_remote));
 			c->status = CLOSE_WAIT;
 			cbd.status = MTK_TCP_CB_REMOTE_CLOSING;
-			assert((size_t)c->cb > gd->ram_base);
-			c->cb(&cbd);
+			mtk_tcp_cb_call(c, &cbd);
 		}
 
 		break;
@@ -871,16 +975,14 @@ static int mtk_tcp_rexmit_check(struct mtk_tcp_conn *c, struct mtk_tcp_cb_data *
 		case ESTABLISHED:
 			cbd->status = MTK_TCP_CB_REMOTE_CLOSED;
 			cbd->timedout = true;
-			assert((size_t)c->cb > gd->ram_base);
-			c->cb(cbd);
+			mtk_tcp_cb_call(c, cbd);
 			break;
 		case FIN_WAIT_1:
 		case FIN_WAIT_2:
 		case CLOSING:
 		case CLOSE_WAIT:
 			cbd->status = MTK_TCP_CB_CLOSED;
-			assert((size_t)c->cb > gd->ram_base);
-			c->cb(cbd);
+			mtk_tcp_cb_call(c, cbd);
 			break;
 		default:;
 		}
@@ -924,8 +1026,7 @@ static int mtk_tcp_connect_rexmit_check(struct mtk_tcp_conn *c,
 
 		cbd->status = MTK_TCP_CB_REMOTE_CLOSED;
 		cbd->timedout = true;
-		assert((size_t)c->cb > gd->ram_base);
-		c->cb(cbd);
+		mtk_tcp_cb_call(c, cbd);
 
 		mtk_tcp_conn_del(c);
 		return -1;
@@ -1137,8 +1238,7 @@ static void mtk_tcp_conn_check(struct mtk_tcp_conn *c)
 				mtk_tcp_rexmit_init(c);
 
 				cbd.status = MTK_TCP_CB_CLOSING;
-				assert((size_t)c->cb > gd->ram_base);
-				c->cb(&cbd);
+				mtk_tcp_cb_call(c, &cbd);
 			}
 		}
 
@@ -1233,8 +1333,7 @@ static void mtk_tcp_conn_poll(struct mtk_tcp_conn *c)
 	cbd.pdata = c->pdata;
 	cbd.status = MTK_TCP_CB_POLL;
 
-	assert((size_t)c->cb > gd->ram_base);
-	c->cb(&cbd);
+	mtk_tcp_cb_call(c, &cbd);
 }
 
 int mtk_tcp_periodic_check(void)
@@ -1247,13 +1346,29 @@ int mtk_tcp_periodic_check(void)
 		c = list_entry(lh, struct mtk_tcp_conn, node);
 		/*
 		 * Run the poll callback BEFORE the connection state
-		 * machine: mtk_tcp_conn_check() may free @c (TIME_WAIT
-		 * -> CLOSED), after which @c must not be touched.
+		 * machine.  Either of them may close @c -- the upper
+		 * layer is free to call mtk_tcp_close_conn() from any
+		 * callback, and mtk_tcp_conn_check() finishes the
+		 * TIME_WAIT connections -- so it must not be touched
+		 * again once it has been taken out of service.
 		 */
 		mtk_tcp_conn_poll(c);
+		if (c->dying) {
+			num++;
+			continue;
+		}
+
 		mtk_tcp_conn_check(c);
 		num++;
 	}
+
+	/*
+	 * Every callback chain has unwound by now: nothing below this
+	 * point holds a connection pointer, so the connections parked by
+	 * this pass (and by any eth_rx() that ran before it) can be
+	 * released.
+	 */
+	mtk_tcp_conn_reap();
 
 	if (list_empty(&listen_head)) {
 		if (!mtk_tcp_stop)
@@ -1410,7 +1525,12 @@ int mtk_tcp_send_data(const void *conn, const void *data, u32 size)
  * stops a second (nested) delivery from handing already-freed private data
  * to the handler.
  *
- * @c must not be touched afterwards.
+ * The object itself is only parked on dead_head; it is freed by
+ * mtk_tcp_conn_reap() once the whole callback chain has unwound.  That
+ * keeps @c valid for the callers above us, which still hold a pointer to
+ * it and may not have finished dereferencing it.
+ *
+ * @c must not be used for anything meaningful afterwards.
  */
 static void mtk_tcp_conn_finish(struct mtk_tcp_conn *c,
 				enum mtk_tcp_cb_status status)
@@ -1419,7 +1539,8 @@ static void mtk_tcp_conn_finish(struct mtk_tcp_conn *c,
 	mtk_tcp_conn_cb cb;
 	void *pdata;
 
-	list_del(&c->node);
+	mtk_tcp_conn_zombify(c);
+
 	cb = c->cb;
 	pdata = c->pdata;
 	c->cb = NULL;
@@ -1436,8 +1557,6 @@ static void mtk_tcp_conn_finish(struct mtk_tcp_conn *c,
 		assert((size_t)cb > gd->ram_base);
 		cb(&cbd);
 	}
-
-	free(c);
 }
 
 /*
@@ -1464,7 +1583,7 @@ static void mtk_tcp_conn_teardown(struct mtk_tcp_conn *c)
 	 * Only reset when the peer MAC is known.  Otherwise
 	 * mtk_tcp_send_packet_opt() would kick off an ARP request for a
 	 * connection that is being destroyed right now, leaving the ARP wait
-	 * state pointing into freed memory.
+	 * state pointing into a connection that is gone.
 	 */
 	if (memcmp(c->ethaddr, net_null_ethaddr, 6))
 		mtk_tcp_send_packet(c, MTK_TCP_RST | MTK_TCP_ACK,
@@ -1501,9 +1620,9 @@ void mtk_tcp_close_all_conn(void)
 	/*
 	 * A connection callback invoked below may legitimately call this
 	 * function again.  The outer list_for_each_safe() has already
-	 * stashed the "next" pointer, so a nested run would free it and
-	 * make the outer loop walk freed memory.  The outer run disposes of
-	 * every connection anyway, so the nested one has nothing to do.
+	 * stashed the "next" pointer, so a nested run would unlink it and
+	 * make the outer loop walk the wrong list.  The outer run disposes
+	 * of every connection anyway, so the nested one has nothing to do.
 	 */
 	if (tearing_down)
 		return;
@@ -1543,6 +1662,13 @@ void mtk_tcp_close_all_conn(void)
 
 	tearing_down = false;
 
+	/*
+	 * Nothing below still holds a connection pointer: release the
+	 * connections parked by this run so the next session starts from
+	 * an empty heap state.
+	 */
+	mtk_tcp_conn_reap();
+
 	mtk_tcp_stop = 1;
 }
 
@@ -1566,6 +1692,13 @@ void mtk_tcp_close_conn_by_port(__be16 port)
 		if (c->port_local == port)
 			mtk_tcp_conn_teardown(c);
 	}
+
+	/*
+	 * The caller is about to release whatever the per-connection data
+	 * points at, so make sure the connection objects themselves are
+	 * gone as well instead of lingering on dead_head.
+	 */
+	mtk_tcp_conn_reap();
 }
 
 void mtk_tcp_reset_all_conn(void)
@@ -1579,6 +1712,8 @@ void mtk_tcp_reset_all_conn(void)
 		c = list_entry(lh, struct mtk_tcp_conn, node);
 		mtk_tcp_close_conn(c, 1);
 	}
+
+	mtk_tcp_conn_reap();
 
 	mtk_tcp_stop = 1;
 }
