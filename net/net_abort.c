@@ -66,9 +66,11 @@ static void net_abort_udp_handler(uchar *pkt, unsigned int dport,
 				  struct in_addr sip, unsigned int sport,
 				  unsigned int len)
 {
-	/* Only react to the exact magic payload on the well known port */
+	/* Only react to the exact magic payload on the well known port.
+	 * Keep a valid trigger silent so it does not break the on-screen
+	 * countdown line; log only unexpected traffic on the port.
+	 */
 	if (dport == NET_ABORT_PORT) {
-		printf("netabort: UDP pkt sport %u len %u\n", sport, len);
 		if (len == NET_ABORT_MAGIC_LEN &&
 		    (!memcmp(pkt, NET_ABORT_MAGIC_UBOOT, NET_ABORT_MAGIC_LEN) ||
 		     !memcmp(pkt, NET_ABORT_MAGIC_BREED, NET_ABORT_MAGIC_LEN))) {
@@ -76,6 +78,9 @@ static void net_abort_udp_handler(uchar *pkt, unsigned int dport,
 				!memcmp(pkt, NET_ABORT_MAGIC_BREED,
 					NET_ABORT_MAGIC_LEN);
 			net_abort_pkt_received = true;
+		} else {
+			printf("netabort: UDP pkt sport %u len %u\n",
+			       sport, len);
 		}
 	}
 
@@ -164,7 +169,7 @@ void net_abort_prepare(void)
 		wait_sec = 0;
 
 	if (wait_sec > 0) {
-		printf("netabort: waiting for trigger (%ds, key to skip)...\n",
+		printf("netabort: waiting for trigger, key to skip: %2d ",
 		       wait_sec);
 		while (wait_sec > 0 && !net_abort_pkt_received) {
 			ts = get_timer(0);
@@ -177,8 +182,11 @@ void net_abort_prepare(void)
 				net_abort_poll();
 				udelay(10000);
 			} while (!net_abort_pkt_received && get_timer(ts) < 1000);
-			if (!net_abort_pkt_received)
+			if (!net_abort_pkt_received) {
 				--wait_sec;
+				/* In-place countdown, overwrite the old number */
+				printf("\b\b\b%2d ", wait_sec);
+			}
 		}
 	}
 listen_done:
