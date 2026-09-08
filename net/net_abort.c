@@ -35,9 +35,21 @@
 #define NET_ABORTED_REPLY_BREED	"BREED:ABORTED"
 #define NET_ABORTED_REPLY_LEN	13
 #define NET_ABORT_WAIT_SEC	3	/* link settle + listen window */
+#ifdef CONFIG_IPADDR
+#define NET_ABORT_DEFAULT_IPADDR	CONFIG_IPADDR
+#else
+#define NET_ABORT_DEFAULT_IPADDR	"192.168.1.1"
+#endif
+
+#ifdef CONFIG_NETMASK
+#define NET_ABORT_DEFAULT_NETMASK	CONFIG_NETMASK
+#else
+#define NET_ABORT_DEFAULT_NETMASK	"255.255.255.0"
+#endif
 
 static rxhand_f *net_abort_prev_udp_handler;
 static bool net_abort_enabled;
+static bool net_abort_armed;
 static bool net_abort_pkt_received;
 static bool net_abort_breed_trigger;
 
@@ -72,6 +84,36 @@ static void net_abort_udp_handler(uchar *pkt, unsigned int dport,
 		net_abort_prev_udp_handler(pkt, dport, sip, sport, len);
 }
 
+/*
+ * Hand the network over to whoever comes next.
+ *
+ * The abort listener is installed before autoboot and torn down after it,
+ * which means it would otherwise sit on the UDP handler for the whole
+ * boot.  It must therefore unregister its handler as soon as the listen
+ * window is over.
+ *
+ * The ethernet device itself is deliberately left in the ACTIVE state it
+ * was brought up in.  Stopping it here would force the next consumer --
+ * "httpd" started by hand from the command line -- to stop and restart the
+ * device behind our back, and that restart is precisely what the web
+ * failsafe must not depend on.  By leaving the interface up and letting
+ * the failsafe reuse it as-is, no second start/stop cycle ever happens,
+ * regardless of who ran before us (the netabort listener, a dhcp/tftp in
+ * autoboot, an earlier httpd, ...).
+ */
+static void net_abort_release(void)
+{
+	if (!net_abort_enabled)
+		return;
+
+	/* Only unhook if we are still the active handler */
+	if (net_get_udp_handler() == net_abort_udp_handler)
+		net_set_udp_handler(net_abort_prev_udp_handler);
+
+	net_abort_prev_udp_handler = NULL;
+	net_abort_enabled = false;
+}
+
 void net_abort_prepare(void)
 {
 	const char *wait_str;
@@ -82,16 +124,13 @@ void net_abort_prepare(void)
 		return;
 
 	net_abort_enabled = false;
+	net_abort_armed = false;
 	net_abort_pkt_received = false;
 	net_abort_breed_trigger = false;
 
-	/*
-	 * The web failsafe / httpd uses net_ip & net_netmask.  This project
-	 * keeps the network configuration in the environment, so read it
-	 * from there and only fall back to the classic failsafe defaults.
-	 */
-	net_ip = net_abort_str_to_ip(env_get("ipaddr"), "192.168.1.1");
-	net_netmask = net_abort_str_to_ip(env_get("netmask"), "255.255.255.0");
+	/* The web failsafe / httpd uses net_ip & net_netmask */
+	net_ip = net_abort_str_to_ip(env_get("ipaddr"), NET_ABORT_DEFAULT_IPADDR);
+	net_netmask = net_abort_str_to_ip(env_get("netmask"), NET_ABORT_DEFAULT_NETMASK);
 
 	net_init();
 
@@ -108,6 +147,7 @@ void net_abort_prepare(void)
 	net_abort_prev_udp_handler = net_get_udp_handler();
 	net_set_udp_handler(net_abort_udp_handler);
 	net_abort_enabled = true;
+	net_abort_armed = true;
 
 	printf("netabort: check enabled (UDP port %d)\n", NET_ABORT_PORT);
 
@@ -143,6 +183,15 @@ void net_abort_prepare(void)
 	}
 listen_done:
 	puts("\n");
+
+	/*
+	 * The listen window is over: hand the UDP handler and the ethernet
+	 * device back immediately.  Holding on to them until
+	 * net_abort_finish() would keep them claimed across the whole
+	 * autoboot, and "httpd" started afterwards from the command line
+	 * would inherit an interface it does not own (no DHCP, no HTTP).
+	 */
+	net_abort_release();
 }
 
 void net_abort_poll(void)
@@ -161,13 +210,17 @@ bool net_abort_detected(void)
 
 void net_abort_finish(void)
 {
-	if (!net_abort_enabled)
+	if (!net_abort_armed)
 		return;
 
-	/* Unhook only if we are still the active handler */
-	if (net_get_udp_handler() == net_abort_udp_handler)
-		net_set_udp_handler(net_abort_prev_udp_handler);
-	net_abort_enabled = false;
+	net_abort_armed = false;
+
+	/*
+	 * The listener has already been released by net_abort_prepare();
+	 * this only makes sure nothing is left claimed even if a network
+	 * command cleared the handlers behind our back.
+	 */
+	net_abort_release();
 
 	if (net_abort_pkt_received) {
 		const char *reply = net_abort_breed_trigger ?
@@ -176,7 +229,17 @@ void net_abort_finish(void)
 		printf("netabort: triggered (%s), entering web failsafe\n",
 		       net_abort_breed_trigger ? "BREED" : "UBOOT");
 
-		/* Reply "<PROTO>:ABORTED" to broadcast:37540 from :37540 */
+		/*
+		 * The interface is normally still ACTIVE from the listen
+		 * window.  eth_init() is safe even if a network command
+		 * halted it in between (it starts the device only when it
+		 * is not running).  The reply is sent and the interface is
+		 * left up so that "httpd" below can reuse it as-is instead
+		 * of having to stop and restart it.
+		 */
+		eth_init();
+
+		/* Reply "<PROTO>:ABORTED" to broadcast:37540 */
 		memcpy(net_tx_packet + net_eth_hdr_size() + IP_UDP_HDR_SIZE,
 		       reply, NET_ABORTED_REPLY_LEN);
 		net_send_udp_packet((uchar *)net_bcast_ethaddr,
@@ -184,14 +247,14 @@ void net_abort_finish(void)
 				    NET_ABORTED_PORT, NET_ABORTED_PORT,
 				    NET_ABORTED_REPLY_LEN);
 
-		eth_halt();
 		mdelay(500);
 
 		/* Blocking web failsafe: HTTP:80 + DHCP + DNS */
 		run_command("httpd", 0);
-	} else {
-		eth_halt();
 	}
+
+	net_abort_pkt_received = false;
+	net_abort_breed_trigger = false;
 }
 
 static int do_netabort(struct cmd_tbl *cmdtp, int flag, int argc,
@@ -202,7 +265,8 @@ static int do_netabort(struct cmd_tbl *cmdtp, int flag, int argc,
 
 	if (!strcmp(argv[1], "status")) {
 		printf("netabort: %s (UDP port %d)\n",
-		       net_abort_enabled ? "enabled" : "disabled",
+		       net_abort_enabled ? "listening"
+					: (net_abort_armed ? "armed" : "idle"),
 		       NET_ABORT_PORT);
 		if (net_abort_pkt_received)
 			printf("netabort: trigger received (%s)\n",
@@ -235,7 +299,7 @@ static int do_netabort(struct cmd_tbl *cmdtp, int flag, int argc,
 		if (secs >= 0)
 			env_set("net_abort_wait", old_wait ? old_wait : "");
 
-		if (!net_abort_enabled) {
+		if (!net_abort_armed) {
 			printf("netabort: listen unavailable "
 			       "(setenv disable_net_abort to re-enable)\n");
 			return CMD_RET_FAILURE;
