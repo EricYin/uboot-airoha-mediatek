@@ -840,6 +840,27 @@ static void airoha_switch_pbus_mii_write(struct airoha_eth *eth, u32 port,
 	}
 }
 
+static int airoha_switch_pbus_mii_read(struct airoha_eth *eth, u32 port,
+				       u32 reg)
+{
+	int try;
+
+	airoha_switch_wr(eth, SWITCH_PBUS_PHY_IAC,
+			 SWITCH_PBUS_PHY_START | SWITCH_PBUS_PHY_CMD_READ |
+			 FIELD_PREP(SWITCH_PBUS_PHY_PORTADDR, port) |
+			 FIELD_PREP(SWITCH_PBUS_PHY_REGADDR, reg));
+
+	for (try = 0; try < AIROHA_MAX_PBUS_TRY; try++) {
+		if (!(airoha_switch_rr(eth, SWITCH_PBUS_PHY_IAC) &
+		      SWITCH_PBUS_PHY_START))
+			return airoha_switch_rr(eth, SWITCH_PBUS_PHY_IARD);
+
+		udelay(AIROHA_PBUS_SLEEP);
+	}
+
+	return -ETIMEDOUT;
+}
+
 static void airoha_switch_an7583_gephy_init(struct airoha_eth *eth)
 {
 	int i;
@@ -874,6 +895,41 @@ static void airoha_switch_an7583_gephy_init(struct airoha_eth *eth)
 					     AIROHA_PBUS_C22_MASK | MII_BMCR,
 					     BMCR_ANENABLE | BMCR_ANRESTART |
 					     BMCR_SPEED1000 | BMCR_FULLDPLX);
+}
+
+/*
+ * Report whether any AN7583 internal GEPHY is still in power down.
+ *
+ * The GEPHYs come out of reset in power down and are brought up once by
+ * airoha_switch_init() during probe, so the LAN link has the whole boot to
+ * settle before the first eth start.  They must therefore not be kicked with
+ * BMCR_ANRESTART again at every eth start: on a link that is already up (or
+ * still negotiating) the restart drops it right when the caller - the
+ * netabort listener, httpd, a tftp boot command - starts using the
+ * interface.  The boot-time netabort listen window is then spent on a fresh
+ * 1000BASE-T negotiation and every trigger packet is missed.
+ *
+ * Only when a GEPHY is actually (still or again) powered down does eth start
+ * need to run the full bring-up sequence once more.
+ */
+static bool airoha_switch_an7583_gephy_powered_down(struct airoha_eth *eth)
+{
+	int i;
+
+	for (i = 0; i < AIROHA_MAX_NUM_SWITCH_PORT; i++) {
+		int bmcr;
+
+		bmcr = airoha_switch_pbus_mii_read(eth, i,
+						   AIROHA_PBUS_C22_MASK |
+						   MII_BMCR);
+		/* Bus access failed: play safe and force the re-init. */
+		if (bmcr < 0)
+			return true;
+		if (bmcr & BMCR_PDOWN)
+			return true;
+	}
+
+	return false;
 }
 
 static int airoha_switch_init(struct udevice *dev, struct airoha_eth *eth)
@@ -1119,10 +1175,19 @@ static int airoha_eth_init(struct udevice *dev)
 	int qid;
 
 	/*
-	 * AN7583: make sure the internal GEPHYs are out of power down and
-	 * negotiating at 1000M full duplex before the engine is turned on.
+	 * AN7583: the internal GEPHYs are taken out of power down and put
+	 * into auto-negotiation by airoha_switch_init(), long before the
+	 * first eth start, so the LAN link has the whole boot to settle.
+	 *
+	 * Only re-run that sequence here if a GEPHY is still (or again)
+	 * powered down.  Do NOT restart auto-negotiation on every start:
+	 * on a link that is already up the BMCR_ANRESTART drops it at the
+	 * very moment the caller wants to use the interface, so the
+	 * boot-time netabort listen window misses every trigger packet.
 	 */
-	if (!strcmp(qdma->eth->soc->switch_compatible, "airoha,an7583-switch"))
+	if (!strcmp(qdma->eth->soc->switch_compatible,
+		    "airoha,an7583-switch") &&
+	    airoha_switch_an7583_gephy_powered_down(qdma->eth))
 		airoha_switch_an7583_gephy_init(qdma->eth);
 
 	qid = 0;
