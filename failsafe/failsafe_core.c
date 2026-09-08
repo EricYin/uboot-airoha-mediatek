@@ -307,6 +307,8 @@ int start_web_failsafe(void)
 	mtk_tcp_done_flag = false;
 	eth_needs_reinit = false;
 	services_auto_started = false;
+	auto_action_pending = false;
+	reboot_pending = false;
 
 	/*
 	 * Initialize network subsystem.  net_init() is safe to call
@@ -432,8 +434,21 @@ int start_web_failsafe(void)
 			 *
 			 * net_loop() also calls net_clear_handlers() which
 			 * removes the DHCP UDP handler — re-register it.
+			 *
+			 * Re-initialize not only when a network command asked
+			 * for it, but also whenever the interface silently
+			 * dropped out of the ACTIVE state.  eth_rx() does
+			 * nothing on an interface it does not consider
+			 * active -- it simply reports no packets -- so if
+			 * anything else claimed or stopped the device
+			 * behind our back (the netabort listener used to
+			 * keep it started), the web UI, the DHCP server
+			 * and the DNS server would all go deaf without a
+			 * single error message.  Detect that here, at
+			 * poll-loop level, and bring the interface back.
 			 */
-			if (eth_needs_reinit) {
+			if (eth_needs_reinit ||
+			    (eth_get_dev() && !eth_is_active(eth_get_dev()))) {
 				eth_needs_reinit = false;
 				eth_init();
 #ifdef CONFIG_MTK_DHCPD
