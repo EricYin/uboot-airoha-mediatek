@@ -31,6 +31,7 @@
 #include <net/mtk_telnetd.h>
 #endif
 #include <linux/string.h>
+#include <linux/delay.h>
 #include <log.h>
 #include <rand.h>
 #include <u-boot/schedule.h>
@@ -39,6 +40,21 @@
 #include <failsafe/fs.h>
 
 #include <failsafe/internal.h>
+
+/* ------------------------------------------------------------------ */
+/*  Defines for default IP/netmask when env vars are not set             */
+/* ------------------------------------------------------------------ */
+
+#ifdef CONFIG_IPADDR
+#define HTTPD_DEFAULT_IPADDR	CONFIG_IPADDR
+#else
+#define HTTPD_DEFAULT_IPADDR	"192.168.1.1"
+#endif
+#ifdef CONFIG_NETMASK
+# define HTTPD_DEFAULT_NETMASK	CONFIG_NETMASK
+#else
+#define HTTPD_DEFAULT_NETMASK	"255.255.255.0"
+#endif
 
 /* ------------------------------------------------------------------ */
 /*  Core state (local to the main loop)                                */
@@ -322,31 +338,70 @@ int start_web_failsafe(void)
 	 */
 	debug("[FAILSAFE] net_init() returned %d\n", net_ret);
 	if (eth_is_on_demand_init()) {
-		eth_halt();
 		eth_set_current();
-		if (eth_init() < 0) {
-			debug("Error: failed to initialize ethernet\n");
-			failsafe_httpd_running = false;
-			return -1;
+		if (!eth_is_active(eth_get_dev())) {
+			if (eth_init() < 0) {
+				eth_halt();
+				mdelay(300);
+				if (eth_init() < 0) {
+					debug("Error: failed to initialize ethernet\n");
+					failsafe_httpd_running = false;
+					return -1;
+				}
+			}
 		}
 	} else {
 		eth_init_state_only();
 	}
 	debug("[FAILSAFE] eth initialized\n");
 
-	/* Reset the MTK TCP subsystem */
-	mtk_tcp_start();
-	debug("[FAILSAFE] mtk_tcp_start() done\n");
+	/*
+	 * This session owns the network now, so take the whole L3
+	 * configuration back from whatever ran before it.  The netabort
+	 * listener (which initializes the network before autoboot), a
+	 * dhcp/tftp executed by the boot command, or the DHCP server that
+	 * main_loop() auto-started may all have left net_ip/net_netmask
+	 * pointing at a different subnet -- a board that picked up a LAN
+	 * address during boot would then answer ARP for the wrong network
+	 * and offer leases from a pool that does not match its own IP, so
+	 * a directly connected PC could neither obtain an address nor
+	 * reach the web UI.
+	 */
+	{
+		const char *env_ip = env_get("ipaddr");
+		const char *env_nm = env_get("netmask");
 
+		net_ip = string_to_ip((env_ip && env_ip[0]) ?
+				      env_ip : HTTPD_DEFAULT_IPADDR);
+		net_netmask = string_to_ip((env_nm && env_nm[0]) ?
+					    env_nm : HTTPD_DEFAULT_NETMASK);
+		net_gateway = net_ip;
+		net_dns_server = net_ip;
+	}
+
+	/*
+	 * (Re)start the servers under this session's configuration.
+	 *
+	 * main_loop() may already have started the DHCP server behind our
+	 * back.  Restarting it here guarantees the UDP handler is
+	 * installed with this session as its owner and the lease table is
+	 * fresh; mtk_dhcpd_start()/mtk_dnsd_start() skip all of that when
+	 * they believe the server is already running.
+	 */
 #ifdef CONFIG_MTK_DHCPD
-	/* Start the DHCP server (net_init may have cleared UDP handlers) */
+	mtk_dhcpd_stop();
 	mtk_dhcpd_start();
 	debug("[FAILSAFE] DHCP server started\n");
 #endif
 #ifdef CONFIG_MTK_DNSD
+	mtk_dnsd_stop();
 	mtk_dnsd_start();
 	debug("[FAILSAFE] DNS server started\n");
 #endif
+
+	/* Reset the MTK TCP subsystem */
+	mtk_tcp_start();
+	debug("[FAILSAFE] mtk_tcp_start() done\n");
 
 	/*
 	 * Non-blocking poll loop.  We call eth_rx() and
