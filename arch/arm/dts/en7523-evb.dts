@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 /dts-v1/;
 
-/* Bootloader installs ATF here */
-/memreserve/ 0x80000000 0x200000;
-
 #include "en7523.dtsi"
 
 / {
@@ -26,18 +23,41 @@
 	};
 };
 
-&gpio0 {
-	status = "okay";
-};
-
-&gpio1 {
-	status = "okay";
-};
-
 &pcie0 {
 	status = "okay";
 };
 
 &pcie1 {
 	status = "okay";
+};
+
+&snfi {
+	status = "okay";
+};
+
+&eth {
+	status = "okay";
+};
+
+&gdm1 {
+	status = "okay";
+};
+
+&spi_nand {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		partition@0 {
+			label = "u-boot";
+			reg = <0x000000 0x080000>;
+		};
+
+		partition@80000 {
+			label = "ubi";
+			compatible = "linux,ubi";
+			reg = <0x080000 0x000000>;
+		};
+	};
 };
