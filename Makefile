@@ -2118,6 +2118,15 @@ preloader.bin: airoha_fip
 all: preloader.bin
 endif
 
+# EN7523 boots a flat image: the 2 KiB BL1 region followed by the BL2 FIP.
+ifeq ($(CONFIG_AIROHA_BUILD_MODERN),y)
+ifeq ($(CONFIG_AIROHA_PRELOADER_BL1),y)
+PHONY += bl1-preloader.bin
+bl1-preloader.bin: airoha_fip
+all: bl1-preloader.bin
+endif
+endif
+
 # Airoha chainloader image build (independent of the boot image layout)
 ifeq ($(CONFIG_AIROHA_BUILD_CHAINLOADER),y)
 PHONY += airoha_chainloader
@@ -2640,7 +2649,7 @@ CLEAN_FILES += include/autoconf.mk* include/bmp_logo.h include/bmp_logo_data.h \
 	       Test* capsule*.*.efi-capsule capsule*.map mkimage.imx-boot.spl \
 	       mkimage.imx-boot.u-boot mkimage-out.imx-boot.spl mkimage-out.imx-boot.u-boot \
 	       imx9image* m33-oei-ddrfw* tifalcon.bin \
-		   bl2.bin preloader.bin bl31-uboot.fip bl31.bin.lzma bootext.ram _legacy.fip key_area.bin \
+		   bl2.bin preloader.bin bl1-preloader.bin bl31-uboot.fip bl31.bin.lzma bootext.ram _legacy.fip key_area.bin \
 		   bl1-bl2-bl31-uboot.bin bl2-bl31-uboot.bin \
 		   certificates.bin *-chainloader.bin *-chainloader-prefix-shim.uImage *-chainloader-slot.bin
 

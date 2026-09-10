@@ -28,6 +28,8 @@
 #   bl31-uboot.fip   — main FIP image (modern/split layout only: BL31+U-Boot)
 #   preloader.bin    — BL2 FIP image (CONFIG_AIROHA_PRELOADER; built for both
 #                      layouts)
+#   bl1-preloader.bin — 2 KiB BL1 prefix (real BL1 or zeros) + BL2 FIP,
+#                      for EN7523 (CONFIG_AIROHA_PRELOADER_BL1)
 #   bl1-bl2-bl31-uboot.bin — 512 KiB boot image with BL1: BL1 + internal
 #                      FIP @0x800 (LEGACY + AIROHA_LEGACY_BL1)
 #   bl2-bl31-uboot.bin — the same 512 KiB boot image without BL1: 2 KiB zero
@@ -79,6 +81,7 @@ CERT_BIN     := $(BLOBS_DIR)/certificates.bin
 KEY_AREA_BIN := $(BLOBS_DIR)/key_area.bin
 
 BL2_FIP      := $(OUT_DIR)/preloader.bin
+BL1_PRELOADER := $(OUT_DIR)/bl1-preloader.bin
 FIP_IMAGE    := $(OUT_DIR)/bl31-uboot.fip
 LEGACY_IMAGE := $(OUT_DIR)/bl2-bl31-uboot.bin
 _LEGACY_FIP  := $(OUT_DIR)/_legacy.fip
@@ -163,6 +166,26 @@ endif
 $(BL2_FIP): $(BL2_BIN) $(FIPTOOL)
 	@echo "  [FIP]    Creating preloader.bin (BL2-only$(PRELOADER_ALIGN_MSG))..."
 	$(FIPTOOL) create $(strip $(PRELOADER_ALIGN)) --tb-fw $(BL2_BIN) $@
+
+# ----- bl1-preloader.bin (2 KiB BL1 prefix + BL2 FIP) ------------------------
+# EN7523 boots from a flat image: the 2 KiB BL1 region (padded/truncated to
+# 0x800, exactly like tools/airoha_pack_boot.sh does for the 512 KiB image)
+# followed by the BL2 FIP.
+ifeq ($(CONFIG_AIROHA_BUILD_MODERN),y)
+ifeq ($(CONFIG_AIROHA_PRELOADER_BL1),y)
+all: $(BL1_PRELOADER)
+
+$(BL1_PRELOADER): $(BL2_FIP)
+	@echo "  [FIP]    Creating bl1-preloader.bin (2 KiB BL1 prefix + BL2 FIP)..."
+	@if [ ! -f "$(BL1_BIN)" ]; then \
+		echo "ERROR: $(BL1_BIN) not found, bl1-preloader build failed"; \
+		exit 1; \
+	fi
+	cat "$(BL1_BIN)" > $@
+	truncate -s 2048 $@
+	cat $(BL2_FIP) >> $@
+endif
+endif
 endif
 
 ifeq ($(CONFIG_AIROHA_BUILD_MODERN),y)
@@ -324,7 +347,7 @@ endif  # CONFIG_AIROHA_BUILD_CHAINLOADER
 
 # ---------------------------------------------------------------------------
 clean:
-	rm -f $(BL2_FIP) $(FIP_IMAGE) $(LEGACY_IMAGE) $(_LEGACY_FIP) $(BOOTEXT_IMAGE) $(UBOOT_BIN).lzma \
+	rm -f $(BL2_FIP) $(BL1_PRELOADER) $(FIP_IMAGE) $(LEGACY_IMAGE) $(_LEGACY_FIP) $(BOOTEXT_IMAGE) $(UBOOT_BIN).lzma \
 		$(OUT_DIR)/bl1-bl2-bl31-uboot.bin \
 		$(OUT_DIR)/bl2-bl31-uboot.bin \
 		$(OUT_DIR)/*-chainload-uboot.itb \

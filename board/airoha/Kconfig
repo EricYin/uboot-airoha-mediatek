@@ -113,6 +113,27 @@ config AIROHA_PRELOADER
 	  way (it can't be installed in the bl2 MTD partition, just like
 	  bootext.ram - only the packaging method differs).
 
+if AIROHA_PRELOADER
+
+config AIROHA_PRELOADER_BL1
+	bool "Build bl1-preloader.bin (2 KiB BL1 prefix + BL2 FIP)"
+	depends on AIROHA_BUILD_MODERN
+	default y if TARGET_EN7523
+	help
+	  Also build bl1-preloader.bin: the 2 KiB BL1 region followed by the
+	  very same BL2 FIP as preloader.bin:
+
+	      [0x00000]  BL1, padded/truncated to 2048 bytes
+	      [0x00800]  BL2 FIP (a verbatim copy of preloader.bin)
+
+	  EN7523 does not boot a bare FIP: its BootROM loads a flat image, so
+	  the BL1 region has to be there.
+
+	  Defaults to y on EN7523, where this image is the artifact that gets
+	  flashed/loaded instead of preloader.bin.
+
+endif # AIROHA_PRELOADER
+
 if AIROHA_BUILD_LEGACY
 
 config AIROHA_LEGACY_BL1
