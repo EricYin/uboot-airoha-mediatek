@@ -1,0 +1,117 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/dts-v1/;
+
+#include <dt-bindings/input/linux-event-codes.h>
+#include <dt-bindings/leds/common.h>
+#include "en7523.dtsi"
+
+/ {
+	model = "Raisecom DR5374";
+	compatible = "raisecom,dr5374", "airoha,en7523";
+
+	aliases {
+		serial0 = &uart1;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200 earlycon";
+		stdout-path = "serial0:115200n8";
+		linux,usable-memory-range = <0x80200000 0x1fe00000>;
+	};
+
+	keys {
+		compatible = "gpio-keys";
+
+		reset {
+			label = "reset";
+			linux,code = <KEY_RESTART>;
+			gpios = <&pinctrl 0 GPIO_ACTIVE_LOW>;
+			debounce-interval = <60>;
+		};
+
+		wps {
+			label = "wps";
+			linux,code = <KEY_WPS_BUTTON>;
+			gpios = <&pinctrl 7 GPIO_ACTIVE_LOW>;
+			debounce-interval = <60>;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led-0 {
+			label = "green:power";
+			gpios = <&pinctrl 11 GPIO_ACTIVE_LOW>;
+		};
+
+		led-1 {
+			label = "red:wan";
+			gpios = <&pinctrl 18 GPIO_ACTIVE_LOW>;
+		};
+
+		led-2 {
+			label = "green:wan";
+			gpios = <&pinctrl 19 GPIO_ACTIVE_LOW>;
+		};
+
+		led-3 {
+			label = "green:lan";
+			gpios = <&pinctrl 21 GPIO_ACTIVE_LOW>;
+		};
+
+		led-4 {
+			label = "red:wps";
+			gpios = <&pinctrl 27 GPIO_ACTIVE_LOW>;
+		};
+
+		led-5 {
+			label = "green:mesh";
+			gpios = <&pinctrl 26 GPIO_ACTIVE_LOW>;
+		};
+
+		led-6 {
+			label = "green:wifi";
+			gpios = <&pinctrl 6 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
+
+&pcie0 {
+	status = "okay";
+};
+
+&pcie1 {
+	status = "okay";
+};
+
+&snfi {
+	status = "okay";
+};
+
+&eth {
+	status = "okay";
+};
+
+&gdm1 {
+	status = "okay";
+};
+
+&spi_nand {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		partition@0 {
+			label = "u-boot";
+			reg = <0x000000 0x080000>;
+		};
+
+		partition@80000 {
+			label = "ubi";
+			compatible = "linux,ubi";
+			reg = <0x080000 0x000000>;
+		};
+	};
+};
