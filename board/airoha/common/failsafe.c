@@ -87,9 +87,9 @@ DECLARE_GLOBAL_DATA_PTR;
 
 /* Airoha BL2 (preloader) write offset.
  *
- * The Airoha bootrom expects the BL2 image 0x800 (2 KiB) into the "bl2"
- * MTD partition, with the leading bytes left at 0xFF.  The default
- * environment writes it exactly that way:
+ * By default the Airoha bootrom expects the BL2 image 0x800 (2 KiB) into
+ * the "bl2" MTD partition, with the leading bytes left at 0xFF.  The
+ * default environment writes it exactly that way:
  *
  *     mw.b $loadaddr 0xff 0x800
  *     setexpr loadaddr_bl2 $loadaddr + 0x800
@@ -97,8 +97,17 @@ DECLARE_GLOBAL_DATA_PTR;
  *
  * "mtd erase bl2" already leaves the partition at 0xFF, so the Web
  * failsafe only needs to start writing at this offset.
+ *
+ * With CONFIG_AIROHA_PRELOADER_BL1 the flashed artifact is
+ * bl1-preloader.bin, which already carries the 2 KiB BL1 region in front
+ * of the BL2 FIP.  Writing that image at 0x800 would push the FIP to
+ * 0x1000, so it has to be written from offset 0 instead.
  */
+#ifdef CONFIG_AIROHA_PRELOADER_BL1
+#define FAILSAFE_BL2_WRITE_OFFSET	0
+#else
 #define FAILSAFE_BL2_WRITE_OFFSET	0x800
+#endif
 
 /* Kernel / rootfs upgrade (OpenWrt UBI layout): kernel / rootfs resides
  * in a dynamic UBI volume named "fit" (FIT image containing kernel + dtb
@@ -226,7 +235,9 @@ static const char *fw_to_target(failsafe_fw_t fw)
  * Most partitions are written from offset 0.  The Airoha "bl2" partition
  * is the exception: the bootrom expects the BL2 image at offset 0x800,
  * with the leading bytes left erased (0xFF) — see
- * FAILSAFE_BL2_WRITE_OFFSET.
+ * FAILSAFE_BL2_WRITE_OFFSET.  Boards that flash bl1-preloader.bin
+ * (CONFIG_AIROHA_PRELOADER_BL1, whose image already starts with the 2 KiB
+ * BL1 region) write at offset 0 like everyone else.
  */
 static u64 failsafe_mtd_write_offset(const char *target)
 {
