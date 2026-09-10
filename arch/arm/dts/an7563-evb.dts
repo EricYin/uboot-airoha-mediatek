@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 /dts-v1/;
 
-/* Bootloader installs ATF here (BL31 resident region, ~256 KiB). */
-/memreserve/ 0x80000000 0x88000;
-
 #include "an7563.dtsi"
 
 / {
@@ -25,19 +22,15 @@
 	};
 };
 
-&gpio0 {
-	status = "okay";
-};
-
-&gpio1 {
-	status = "okay";
-};
-
 &pcie0 {
 	status = "okay";
 };
 
 &pcie1 {
+	status = "okay";
+};
+
+&eth {
 	status = "okay";
 };
 
@@ -57,24 +50,13 @@
 
 		partition@0 {
 			label = "u-boot";
-			reg = <0x0 0x7c000>;
-			read-only;
+			reg = <0x000000 0x080000>;
 		};
 
-		partition@1 {
-			label = "u-boot-env";
-			reg = <0x7c000 0x4000>;
-		};
-
-		partition@2 {
-			label = "art";
-			reg = <0x80000 0x40000>;
-			read-only;
-		};
-
-		partition@3 {
-			label = "firmware";
-			reg = <0xc0000 0x4000000>;
+		partition@80000 {
+			label = "ubi";
+			compatible = "linux,ubi";
+			reg = <0x080000 0x000000>;
 		};
 	};
 };
