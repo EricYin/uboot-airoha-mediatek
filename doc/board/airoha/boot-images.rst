@@ -176,6 +176,30 @@ What the image is used for depends on the layout:
   a FIP container instead of the bare preloader with the trailing CRC32.  Like
   ``bootext.ram`` it is not installed into the ``bl2`` MTD partition.
 
+bl1-preloader.bin (CONFIG_AIROHA_PRELOADER_BL1)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A flat image for the SoCs that do not boot a bare FIP (EN7523, default on for
+them): the 2 KiB BL1 region followed by the very same BL2 FIP as
+``preloader.bin``.  It belongs to the modern split layout
+(``CONFIG_AIROHA_BUILD_MODERN``); the legacy 512 KiB images carry their own
+BL1/prefix and use ``preloader.bin`` as is.
+
+.. code-block:: text
+
+    0x00000  BL1 from the blob set, padded/truncated to 0x800
+    0x00800  BL2 FIP (a verbatim copy of preloader.bin)
+
+Built by ``tools/build_airoha/Makefile`` right after ``preloader.bin``:
+
+.. code-block:: sh
+
+    cat <bl1.bin> > bl1-preloader.bin
+    truncate -s 2048 bl1-preloader.bin
+    cat preloader.bin >> bl1-preloader.bin
+
+The blob set has to provide ``bl1.bin``.
+
 chainloader images (CONFIG_AIROHA_BUILD_CHAINLOADER)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -232,6 +256,7 @@ Image                   Selected by                     OpenWrt artifact name
 ``bl2-bl31-uboot.bin``  ``AIROHA_BUILD_LEGACY``         ``<soc>-<board>-bl2-bl31-uboot.bin``
                         without ``AIROHA_LEGACY_BL1``
 ``preloader.bin``       ``AIROHA_PRELOADER``            ``<soc>-<board>-ubi-preloader.bin``
+``bl1-preloader.bin``   ``AIROHA_PRELOADER_BL1``        ``<soc>-<board>-bl1-preloader.bin``
 ``bl31-uboot.fip``      ``AIROHA_BUILD_MODERN``            ``<soc>-<board>-ubi-bl31-uboot.fip``
 chainloader images      ``AIROHA_BUILD_CHAINLOADER``    ``<board>-chainload-uboot.itb``
 ``bootext.ram``         ``AIROHA_BOOTEXT_RAM``          ``<soc>-bootext.ram``
