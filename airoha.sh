@@ -291,6 +291,12 @@ detect_build_features() {
 		AIROHA_PRELOADER="n"
 	fi
 
+	if config_enabled CONFIG_AIROHA_PRELOADER_BL1; then
+		AIROHA_PRELOADER_BL1="y"
+	else
+		AIROHA_PRELOADER_BL1="n"
+	fi
+
 	if config_enabled CONFIG_AIROHA_BOOTEXT_RAM; then
 		AIROHA_BOOTEXT_RAM="y"
 	else
@@ -397,6 +403,16 @@ copy_outputs() {
 		copy_with_md5 "${UBOOT_DIR}/preloader.bin" \
 			"${OUTPUT_DIR}/${OUTPUT_PREFIX}-preloader.bin" \
 			"preloader.bin"
+	fi
+
+	# bl1-preloader.bin: 2 KiB BL1 prefix + the BL2 FIP, needed by EN7523.
+	# CONFIG_AIROHA_PRELOADER_BL1 only exists in the modern split FIP
+	# layout, so the file is only expected there.
+	if [ "${AIROHA_BUILD_MODERN}" = "y" ] && [ "${AIROHA_PRELOADER_BL1}" = "y" ]; then
+		[ -f "${UBOOT_DIR}/bl1-preloader.bin" ] || die "AIROHA_PRELOADER_BL1 enabled, but bl1-preloader.bin was not generated."
+		copy_with_md5 "${UBOOT_DIR}/bl1-preloader.bin" \
+			"${OUTPUT_DIR}/${OUTPUT_PREFIX}-bl1-preloader.bin" \
+			"bl1-preloader.bin"
 	fi
 
 	if [ "${AIROHA_BOOTEXT_RAM}" = "y" ]; then
