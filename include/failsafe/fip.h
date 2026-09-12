@@ -33,6 +33,13 @@
  */
 extern const u8 failsafe_fip_uuid_tb_fw[16];
 
+/*
+ * FIP ToC UUID of the EL3 runtime firmware (BL31) payload:
+ * 47d4086d-4cfe-9846-9b95-2950cbbd5a00, stored on disk in the canonical
+ * text byte order.
+ */
+extern const u8 failsafe_fip_uuid_soc_fw[16];
+
 /**
  * failsafe_fip_check() - does a FIP header start at data + fip_off?
  * @data: image contents
@@ -63,6 +70,27 @@ bool failsafe_fip_check(const void *data, size_t size, size_t fip_off);
 int failsafe_fip_find(const void *data, size_t size, size_t fip_off,
 		      const u8 *uuid, const u8 **payload,
 		      size_t *payload_size, u64 *payload_off);
+
+/**
+ * failsafe_fip_find_at() - find a ToC entry at the first matching FIP
+ * @data: image contents
+ * @size: image size in bytes
+ * @fip_offsets: candidate FIP offsets, probed in order
+ * @num_offsets: number of entries in @fip_offsets
+ * @uuid: ToC entry UUID to look for, or NULL for the first entry
+ * @payload: receives a pointer to the payload inside @data
+ * @payload_size: receives the payload size
+ *
+ * Same as failsafe_fip_find() but probes several FIP offsets (a boot
+ * image may carry its FIP at 0, or behind a BL1 prefix at 0x800).
+ *
+ * Returns 0 on success, -ENOENT when none of the offsets holds a FIP
+ * with the requested entry.
+ */
+int failsafe_fip_find_at(const void *data, size_t size,
+			 const size_t *fip_offsets, size_t num_offsets,
+			 const u8 *uuid, const u8 **payload,
+			 size_t *payload_size);
 
 /**
  * failsafe_fip_validate() - validate a FIP container

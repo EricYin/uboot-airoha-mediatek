@@ -21,6 +21,10 @@
 
 #include <failsafe/storage.h>
 
+#if IS_ENABLED(CONFIG_CMD_UBI)
+#include <ubi_uboot.h>
+#endif
+
 /*
  * Probe whether 'name' refers to a known MTD partition.
  *
@@ -237,4 +241,106 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 
 	printf("\n*** Failsafe upgrade completed ('%s') ***\n\n", target);
 	return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Read path (image inspection / debugging)                           */
+/* ------------------------------------------------------------------ */
+
+#ifdef CONFIG_MTD
+static int read_mtd(const char *target, u64 offset, void *buf, size_t max_len,
+		    size_t *read_len)
+{
+	struct mtd_info *mtd;
+	size_t len, retlen = 0;
+	int ret;
+
+	mtd_probe_devices();
+	mtd = get_mtd_device_nm(target);
+	if (IS_ERR_OR_NULL(mtd))
+		return -ENODEV;
+
+	if (offset >= mtd->size) {
+		put_mtd_device(mtd);
+		return -EINVAL;
+	}
+
+	len = mtd->size - offset;
+	if (len > max_len)
+		len = max_len;
+
+	ret = mtd_read(mtd, offset, len, &retlen, buf);
+	put_mtd_device(mtd);
+
+	/* -EUCLEAN only reports corrected bit flips: the data is good. */
+	if (ret && ret != -EUCLEAN)
+		return -EIO;
+
+	if (read_len)
+		*read_len = retlen;
+
+	return 0;
+}
+#endif /* CONFIG_MTD */
+
+#if IS_ENABLED(CONFIG_CMD_UBI)
+static int read_ubi(const char *target, u64 offset, void *buf, size_t max_len,
+		    size_t *read_len)
+{
+	struct ubi_volume *vol;
+	size_t len;
+	int ret;
+
+	/*
+	 * Attach only when UBI is not up yet: re-attaching would tear down
+	 * and rebuild the volume structures, invalidating an in-flight
+	 * session (e.g. a streamed volume backup).
+	 */
+	if (!ubi_devices[0]) {
+		ret = ubi_ensure_attached();
+		if (ret)
+			return -EIO;
+	}
+
+	vol = ubi_find_volume(target);
+	if (!vol)
+		return -ENODEV;
+
+	if (offset >= (u64)vol->used_bytes)
+		return -EINVAL;
+
+	len = (u64)vol->used_bytes - offset;
+	if (len > max_len)
+		len = max_len;
+
+	ret = ubi_volume_read(target, buf, offset, len);
+	if (ret)
+		return -EIO;
+
+	if (read_len)
+		*read_len = len;
+
+	return 0;
+}
+#endif /* CONFIG_CMD_UBI */
+
+int failsafe_storage_read(const char *target, u64 offset, void *buf,
+			  size_t max_len, size_t *read_len)
+{
+	if (!target || !buf || !max_len)
+		return -EINVAL;
+
+	if (is_mtd_partition(target)) {
+#ifdef CONFIG_MTD
+		return read_mtd(target, offset, buf, max_len, read_len);
+#else
+		return -ENODEV;
+#endif
+	}
+
+#if IS_ENABLED(CONFIG_CMD_UBI)
+	return read_ubi(target, offset, buf, max_len, read_len);
+#else
+	return -ENODEV;
+#endif
 }

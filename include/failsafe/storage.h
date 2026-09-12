@@ -53,4 +53,23 @@ int failsafe_check_capacity(const char *target, u64 mtd_off, size_t size);
 int failsafe_storage_write(const char *target, u64 mtd_off,
 			   const void *data, size_t size);
 
+/**
+ * failsafe_storage_read() - read raw bytes from a storage target
+ * @target: MTD partition or UBI volume name
+ * @offset: byte offset inside the target
+ * @buf: destination buffer
+ * @max_len: maximum number of bytes to read
+ * @read_len: receives the number of bytes actually read (may be NULL)
+ *
+ * If an MTD partition named @target exists it is read through the MTD
+ * API; otherwise @target is treated as a UBI volume ("ubi part ubi" is
+ * attached first).  At most @max_len bytes are read, clamped to the
+ * partition / volume size.
+ *
+ * Returns 0 on success, -ENODEV when the target does not exist, -EINVAL
+ * when @offset is past the end, -EIO on a read error.
+ */
+int failsafe_storage_read(const char *target, u64 offset, void *buf,
+			  size_t max_len, size_t *read_len);
+
 #endif /* _FAILSAFE_STORAGE_H_ */

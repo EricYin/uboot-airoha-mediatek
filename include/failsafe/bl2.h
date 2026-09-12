@@ -13,23 +13,7 @@
 #define _FAILSAFE_BL2_H_
 
 #include <linux/types.h>
-
-#define FAILSAFE_BL2_VERSION_MAX	128
-#define FAILSAFE_BL2_DATE_MAX		64
-
-/**
- * struct failsafe_bl2_info - version banner of a BL2 (preloader) image
- * @found: true when at least the version or the build date was extracted
- * @version: version string, e.g. "v2.10.0 (release):00dba2b"
- * @build_date: build date/time, e.g. "14:09:01, Sep 11 2026"
- *
- * Both strings are empty when nothing could be extracted.
- */
-struct failsafe_bl2_info {
-	bool found;
-	char version[FAILSAFE_BL2_VERSION_MAX];
-	char build_date[FAILSAFE_BL2_DATE_MAX];
-};
+#include <failsafe/version.h>
 
 /**
  * failsafe_bl2_parse_banner() - extract the preloader version banner
@@ -50,7 +34,7 @@ struct failsafe_bl2_info {
  * Returns true when at least the version or the build date was found.
  */
 bool failsafe_bl2_parse_banner(const void *data, size_t size,
-			       struct failsafe_bl2_info *info);
+			       struct failsafe_version_info *info);
 
 /**
  * failsafe_bl2_locate() - locate the BL2 payload inside a boot image

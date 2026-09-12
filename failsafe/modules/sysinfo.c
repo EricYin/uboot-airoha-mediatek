@@ -8,7 +8,8 @@
  * You may not use, copy, modify or distribute this file except in compliance with the license agreement.
  *
  * Failsafe sysinfo module
- * Handles sysinfo (board, RAM, NAND chip model + partitions)
+ * Handles sysinfo (board, RAM, NAND chip model + partitions) and the
+ * manual /atfversion debugging endpoint (flashed BL2 / BL31 banners)
  */
 
 #include <env.h>
@@ -422,6 +423,57 @@ void sysinfo_nand_handler(enum httpd_uri_handler_status status,
 }
 
 /* ------------------------------------------------------------------ */
+/*  atfversion handler (manual debug endpoint)                         */
+/* ------------------------------------------------------------------ */
+
+/*
+ * GET /atfversion - version and build-date banners of the BL2 and BL31
+ * images currently stored in flash.
+ *
+ * Manual debugging aid: no Web UI page uses it, so it just answers with
+ * plain text (like /version).  The banners are read back from the
+ * flashed boot chain, which makes it easy to confirm what a device is
+ * really running after an update.
+ *
+ * The BL31 half is optional (CONFIG_WEBUI_FAILSAFE_BL31): when it is
+ * disabled the board hook reports no BL31 banner and the BL31 lines are
+ * left out of the reply entirely.
+ */
+void atfversion_handler(enum httpd_uri_handler_status status,
+	struct httpd_request *request,
+	struct httpd_response *response)
+{
+	static struct failsafe_version_info bl2, bl31;
+	static char buf[512];
+	int len = 0;
+
+	(void)request;
+
+	if (status != HTTP_CB_NEW)
+		return;
+
+	memset(&bl2, 0, sizeof(bl2));
+	memset(&bl31, 0, sizeof(bl31));
+	failsafe_atf_version_info(&bl2, &bl31);
+
+	len = buf_appendf(buf, sizeof(buf), len,
+		"BL2 version: %s\n"
+		"BL2 build date: %s\n",
+		bl2.version[0] ? bl2.version : "n/a",
+		bl2.build_date[0] ? bl2.build_date : "n/a");
+
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_BL31)
+	len = buf_appendf(buf, sizeof(buf), len,
+		"BL31 version: %s\n"
+		"BL31 build date: %s\n",
+		bl31.version[0] ? bl31.version : "n/a",
+		bl31.build_date[0] ? bl31.build_date : "n/a");
+#endif
+
+	failsafe_http_reply_text(response, 200, buf);
+}
+
+/* ------------------------------------------------------------------ */
 /*  Public registration function                                       */
 /* ------------------------------------------------------------------ */
 
@@ -429,4 +481,5 @@ void sysinfo_register_handlers(struct httpd_instance *inst)
 {
 	httpd_register_uri_handler(inst, "/sysinfo", &sysinfo_handler, NULL);
 	httpd_register_uri_handler(inst, "/sysinfo/nand", &sysinfo_nand_handler, NULL);
+	httpd_register_uri_handler(inst, "/atfversion", &atfversion_handler, NULL);
 }

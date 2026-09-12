@@ -25,6 +25,11 @@ const u8 failsafe_fip_uuid_tb_fw[16] = {
 	0xa5, 0x44, 0xc3, 0x9d, 0x81, 0xc7, 0x3f, 0x0a,
 };
 
+const u8 failsafe_fip_uuid_soc_fw[16] = {
+	0x47, 0xd4, 0x08, 0x6d, 0x4c, 0xfe, 0x98, 0x46,
+	0x9b, 0x95, 0x29, 0x50, 0xcb, 0xbd, 0x5a, 0x00,
+};
+
 bool failsafe_fip_check(const void *data, size_t size, size_t fip_off)
 {
 	if (fip_off > size ||
@@ -112,6 +117,26 @@ int failsafe_fip_find(const void *data, size_t size, size_t fip_off,
 
 	return fip_find_entry(data, size, fip_off, uuid, true, payload,
 			      payload_size, payload_off);
+}
+
+int failsafe_fip_find_at(const void *data, size_t size,
+			 const size_t *fip_offsets, size_t num_offsets,
+			 const u8 *uuid, const u8 **payload,
+			 size_t *payload_size)
+{
+	size_t i;
+
+	if (!fip_offsets || !num_offsets)
+		return -ENOENT;
+
+	for (i = 0; i < num_offsets; i++) {
+		if (failsafe_fip_check(data, size, fip_offsets[i]))
+			return failsafe_fip_find(data, size, fip_offsets[i],
+						 uuid, payload, payload_size,
+						 NULL);
+	}
+
+	return -ENOENT;
 }
 
 int failsafe_fip_validate(const void *data, size_t size, size_t fip_off,

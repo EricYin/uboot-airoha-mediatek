@@ -245,6 +245,26 @@ config WEBUI_FAILSAFE_SIMG
 	  WARNING: writing a wrong image overwrites the whole flash,
 	  including bootloaders and calibration data.
 
+config WEBUI_FAILSAFE_BL31
+	bool "Report the BL31 version banner"
+	default y
+	help
+	  Report the version and build date of the BL31 (ATF EL3 runtime)
+	  currently stored in flash through the manual /atfversion
+	  endpoint, next to the BL2 (preloader) banner.
+
+	  BL31 is usually packed together with BL33 (U-Boot) inside one
+	  FIP, so it is not always independently identifiable - and on
+	  boards where the BL31 partition/volume does not exist, reading it
+	  back just costs a storage read and reports "n/a".  Disabling this
+	  drops the BL31 helper (failsafe/bootimg/bl31.c) from the image
+	  and makes /atfversion report the BL2 banner only.
+
+	  BL31 is stored compressed inside the FIP (LZMA on Airoha, XZ or
+	  raw on MediaTek), so CONFIG_LZMA / CONFIG_XZ must be enabled as
+	  well for the banner to be extractable; without the matching
+	  decoder the BL31 fields stay "n/a".
+
 endif # WEBUI_FAILSAFE_ADVANCED
 
 endif # WEBUI_FAILSAFE

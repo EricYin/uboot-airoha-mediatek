@@ -105,7 +105,7 @@ static void bl2_append(char *dst, size_t dst_sz, const char *src, size_t len)
 }
 
 bool failsafe_bl2_parse_banner(const void *data, size_t size,
-			       struct failsafe_bl2_info *info)
+			       struct failsafe_version_info *info)
 {
 	const u8 *buf = data;
 	size_t pos = 0, run_len = 0;

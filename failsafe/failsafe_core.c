@@ -94,7 +94,7 @@ int __weak failsafe_write_image(const void *data, size_t size, failsafe_fw_t fw)
 
 int __weak failsafe_bl2_version_info(const void *data, size_t size,
 				     failsafe_fw_t fw,
-				     struct failsafe_bl2_info *info)
+				     struct failsafe_version_info *info)
 {
 	(void)data;
 	(void)size;
@@ -104,6 +104,24 @@ int __weak failsafe_bl2_version_info(const void *data, size_t size,
 		info->found = false;
 		info->version[0] = '\0';
 		info->build_date[0] = '\0';
+	}
+
+	return -ENOENT;
+}
+
+int __weak failsafe_atf_version_info(struct failsafe_version_info *bl2,
+				     struct failsafe_version_info *bl31)
+{
+	if (bl2) {
+		bl2->found = false;
+		bl2->version[0] = '\0';
+		bl2->build_date[0] = '\0';
+	}
+
+	if (bl31) {
+		bl31->found = false;
+		bl31->version[0] = '\0';
+		bl31->build_date[0] = '\0';
 	}
 
 	return -ENOENT;

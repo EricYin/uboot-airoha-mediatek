@@ -35,9 +35,10 @@ int failsafe_write_image(const void *data, size_t size,
 extern size_t upload_size;
 
 /* ------------------------------------------------------------------ */
-/*  BL2 (preloader) version banner                                     */
+/*  Boot-chain version banners                                         */
 /* ------------------------------------------------------------------ */
-/* struct failsafe_bl2_info lives in <failsafe/bl2.h>, included above. */
+/* struct failsafe_version_info lives in <failsafe/version.h>, pulled
+ * in through <failsafe/bl2.h> above. */
 
 /**
  * failsafe_bl2_version_info() - extract the BL2 (preloader) banner
@@ -58,7 +59,29 @@ extern size_t upload_size;
  */
 int failsafe_bl2_version_info(const void *data, size_t size,
 			      failsafe_fw_t fw,
-			      struct failsafe_bl2_info *info);
+			      struct failsafe_version_info *info);
+
+/**
+ * failsafe_atf_version_info() - banners of the currently flashed BL2 / BL31
+ * @bl2: output, version banner of the BL2 (preloader) stored in flash
+ * @bl31: output, version banner of the BL31 stored in flash
+ *
+ * Board-level hook implemented in board/airoha/common/failsafe.c and
+ * board/mediatek/common/failsafe.c; the weak default in
+ * failsafe_core.c reports no information.  It reads the boot chain that
+ * is currently stored in flash through the shared storage helper and
+ * extracts the version / build-date banners, so a manual GET on
+ * /atfversion shows what the device is actually running.
+ *
+ * @bl31 is only filled in when CONFIG_WEBUI_FAILSAFE_BL31 is enabled
+ * (BL31 is normally packed together with BL33/U-Boot, so boards may
+ * leave it out); otherwise the boards skip the BL31 lookup entirely.
+ *
+ * Returns 0 when at least one banner was extracted, -ENOENT when
+ * nothing was found, -EINVAL on bad arguments.
+ */
+int failsafe_atf_version_info(struct failsafe_version_info *bl2,
+			      struct failsafe_version_info *bl31);
 
 /**
  * boot_from_mem() - boot an uploaded image staged in DRAM (RAM boot).
@@ -106,6 +129,9 @@ void sysinfo_handler(enum httpd_uri_handler_status status,
 	struct httpd_request *request,
 	struct httpd_response *response);
 void sysinfo_nand_handler(enum httpd_uri_handler_status status,
+	struct httpd_request *request,
+	struct httpd_response *response);
+void atfversion_handler(enum httpd_uri_handler_status status,
 	struct httpd_request *request,
 	struct httpd_response *response);
 

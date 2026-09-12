@@ -377,7 +377,7 @@ done:
 	 *     bl2_date:<build date>
 	 */
 	{
-		struct failsafe_bl2_info bl2;
+		struct failsafe_version_info bl2;
 		int len = 0;
 
 		len = buf_appendf(resp, sizeof(resp), len, "%zu %s",
