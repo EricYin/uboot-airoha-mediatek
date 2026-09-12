@@ -7,6 +7,7 @@ Use U-Boot
    spl_boot
    blkmap
    dfu
+   failsafe_led
    environment
    fdt_overlays
    fit/index
