@@ -48,7 +48,9 @@
 
 	/* ---- AJAX upload to /upload ----
 	 * fieldName: firmware | uboot | initramfs
-	 * Server responds: "<size> <md5>" on success, "fail" on validation error
+	 * Server responds: "<size> <md5>" on success (optionally followed by
+	 * "key:value" lines, e.g. the BL2 banner for bl2/uboot uploads),
+	 * "fail" on validation error
 	 * Success: show MD5/size + type-specific warnings + Proceed button
 	 * Failure: show inline error with retry button
 	 */
@@ -97,8 +99,11 @@
 				return;
 			}
 
-			/* Success: show MD5/size + type-specific warnings */
-			var p = r.split(" ");
+			/* Success: show MD5/size + type-specific warnings.
+			 * The first response line is "<size> <md5>"; any extra
+			 * "key:value" lines (e.g. the BL2 banner reported for
+			 * bl2/uboot uploads) are ignored here. */
+			var p = r.split("\n")[0].split(" ");
 			var m = d.getElementById("md5-value");
 			var sz = d.getElementById("size-value");
 			if (m) m.textContent = p[1];
