@@ -28,6 +28,8 @@
  */
 
 #include <errno.h>
+#include <stdio.h>
+#include <linux/kconfig.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <asm/unaligned.h>
@@ -36,6 +38,13 @@
 #include <failsafe/image.h>
 
 #include "failsafe_validate.h"
+
+/*
+ * This object is only built with the master switch on (see
+ * board/mediatek/common/Makefile).  Guard the contents so a direct object
+ * build with the switch off stays consistent with the header stub.
+ */
+#if IS_ENABLED(CONFIG_MTK_FAILSAFE_VALIDATE)
 
 /* ------------------------------------------------------------------ */
 /*  BL2 (preloader) header detection                                   */
@@ -162,7 +171,11 @@ static int failsafe_validate_firmware(const void *data, size_t size)
 int failsafe_validate_image_content(const void *data, size_t size,
 				    failsafe_fw_t fw)
 {
+	const char *name = failsafe_fw_type_name(fw);
+	bool checked = false;
 	int ret = 0;
+
+	printf("Failsafe: validating '%s' image (%zu bytes)\n", name, size);
 
 	/* Per-type structural validation.  Each validator is gated by its
 	 * own Kconfig toggle (board/mediatek/Kconfig, "Failsafe image
@@ -172,28 +185,39 @@ int failsafe_validate_image_content(const void *data, size_t size,
 	switch (fw) {
 	case FW_TYPE_BL2:
 #if defined(CONFIG_MTK_FAILSAFE_VALIDATE_BL2)
+		checked = true;
 		ret = failsafe_validate_bl2(data, size);
-		if (ret)
-			return ret;
 #endif
 		break;
 	case FW_TYPE_FIP:
 #if defined(CONFIG_MTK_FAILSAFE_VALIDATE_FIP)
+		checked = true;
 		ret = failsafe_validate_fip(data, size);
-		if (ret)
-			return ret;
 #endif
 		break;
 	case FW_TYPE_FW:
 #if defined(CONFIG_MTK_FAILSAFE_VALIDATE_FIRMWARE)
+		checked = true;
 		ret = failsafe_validate_firmware(data, size);
-		if (ret)
-			return ret;
 #endif
 		break;
 	default:
 		break;
 	}
 
-	return ret;
+	if (ret) {
+		printf("Failsafe: '%s' image validation FAILED (%d)\n",
+		       name, ret);
+		return ret;
+	}
+
+	if (!checked)
+		printf("Failsafe: '%s' image validation skipped "
+		       "(no check enabled)\n", name);
+	else
+		printf("Failsafe: '%s' image validation OK\n", name);
+
+	return 0;
 }
+
+#endif /* IS_ENABLED(CONFIG_MTK_FAILSAFE_VALIDATE) */

@@ -136,8 +136,13 @@ int failsafe_validate_image(const void *data, size_t size, failsafe_fw_t fw)
 	 * this switch.  When the variable is unset, validation stays
 	 * enabled (default).
 	 */
-	if (env_get_yesno("failsafe_validate") == 0)
+#if IS_ENABLED(CONFIG_MTK_FAILSAFE_VALIDATE)
+	if (env_get_yesno("failsafe_validate") == 0) {
+		printf("Failsafe: structural image validation disabled by "
+		       "the 'failsafe_validate' environment variable\n");
 		return 0;
+	}
+#endif
 
 	return failsafe_validate_image_content(data, size, fw);
 }
