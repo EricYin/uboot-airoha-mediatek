@@ -16,6 +16,7 @@
 #include <net/mtk_httpd.h>
 #include <linux/types.h>
 #include <failsafe/fw_type.h>
+#include <failsafe/bl2.h>
 #include <failsafe/helpers.h>
 
 /* ------------------------------------------------------------------ */
@@ -27,26 +28,16 @@ int failsafe_validate_image(const void *data, size_t size,
 int failsafe_write_image(const void *data, size_t size,
 			 failsafe_fw_t fw);
 
+/*
+ * Uploaded image staged by failsafe/modules/upgrade.c, consumed by the
+ * board RAM-boot hook (boot_from_mem).
+ */
+extern size_t upload_size;
+
 /* ------------------------------------------------------------------ */
 /*  BL2 (preloader) version banner                                     */
 /* ------------------------------------------------------------------ */
-
-#define FAILSAFE_BL2_VERSION_MAX	128
-#define FAILSAFE_BL2_DATE_MAX		64
-
-/**
- * struct failsafe_bl2_info - version banner of a BL2 (preloader) image
- * @found: true when at least the version or the build date was extracted
- * @version: version string, e.g. "v2.10.0 (release):00dba2b"
- * @build_date: build date/time, e.g. "14:09:01, Sep 11 2026"
- *
- * Both strings are empty when nothing could be extracted.
- */
-struct failsafe_bl2_info {
-	bool found;
-	char version[FAILSAFE_BL2_VERSION_MAX];
-	char build_date[FAILSAFE_BL2_DATE_MAX];
-};
+/* struct failsafe_bl2_info lives in <failsafe/bl2.h>, included above. */
 
 /**
  * failsafe_bl2_version_info() - extract the BL2 (preloader) banner

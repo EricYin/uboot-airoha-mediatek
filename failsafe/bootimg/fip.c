@@ -1,0 +1,160 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (C) 2026 Yuzhii0718 <admin@yuzhii0718.eu.org>
+ *
+ * Failsafe boot-image helper: generic FIP (Firmware Image Package)
+ * parsing shared by the Airoha / MediaTek board code and by the
+ * per-platform image validators.
+ *
+ * On-disk layout (see doc/board/airoha/boot-images.rst):
+ *   header: magic u32 le (0xAA640001) + serial u32 le + flags u64 le
+ *   ToC:    40-byte entries (uuid[16], offset u64 le, size u64 le, flags)
+ *           terminated by an all-zero uuid entry.
+ * Payload offsets are relative to the FIP start.
+ */
+
+#include <errno.h>
+#include <stdio.h>
+#include <linux/string.h>
+#include <asm/unaligned.h>
+
+#include <failsafe/fip.h>
+
+const u8 failsafe_fip_uuid_tb_fw[16] = {
+	0x5f, 0xf9, 0xec, 0x0b, 0x4d, 0x22, 0x3e, 0x4d,
+	0xa5, 0x44, 0xc3, 0x9d, 0x81, 0xc7, 0x3f, 0x0a,
+};
+
+bool failsafe_fip_check(const void *data, size_t size, size_t fip_off)
+{
+	if (fip_off > size ||
+	    size - fip_off < FAILSAFE_FIP_HEADER_SIZE)
+		return false;
+
+	return get_unaligned_le32((const u8 *)data + fip_off) ==
+	       FAILSAFE_FIP_MAGIC;
+}
+
+/*
+ * Walk the ToC at data + fip_off looking for @want_uuid (NULL: the first
+ * non-terminal entry).  With @first_only unset every matching entry is
+ * checked and the first one is reported, which is what the "any entry is
+ * fine" validator of the 'fip' volume needs.
+ *
+ * Returns 0 when an entry was found and its payload is contained in the
+ * image, -ENOENT when no matching entry exists, -EINVAL when a matched
+ * entry points outside the image (the declared offset/size are still
+ * returned so the caller can print them).
+ */
+static int fip_find_entry(const void *data, size_t size, size_t fip_off,
+			  const u8 *want_uuid, bool first_only,
+			  const u8 **payload, size_t *payload_size,
+			  u64 *payload_off)
+{
+	const u8 *base = (const u8 *)data + fip_off;
+	size_t avail, pos;
+	bool found = false;
+
+	avail = size - fip_off - FAILSAFE_FIP_HEADER_SIZE;
+
+	for (pos = 0; pos + FAILSAFE_FIP_TOC_ENTRY_SIZE <= avail;
+	     pos += FAILSAFE_FIP_TOC_ENTRY_SIZE) {
+		const u8 *e = base + FAILSAFE_FIP_HEADER_SIZE + pos;
+		u64 off, len;
+		int i, terminal = 1;
+
+		/* A terminal entry has an all-zero UUID. */
+		for (i = 0; i < 16; i++)
+			if (e[i]) {
+				terminal = 0;
+				break;
+			}
+		if (terminal)
+			break;
+
+		if (want_uuid && memcmp(e, want_uuid, 16))
+			continue;
+
+		off = get_unaligned_le64(e + 16);
+		len = get_unaligned_le64(e + 24);
+
+		if (payload_off)
+			*payload_off = off;
+		if (payload_size)
+			*payload_size = len;
+
+		if (!len || off > size - fip_off ||
+		    len > size - fip_off - off) {
+			if (payload)
+				*payload = NULL;
+			return -EINVAL;
+		}
+
+		if (!found) {
+			if (payload)
+				*payload = base + off;
+			found = true;
+		}
+
+		if (first_only)
+			return 0;
+	}
+
+	return found ? 0 : -ENOENT;
+}
+
+int failsafe_fip_find(const void *data, size_t size, size_t fip_off,
+		      const u8 *uuid, const u8 **payload,
+		      size_t *payload_size, u64 *payload_off)
+{
+	if (!data || !failsafe_fip_check(data, size, fip_off))
+		return -ENOENT;
+
+	return fip_find_entry(data, size, fip_off, uuid, true, payload,
+			      payload_size, payload_off);
+}
+
+int failsafe_fip_validate(const void *data, size_t size, size_t fip_off,
+			  const u8 *want_uuid, const char *what)
+{
+	const u8 *payload;
+	size_t payload_size;
+	u64 off;
+	int ret;
+
+	if (fip_off > size ||
+	    size - fip_off < FAILSAFE_FIP_HEADER_SIZE +
+			     FAILSAFE_FIP_TOC_ENTRY_SIZE) {
+		printf("Failsafe: '%s' image too small for a FIP\n", what);
+		return -EINVAL;
+	}
+
+	if (!failsafe_fip_check(data, size, fip_off)) {
+		printf("Failsafe: '%s' image has no FIP ToC (magic 0x%08x)\n",
+		       what, get_unaligned_le32((const u8 *)data + fip_off));
+		return -EINVAL;
+	}
+
+	/*
+	 * With @want_uuid the entry must be present and contained in the
+	 * image.  Without it every non-terminal entry is checked and an
+	 * empty ToC is accepted (mirrors the original validators).
+	 */
+	ret = fip_find_entry(data, size, fip_off, want_uuid,
+			     want_uuid != NULL, &payload, &payload_size, &off);
+	if (ret == -EINVAL) {
+		printf("Failsafe: '%s' payload (off 0x%llx, len 0x%llx) "
+		       "exceeds image (%zu)\n",
+		       what, (unsigned long long)off,
+		       (unsigned long long)payload_size, size);
+		return -EINVAL;
+	}
+
+	if (ret == -ENOENT && want_uuid) {
+		printf("Failsafe: '%s' FIP has no expected image entry\n",
+		       what);
+		return -EINVAL;
+	}
+
+	return 0;
+}
