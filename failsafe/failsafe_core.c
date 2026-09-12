@@ -91,6 +91,23 @@ int __weak failsafe_write_image(const void *data, size_t size, failsafe_fw_t fw)
 	return -ENOSYS;
 }
 
+int __weak failsafe_bl2_version_info(const void *data, size_t size,
+				     failsafe_fw_t fw,
+				     struct failsafe_bl2_info *info)
+{
+	(void)data;
+	(void)size;
+	(void)fw;
+
+	if (info) {
+		info->found = false;
+		info->version[0] = '\0';
+		info->build_date[0] = '\0';
+	}
+
+	return -ENOENT;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Network reinit notification                                        */
 /* ------------------------------------------------------------------ */

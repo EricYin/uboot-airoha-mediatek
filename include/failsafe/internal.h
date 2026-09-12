@@ -27,6 +27,48 @@ int failsafe_validate_image(const void *data, size_t size,
 int failsafe_write_image(const void *data, size_t size,
 			 failsafe_fw_t fw);
 
+/* ------------------------------------------------------------------ */
+/*  BL2 (preloader) version banner                                     */
+/* ------------------------------------------------------------------ */
+
+#define FAILSAFE_BL2_VERSION_MAX	128
+#define FAILSAFE_BL2_DATE_MAX		64
+
+/**
+ * struct failsafe_bl2_info - version banner of a BL2 (preloader) image
+ * @found: true when at least the version or the build date was extracted
+ * @version: version string, e.g. "v2.10.0 (release):00dba2b"
+ * @build_date: build date/time, e.g. "14:09:01, Sep 11 2026"
+ *
+ * Both strings are empty when nothing could be extracted.
+ */
+struct failsafe_bl2_info {
+	bool found;
+	char version[FAILSAFE_BL2_VERSION_MAX];
+	char build_date[FAILSAFE_BL2_DATE_MAX];
+};
+
+/**
+ * failsafe_bl2_version_info() - extract the BL2 (preloader) banner
+ * @data: uploaded image contents
+ * @size: image size in bytes
+ * @fw: firmware type of the upload (see failsafe_fw_t)
+ * @info: output structure, fully overwritten
+ *
+ * Board-level hook implemented in board/airoha/common/failsafe.c and
+ * board/mediatek/common/failsafe.c; the weak default in
+ * failsafe_core.c reports no information.  @fw tells the board which
+ * uploads may carry a preloader: a direct BL2 upload always does, and
+ * on Airoha the legacy 512 KiB U-Boot image (BL2 + BL31 + U-Boot in one
+ * internal FIP) does as well.
+ *
+ * Returns 0 when @info was filled, -ENOENT when the image carries no
+ * preloader banner, -EINVAL on bad arguments.
+ */
+int failsafe_bl2_version_info(const void *data, size_t size,
+			      failsafe_fw_t fw,
+			      struct failsafe_bl2_info *info);
+
 /**
  * boot_from_mem() - boot an uploaded image staged in DRAM (RAM boot).
  *

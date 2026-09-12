@@ -271,7 +271,7 @@ void upload_handler(enum httpd_uri_handler_status status,
 		    struct httpd_response *response)
 {
 	static char md5_str[33] = "";
-	static char resp[128];
+	static char resp[288];
 	struct httpd_form_value *fw;
 	u8 md5_sum[16];
 	static char hexchars[] = "0123456789abcdef";
@@ -357,10 +357,39 @@ done:
 		md5_str[i * 2 + 1] = hexchars[hex];
 	}
 
-	snprintf(resp, sizeof(resp), "%zu %s", fw->size, md5_str);
+	/*
+	 * The first line keeps the historical "<size> <md5>" format (other
+	 * consumers only look at it); when the board can extract the BL2
+	 * (preloader) banner of the uploaded image, it follows on its own
+	 * lines, one "key:value" pair per field:
+	 *
+	 *     <size> <md5>
+	 *     bl2_version:<version>
+	 *     bl2_date:<build date>
+	 */
+	{
+		struct failsafe_bl2_info bl2;
+		int len = 0;
 
-	response->data = resp;
-	response->size = strlen(response->data);
+		len = buf_appendf(resp, sizeof(resp), len, "%zu %s",
+				  fw->size, md5_str);
+
+		memset(&bl2, 0, sizeof(bl2));
+		if (!failsafe_bl2_version_info(fw->data, fw->size, fw_type,
+					       &bl2) && bl2.found) {
+			if (bl2.version[0])
+				len = buf_appendf(resp, sizeof(resp), len,
+						  "\nbl2_version:%s",
+						  bl2.version);
+			if (bl2.build_date[0])
+				len = buf_appendf(resp, sizeof(resp), len,
+						  "\nbl2_date:%s",
+						  bl2.build_date);
+		}
+
+		response->data = resp;
+		response->size = len;
+	}
 }
 
 /* ------------------------------------------------------------------ */
