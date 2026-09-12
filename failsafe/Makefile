@@ -21,6 +21,7 @@ subdir-ccflags-y += -DWEBUI_FAILSAFE_GIT_DIRTY=$(WEBUI_FAILSAFE_GIT_DIRTY)
 ifeq ($(CONFIG_XPL_BUILD),)
 
 obj-y += fs.o failsafe_core.o
+obj-$(CONFIG_WEBUI_FAILSAFE_LED) += led.o
 obj-y += bootimg/
 obj-y += modules/
 obj-y += embedded/

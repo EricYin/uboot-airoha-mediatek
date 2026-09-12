@@ -53,6 +53,7 @@
 
 #include <failsafe/fw_type.h>
 #include <failsafe/internal.h>
+#include <failsafe/led.h>
 
 /* ------------------------------------------------------------------ */
 /*  Version handler                                                    */
@@ -285,6 +286,13 @@ void upload_handler(enum httpd_uri_handler_status status,
 	response->info.connection_close = 1;
 	response->info.content_type = "text/plain";
 
+	/*
+	 * The upload is fully received here: show the "upgrade in
+	 * progress" LED effect until /result has committed (or rejected)
+	 * the image.
+	 */
+	failsafe_led_set_phase(FAILSAFE_LED_UPGRADE);
+
 	fw = httpd_request_find_value(request, "fip");
 	if (fw) {
 		fw_type = FW_TYPE_FIP;
@@ -338,6 +346,7 @@ void upload_handler(enum httpd_uri_handler_status status,
 	}
 
 fail:
+	failsafe_led_set_phase(FAILSAFE_LED_FAIL);
 	response->data = "fail";
 	response->size = strlen(response->data);
 	return;
@@ -446,12 +455,18 @@ void result_handler(enum httpd_uri_handler_status status,
 		}
 
 		if (upload_data_id == upload_id) {
-			if (fw_type == FW_TYPE_INITRD)
+			if (fw_type == FW_TYPE_INITRD) {
 				st->ret = 0; /* RAM boot, nothing to flash */
-			else
+			} else {
+				failsafe_led_set_phase(FAILSAFE_LED_UPGRADE);
 				st->ret = failsafe_write_image(upload_data,
 							       upload_size,
 							       fw_type);
+			}
+
+			/* report the outcome with the configured effect */
+			failsafe_led_set_phase(st->ret ? FAILSAFE_LED_FAIL :
+							FAILSAFE_LED_SUCCESS);
 		}
 
 		/* invalidate upload identifier */

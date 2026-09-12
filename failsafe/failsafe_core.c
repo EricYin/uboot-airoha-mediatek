@@ -38,6 +38,7 @@
 #include <vsprintf.h>
 #include <failsafe/fw_type.h>
 #include <failsafe/fs.h>
+#include <failsafe/led.h>
 
 #include <failsafe/internal.h>
 
@@ -344,6 +345,14 @@ int start_web_failsafe(void)
 	reboot_pending = false;
 
 	/*
+	 * Optional LED indication for the idle web UI (env
+	 * 'failsafe_led_ready', with the historical 'failsafe_led' as
+	 * fallback).  The upgrade module switches to its own phases once an
+	 * image is uploaded.
+	 */
+	failsafe_led_set_phase(FAILSAFE_LED_READY);
+
+	/*
 	 * Initialize network subsystem.  net_init() is safe to call
 	 * multiple times (only the first call allocates packet buffers).
 	 */
@@ -539,6 +548,8 @@ int start_web_failsafe(void)
 #endif
 		}
 
+		/* keep the (optional) LED effect rotating */
+		failsafe_led_poll();
 		schedule();
 	}
 
@@ -556,6 +567,9 @@ int start_web_failsafe(void)
 	failsafe_httpd_running = false;
 	mtk_tcp_close_all_conn();
 	eth_halt();
+
+	/* release the LEDs before the caller boots / resets */
+	failsafe_led_off();
 
 	return 0;
 }

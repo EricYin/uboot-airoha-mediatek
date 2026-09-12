@@ -34,6 +34,37 @@ config WEB_FAILSAFE_AFTER_BOOT_FAILURE
 	  run before their TFTP recovery fallback so that a failed boot has
 	  priority over the (endless) TFTP recovery loop.
 
+config WEBUI_FAILSAFE_LED
+	bool "LED status indication"
+	depends on LED
+	default y
+	help
+	  Drive the board LEDs from the failsafe workflow: waiting for the
+	  button, the idle web UI, an upgrade in progress and its result.
+
+	  Labels and effects come from the environment only, so no board
+	  code or device tree change is required:
+
+	    failsafe_led_idle     waiting for a key press (btnchk)
+	    failsafe_led_ready    web failsafe UI running and idle
+	    failsafe_led_upgrade  an image is being flashed
+	    failsafe_led_success  upgrade finished successfully
+	    failsafe_led_fail     upgrade failed
+
+	  An effect is a list of frames separated by ';', each frame is a
+	  comma-separated list of '<led-label> [on|off|toggle|blink] [ms]'.
+	  Frames rotate every 'failsafe_led_period' milliseconds (default
+	  250) and LEDs that are not listed in the current frame are
+	  switched off, so 'a on;b on;c on' rotates over three LEDs.  An
+	  unset variable means no LED activity for that phase, and labels
+	  that do not exist on the board are ignored - one environment
+	  works on several boards.
+
+	  This option is automatically unavailable on boards without LED
+	  support (it depends on CONFIG_LED); when disabled, the LED
+	  handling is compiled out completely and every caller turns into
+	  an empty stub.
+
 choice
 	prompt "Failsafe layout"
 	default WEBUI_FAILSAFE_LAYOUT_UBOOT
