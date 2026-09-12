@@ -478,9 +478,6 @@ void result_handler(enum httpd_uri_handler_status status,
 			 failsafe_auto_reboot_enabled());
 
 		free(response->session_data);
-
-		if (auto_action_pending)
-			mtk_tcp_close_all_conn();
 	}
 }
 
