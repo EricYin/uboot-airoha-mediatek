@@ -7,8 +7,7 @@
  * Standalone validation module used by board/airoha/common/failsafe.c.
  * Every uploaded firmware image is structurally checked before it is
  * flashed.  The generic storage capacity checks (MTD partition size /
- * 'fip' static volume size) are done by failsafe.c
- * (failsafe_validate_image / failsafe_check_mtd_capacity) and are
+ * 'fip' static volume size) are done by the board write path and are
  * always performed, independently of this module's master switch.
  *
  * The whole module is controlled by the master switch
@@ -33,48 +32,34 @@
  *   - FIP mode: BL2 lives in its own partition / image (preloader.bin),
  *     so CONFIG_AIROHA_FAILSAFE_VALIDATE_BL2 always includes the deep
  *     LZMA-layout + trailing CRC32 check for bare preloaders.
+ *
+ * The board independent FIP ToC walk, FIT and legacy uImage checks live
+ * in failsafe/bootimg/ and are shared with the MediaTek board code; this
+ * file keeps only the Airoha specific policy.
  */
 
 #include <errno.h>
+#include <linux/kconfig.h>
 #include <linux/string.h>
-#include <mtd.h>
-#include <linux/mtd/mtd.h>
-#include <asm/byteorder.h>
-#include <image.h>
+#include <asm/unaligned.h>
 #include <u-boot/crc.h>
 #include <failsafe/fw_type.h>
+#include <failsafe/fip.h>
+#include <failsafe/image.h>
 
 #include "failsafe_validate.h"
+
+/*
+ * This object is only built with the master switch on (see
+ * board/airoha/common/Makefile).  Guard the contents so a direct object
+ * build with the switch off stays consistent with the header stub.
+ */
+#if IS_ENABLED(CONFIG_AIROHA_FAILSAFE_VALIDATE)
 
 /* 'u-boot' layout: the internal FIP ToC is at 0x800 in both variants -
  * with BL1 (BL1 @0x0, FIP @0x800, env @0x7c000) and without BL1 (2 KiB
  * zero prefix, FIP @0x800).  See tools/airoha_pack_boot.sh. */
 #define AIROHA_FAILSAFE_LEGACY_FIP_OFF		0x800
-
-/* FIP ToC header: magic(le32) + version(le32) + flags(le64) = 16 bytes;
- * each ToC entry: uuid(16) + offset(le64) + size(le64) + flags(le64) = 40. */
-#define AIROHA_FAILSAFE_FIP_HDR_SIZE		16
-#define AIROHA_FAILSAFE_FIP_TOC_ENTRY_SIZE	40
-#define AIROHA_FAILSAFE_FIP_MAGIC			0xAA640001
-
-/*
- * FIP ToC UUID of the BL2 payload.  The 'bl2' image flashed by the
- * failsafe UI is preloader.bin, produced by:
- *
- *   $(FIPTOOL) create --tb-fw $(BL2_BIN) preloader.bin
- *
- * i.e. a FIP container whose single entry carries the raw preloader.
- * UUID 5ff9ec0b-4d22-3e4d-a544-c39d81c73f0a.  In the FIP ToC the uuid
- * is stored as a uuid_t (big-endian time_low/time_mid/time_hi fields,
- * node id bytes in order), i.e. the canonical text byte order:
- *   5f f9 ec 0b | 4d 22 | 3e 4d | a5 44 | c3 9d 81 c7 3f 0a
- */
-#if defined(CONFIG_AIROHA_FAILSAFE_VALIDATE_BL2)
-static const u8 airoha_fip_uuid_bl2[16] = {
-	0x5f, 0xf9, 0xec, 0x0b, 0x4d, 0x22, 0x3e, 0x4d,
-	0xa5, 0x44, 0xc3, 0x9d, 0x81, 0xc7, 0x3f, 0x0a,
-};
-#endif /* CONFIG_AIROHA_FAILSAFE_VALIDATE_BL2 */
 
 /* 'bl2' (preloader) LZMA layout (AN7563/AN7581/AN7583):
  *
@@ -96,83 +81,6 @@ static const u8 airoha_fip_uuid_bl2[16] = {
 /*  Per-type image validators                                          */
 /* ------------------------------------------------------------------ */
 
-#if defined(CONFIG_AIROHA_FAILSAFE_VALIDATE_UBOOT) || \
-    defined(CONFIG_AIROHA_FAILSAFE_VALIDATE_BL2) || \
-    defined(CONFIG_AIROHA_FAILSAFE_VALIDATE_FIP)
-/*
- * Validate a FIP (Firmware Image Package) whose header starts at
- * data + fip_off:
- *   - header magic 0xAA640001,
- *   - ToC entries walkable within the image,
- *   - the wanted entry (want_uuid, FIP byte order) carries a payload
- *     fully contained in the image.
- * Pass want_uuid == NULL to accept the ToC as long as it holds at least
- * one non-terminal entry.  FIP payload offsets are relative to the FIP
- * start, hence fip_off + off + len must fit in the image.
- */
-static int failsafe_validate_fip_toc(const void *data, size_t size,
-				     size_t fip_off, const u8 *want_uuid,
-				     const char *what)
-{
-	const u8 *base = (const u8 *)data + fip_off;
-	u32 magic;
-	size_t avail, pos;
-	int found = 0;
-
-	if (fip_off > size ||
-	    size - fip_off < AIROHA_FAILSAFE_FIP_HDR_SIZE +
-			     AIROHA_FAILSAFE_FIP_TOC_ENTRY_SIZE) {
-		printf("Failsafe: '%s' image too small for a FIP\n", what);
-		return -EINVAL;
-	}
-
-	magic = le32_to_cpu(*(const __le32 *)base);
-	if (magic != AIROHA_FAILSAFE_FIP_MAGIC) {
-		printf("Failsafe: '%s' image has no FIP ToC (magic 0x%08x)\n",
-		       what, magic);
-		return -EINVAL;
-	}
-
-	avail = size - fip_off - AIROHA_FAILSAFE_FIP_HDR_SIZE;
-	for (pos = 0; pos + AIROHA_FAILSAFE_FIP_TOC_ENTRY_SIZE <= avail;
-	     pos += AIROHA_FAILSAFE_FIP_TOC_ENTRY_SIZE) {
-		const u8 *e = base + AIROHA_FAILSAFE_FIP_HDR_SIZE + pos;
-		u64 off, len;
-		int i, terminal = 1;
-
-		/* A terminal entry has an all-zero UUID. */
-		for (i = 0; i < 16; i++)
-			if (e[i]) {
-				terminal = 0;
-				break;
-			}
-		if (terminal)
-			break;
-
-		if (!want_uuid || !memcmp(e, want_uuid, 16)) {
-			off = le64_to_cpu(*(const __le64 *)(e + 16));
-			len = le64_to_cpu(*(const __le64 *)(e + 24));
-			found = 1;
-			if (fip_off + off + len > size) {
-				printf("Failsafe: '%s' payload (off 0x%llx, "
-				       "len 0x%llx) exceeds image (%zu)\n",
-				       what, (unsigned long long)off,
-				       (unsigned long long)len, size);
-				return -EINVAL;
-			}
-		}
-	}
-
-	if (want_uuid && !found) {
-		printf("Failsafe: '%s' FIP has no expected image entry\n",
-		       what);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-#endif
-
 #if defined(CONFIG_AIROHA_FAILSAFE_VALIDATE_BL2)
 /*
  * Detect the AN7xxx LZMA BL2 layout from the optimization header: the
@@ -190,9 +98,9 @@ static bool bl2_lzma_layout_ok(const u8 *data, size_t size, u32 *crc)
 	if (size < AIROHA_FAILSAFE_BL2_OPT_HDR_OFF + 0x24 + 4)
 		return false;
 
-	bl22 = le32_to_cpu(*(const __le32 *)(h + 0));
-	bl23 = le32_to_cpu(*(const __le32 *)(h + 4));
-	ft   = le32_to_cpu(*(const __le32 *)(h + 8));
+	bl22 = get_unaligned_le32(h + 0);
+	bl23 = get_unaligned_le32(h + 4);
+	ft   = get_unaligned_le32(h + 8);
 
 	/* Plausible size ranges (mirrors tools/airoha_info_preloader.py) */
 	if (bl22 <= 0x1000 || bl22 >= 0x200000 ||
@@ -204,7 +112,7 @@ static bool bl2_lzma_layout_ok(const u8 *data, size_t size, u32 *crc)
 	if (end != size - 4)
 		return false;
 
-	*crc = le32_to_cpu(*(const __le32 *)(data + size - 4));
+	*crc = get_unaligned_le32(data + size - 4);
 	return true;
 }
 #endif /* CONFIG_AIROHA_FAILSAFE_VALIDATE_BL2 */
@@ -220,13 +128,11 @@ static int failsafe_validate_uboot(const void *data, size_t size)
 	 * 0x800 in both cases, so both are validated as a FIP ToC @0x800.
 	 * Both carry the whole boot chain in one image, so this check
 	 * inherently covers BL2 too.  Size is bounded by the generic
-	 * MTD partition capacity check in
-	 * failsafe_validate_image_content() (must fit the 'u-boot'
-	 * partition), not by a fixed constant.
+	 * MTD partition capacity check in failsafe_validate_image().
 	 */
-	return failsafe_validate_fip_toc(data, size,
-					 AIROHA_FAILSAFE_LEGACY_FIP_OFF,
-					 NULL, "u-boot");
+	return failsafe_fip_validate(data, size,
+				     AIROHA_FAILSAFE_LEGACY_FIP_OFF,
+				     NULL, "u-boot");
 }
 #endif /* CONFIG_AIROHA_FAILSAFE_VALIDATE_UBOOT */
 
@@ -241,24 +147,23 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 		return -EINVAL;
 	}
 
-	magic = le32_to_cpu(*(const __le32 *)data);
+	/* preloader.bin: FIP container wrapping the raw preloader
+	 * ($(FIPTOOL) create --tb-fw bl2.bin preloader.bin).  Validate the
+	 * ToC and that the BL2 payload lies inside the image.
+	 */
+	if (failsafe_fip_check(data, size, 0))
+		return failsafe_fip_validate(data, size, 0,
+					     failsafe_fip_uuid_tb_fw, "bl2");
 
-	if (magic == AIROHA_FAILSAFE_FIP_MAGIC) {
-		/* preloader.bin: FIP container wrapping the raw preloader
-		 * ($(FIPTOOL) create --tb-fw bl2.bin preloader.bin).  Validate
-		 * the ToC and that the BL2 payload lies inside the image.
-		 */
-		return failsafe_validate_fip_toc(data, size, 0,
-						 airoha_fip_uuid_bl2, "bl2");
-	}
+	magic = get_unaligned_le32(data);
 
 	/* A corrupted preloader.bin with a bad header magic still carries
 	 * the BL2 ToC entry at offset 16; a genuine bare preloader would
 	 * never match the 128-bit UUID there by chance. */
-	if (size >= AIROHA_FAILSAFE_FIP_HDR_SIZE +
-		   AIROHA_FAILSAFE_FIP_TOC_ENTRY_SIZE &&
-	    !memcmp((const u8 *)data + AIROHA_FAILSAFE_FIP_HDR_SIZE,
-		    airoha_fip_uuid_bl2, 16)) {
+	if (size >= FAILSAFE_FIP_HEADER_SIZE +
+		   FAILSAFE_FIP_TOC_ENTRY_SIZE &&
+	    !memcmp((const u8 *)data + FAILSAFE_FIP_HEADER_SIZE,
+		    failsafe_fip_uuid_tb_fw, 16)) {
 		printf("Failsafe: 'bl2' image looks like a FIP with a bad "
 		       "header (BL2 ToC entry present, magic 0x%08x)\n",
 		       magic);
@@ -309,89 +214,27 @@ static int failsafe_validate_fip(const void *data, size_t size)
 	/* 'fip' = UBI volume with a FIP (BL31+U-Boot, or the legacy
 	 * BL2+BL31+U-Boot single-FIP).  Any non-empty ToC is accepted.
 	 */
-	return failsafe_validate_fip_toc(data, size, 0, NULL, "fip");
+	return failsafe_fip_validate(data, size, 0, NULL, "fip");
 }
 #endif /* CONFIG_AIROHA_FAILSAFE_VALIDATE_FIP */
 
-#if defined(CONFIG_AIROHA_FAILSAFE_VALIDATE_CHAINLOADER) || \
-    defined(CONFIG_AIROHA_FAILSAFE_VALIDATE_FIRMWARE)
-/* Shared FIT checker for the FIT-based image types. */
-static int failsafe_validate_fit(const void *data, size_t size,
-				 const char *what)
-{
-	if (size < 4) {
-		printf("Failsafe: '%s' image too small (%zu)\n", what, size);
-		return -EINVAL;
-	}
-
-	if (fit_check_format(data, size)) {
-		printf("Failsafe: '%s' image is not a valid FIT\n", what);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-#endif
-
 #if defined(CONFIG_AIROHA_FAILSAFE_VALIDATE_CHAINLOADER)
-/*
- * Validate a legacy uImage (shim-based chainloader):
- * 64-byte header CRC (ih_hcrc) plus payload CRC (ih_dcrc), after
- * verifying the declared payload size fits inside the image.
- */
-static int failsafe_validate_legacy_uiimage(const void *data, size_t size,
-					    const char *what)
-{
-	const struct legacy_img_hdr *hdr = data;
-	size_t dsize;
-
-	if (size < image_get_header_size()) {
-		printf("Failsafe: '%s' legacy image too small (%zu)\n",
-		       what, size);
-		return -EINVAL;
-	}
-	if (!image_check_magic(hdr)) {
-		printf("Failsafe: '%s' has no legacy uImage magic\n", what);
-		return -EINVAL;
-	}
-	if (!image_check_hcrc(hdr)) {
-		printf("Failsafe: '%s' legacy header CRC mismatch\n", what);
-		return -EINVAL;
-	}
-
-	dsize = image_get_data_size(hdr);
-	if (dsize > size - image_get_header_size()) {
-		printf("Failsafe: '%s' legacy payload (0x%zx) exceeds "
-		       "image (%zu)\n", what, dsize, size);
-		return -EINVAL;
-	}
-	if (!image_check_dcrc(hdr)) {
-		printf("Failsafe: '%s' legacy payload CRC mismatch\n", what);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
 static int failsafe_validate_chainloader(const void *data, size_t size)
 {
-	const struct legacy_img_hdr *hdr = data;
-
 	/* The chainloader partition may hold either a legacy uImage
 	 * (shim-based packing) or an OpenWrt-style FIT;
 	 * dispatch on the header magic. */
-	if (size >= image_get_header_size() && image_check_magic(hdr))
-		return failsafe_validate_legacy_uiimage(data, size,
-							"chainloader");
+	if (failsafe_image_is_legacy(data, size))
+		return failsafe_image_validate_legacy(data, size, "chainloader");
 
-	return failsafe_validate_fit(data, size, "chainloader");
+	return failsafe_image_validate_fit(data, size, "chainloader");
 }
 #endif /* CONFIG_AIROHA_FAILSAFE_VALIDATE_CHAINLOADER */
 
 #if defined(CONFIG_AIROHA_FAILSAFE_VALIDATE_FIRMWARE)
 static int failsafe_validate_firmware(const void *data, size_t size)
 {
-	return failsafe_validate_fit(data, size, "firmware");
+	return failsafe_image_validate_fit(data, size, "firmware");
 }
 #endif /* CONFIG_AIROHA_FAILSAFE_VALIDATE_FIRMWARE */
 
@@ -402,7 +245,7 @@ static int failsafe_validate_firmware(const void *data, size_t size)
 int failsafe_validate_image_content(const void *data, size_t size,
 				    failsafe_fw_t fw)
 {
-	int ret;
+	int ret = 0;
 
 	/* Per-type structural validation.  Each validator is gated by its
 	 * own Kconfig toggle (board/airoha/Kconfig, "Failsafe image
@@ -449,5 +292,7 @@ int failsafe_validate_image_content(const void *data, size_t size,
 		break;
 	}
 
-	return 0;
+	return ret;
 }
+
+#endif /* IS_ENABLED(CONFIG_AIROHA_FAILSAFE_VALIDATE) */
