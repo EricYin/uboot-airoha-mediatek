@@ -63,8 +63,11 @@
 #include <mtd.h>
 #include <linux/mtd/mtd.h>
 #include <vsprintf.h>
+#include <linux/kernel.h>
 #include <asm/global_data.h>
+#include <asm/unaligned.h>
 #include <failsafe/fw_type.h>
+#include <failsafe/internal.h>
 
 #ifdef AIROHA_FAILSAFE_VALIDATE
 #include "failsafe_validate.h"
@@ -296,6 +299,282 @@ static int failsafe_recreate_rootfs_data(void)
 
 	printf("Failsafe: 'rootfs_data' recreated\n");
 	return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  BL2 (preloader) version banner                                     */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The preloader embeds a banner built from a few short strings, e.g.
+ * (open-source blob):
+ *
+ *     "v2.10.0\t(release):00dba2b\0Built : 14:09:01, Sep 11 2026\0"
+ *
+ * or (SDK blob):
+ *
+ *     "v2.3():50866bc\0Built : 16:15:20, Feb 20 2024\0"
+ *
+ * tools/airoha_info_preloader.py parses the same strings; the rules
+ * below mirror its version / extra / commit / build-date extraction
+ * without regular expressions:
+ *   - a printable run matching "v<digits>.<digit>..." is the version,
+ *   - when that run carries no '(', the run right after it is appended,
+ *     which reassembles "v2.10.0" + "(release):00dba2b",
+ *   - a run starting with "Built" carries the build date/time.
+ *
+ * The strict "v<digits>.<digit>" shape matters: binary data contains
+ * plenty of short runs like "v3z," that must not be mistaken for a
+ * version banner.
+ */
+
+/* FIP container, see doc/board/airoha/boot-images.rst:
+ *   header: magic u32 le (0xAA640001) + serial u32 le + flags u64
+ *   ToC: 40-byte entries (uuid[16], offset u64 le, size u64 le, flags),
+ *        terminated by an all-zero uuid entry.
+ */
+#define FIP_MAGIC_LE32		0xAA640001
+#define FIP_HEADER_SIZE		16
+#define FIP_TOC_ENTRY_SIZE	40
+#define FIP_TOC_MAX_ENTRIES	32
+
+/*
+ * Offset of the internal FIP in the legacy 512 KiB boot image: the
+ * 2 KiB BL1 (or zero) prefix always precedes it.
+ */
+#define FIP_LEGACY_OFFSET	0x800
+
+/* "tb-fw" (BL2 / trusted boot firmware) UUID, on-disk byte order. */
+static const u8 fip_uuid_tb_fw[16] = {
+	0x5f, 0xf9, 0xec, 0x0b, 0x4d, 0x22, 0x3e, 0x4d,
+	0xa5, 0x44, 0xc3, 0x9d, 0x81, 0xc7, 0x3f, 0x0a,
+};
+
+static const u8 fip_uuid_none[16] = { 0 };
+
+static bool bl2_is_printable(u8 c)
+{
+	return c >= 0x20 && c <= 0x7e;
+}
+
+/*
+ * Return the next run of printable ASCII characters and advance @pos
+ * past it.  Returns NULL at the end of the buffer.
+ */
+static const char *bl2_next_run(const u8 *data, size_t size, size_t *pos,
+				size_t *run_len)
+{
+	size_t start, i = *pos;
+
+	while (i < size && !bl2_is_printable(data[i]))
+		i++;
+
+	start = i;
+	while (i < size && bl2_is_printable(data[i]))
+		i++;
+
+	*pos = i;
+	*run_len = i - start;
+
+	return i > start ? (const char *)(data + start) : NULL;
+}
+
+/* Does @run look like a version banner "v<digits>.<digit>..."? */
+static bool bl2_run_is_version(const char *run, size_t len)
+{
+	size_t i;
+
+	if (len < 4 || run[0] != 'v')
+		return false;
+
+	i = 1;
+	if (run[i] < '0' || run[i] > '9')
+		return false;
+
+	while (i < len && run[i] >= '0' && run[i] <= '9')
+		i++;
+
+	if (i >= len || run[i] != '.')
+		return false;
+
+	i++;
+	return i < len && run[i] >= '0' && run[i] <= '9';
+}
+
+static void bl2_copy(char *dst, size_t dst_sz, const char *src, size_t len)
+{
+	if (!dst_sz)
+		return;
+
+	if (len > dst_sz - 1)
+		len = dst_sz - 1;
+
+	memcpy(dst, src, len);
+	dst[len] = '\0';
+}
+
+/* Append " <src>" to @dst, keeping it NUL-terminated and in bounds. */
+static void bl2_append(char *dst, size_t dst_sz, const char *src, size_t len)
+{
+	size_t used = strlen(dst);
+	size_t space, n;
+
+	if (used + 1 >= dst_sz)
+		return;
+
+	dst[used++] = ' ';
+	dst[used] = '\0';
+
+	space = dst_sz - 1 - used;
+	n = len < space ? len : space;
+	memcpy(dst + used, src, n);
+	dst[used + n] = '\0';
+}
+
+static void airoha_bl2_parse(const u8 *data, size_t size,
+			     struct failsafe_bl2_info *info)
+{
+	size_t pos = 0, run_len = 0;
+	const char *run;
+	bool have_version = false;
+
+	while ((run = bl2_next_run(data, size, &pos, &run_len))) {
+		if (!have_version && bl2_run_is_version(run, run_len)) {
+			size_t half_len = 0;
+			const char *half;
+
+			bl2_copy(info->version, sizeof(info->version), run,
+				 run_len);
+			have_version = true;
+
+			/*
+			 * "v2.10.0" is followed by "(release):00dba2b" in a
+			 * separate run; merge the two.  The peeked run is not
+			 * consumed, so it is still seen by the main loop when
+			 * it is not a continuation.
+			 */
+			if (!strchr(info->version, '(')) {
+				size_t peek = pos;
+
+				half = bl2_next_run(data, size, &peek,
+						    &half_len);
+				if (half && half_len >= 3 && half[0] == '(' &&
+				    memchr(half, ')', half_len))
+					bl2_append(info->version,
+						   sizeof(info->version),
+						   half, half_len);
+			}
+			continue;
+		}
+
+		if (!info->build_date[0] && run_len >= 5 &&
+		    !strncmp(run, "Built", 5)) {
+			const char *p = run + 5;
+			const char *end = run + run_len;
+
+			while (p < end && (*p == ' ' || *p == '\t'))
+				p++;
+			if (p < end && *p == ':')
+				p++;
+			while (p < end && (*p == ' ' || *p == '\t'))
+				p++;
+
+			bl2_copy(info->build_date, sizeof(info->build_date),
+				 p, end - p);
+			continue;
+		}
+	}
+
+	info->found = info->version[0] || info->build_date[0];
+}
+
+/*
+ * Pick the BL2 payload out of an uploaded image.
+ *
+ * Both boot image layouts keep BL2 inside a FIP whose "tb-fw" ToC entry
+ * is the preloader; the legacy 512 KiB image adds the 2 KiB BL1 / zero
+ * prefix in front of it.  Images without a FIP (a bare bl2.bin) are
+ * scanned as a whole.  Restricting the scan to the tb-fw entry keeps the
+ * BL31 / U-Boot strings out of the result.
+ */
+static void airoha_bl2_region(const u8 *data, size_t size,
+			      const u8 **bl2, size_t *bl2_size)
+{
+	static const size_t fip_offsets[] = { 0, FIP_LEGACY_OFFSET };
+	size_t i;
+
+	*bl2 = data;
+	*bl2_size = size;
+
+	for (i = 0; i < ARRAY_SIZE(fip_offsets); i++) {
+		size_t foff = fip_offsets[i];
+		size_t left, entries;
+		const u8 *toc;
+
+		if (foff + FIP_HEADER_SIZE > size)
+			continue;
+
+		if (get_unaligned_le32(data + foff) != FIP_MAGIC_LE32)
+			continue;
+
+		toc = data + foff + FIP_HEADER_SIZE;
+		left = size - foff - FIP_HEADER_SIZE;
+
+		for (entries = 0;
+		     entries < FIP_TOC_MAX_ENTRIES &&
+		     left >= FIP_TOC_ENTRY_SIZE;
+		     entries++, toc += FIP_TOC_ENTRY_SIZE,
+		     left -= FIP_TOC_ENTRY_SIZE) {
+			u64 off, len;
+
+			if (!memcmp(toc, fip_uuid_none, sizeof(fip_uuid_none)))
+				break;	/* terminating entry */
+
+			off = get_unaligned_le64(toc + 16);
+			len = get_unaligned_le64(toc + 24);
+
+			if (memcmp(toc, fip_uuid_tb_fw,
+				   sizeof(fip_uuid_tb_fw)))
+				continue;
+
+			if (!len || off >= size || off + len > size)
+				break;
+
+			*bl2 = data + off;
+			*bl2_size = (size_t)len;
+			return;
+		}
+
+		/* FIP magic but no usable tb-fw entry: fall back to the
+		 * whole-image scan (only one offset can hold the FIP). */
+		break;
+	}
+}
+
+int failsafe_bl2_version_info(const void *data, size_t size,
+			      failsafe_fw_t fw, struct failsafe_bl2_info *info)
+{
+	const u8 *bl2;
+	size_t bl2_size;
+
+	if (!data || !size || !info)
+		return -EINVAL;
+
+	memset(info, 0, sizeof(*info));
+
+	/*
+	 * Only images that really carry a preloader: a direct BL2 upload
+	 * and the legacy 512 KiB U-Boot image (BL2 + BL31 + U-Boot packed
+	 * into one internal FIP).  The modern split FIP
+	 * (bl31-uboot.fip) holds no BL2 at all.
+	 */
+	if (fw != FW_TYPE_BL2 && fw != FW_TYPE_UBOOT)
+		return -ENOENT;
+
+	airoha_bl2_region(data, size, &bl2, &bl2_size);
+	airoha_bl2_parse(bl2, bl2_size, info);
+
+	return info->found ? 0 : -ENOENT;
 }
 
 /* ------------------------------------------------------------------ */
