@@ -17,29 +17,7 @@
 #include <asm/gpio.h>
 #include <string.h>
 #include <ctype.h>
-
-/*
- * Drive a LED through the generic 'led' command.
- *
- * The LED label is taken from the environment variable 'env' so that it
- * can be defined/redefined per board with the standard env mechanism
- * (defenvs/<board>_env) instead of being hard-coded in the device tree.
- *
- * 'state' is anything the 'led' command understands: on / off / toggle /
- * blink <period_ms>.
- */
-static void led_control(const char *env, const char *state)
-{
-	const char *led = env_get(env);
-	char buf[128];
-
-	if (!led || !*led)
-		return;
-
-	snprintf(buf, sizeof(buf), "led %s %s", led, state);
-
-	run_command(buf, 0);
-}
+#include <failsafe/led.h>
 
 static void gpio_power_clr(void)
 {
@@ -251,7 +229,8 @@ static int btnchk_show_help(void)
 
 	printf("Description:\n");
 	printf("  Check configured button/GPIO states. If any key is held for 4 seconds,\n");
-	printf("  the command turns on system LED and runs httpd.\n\n");
+	printf("  the command starts the web failsafe (httpd) and shows its idle LED\n");
+	printf("  effect.\n\n");
 
 	printf("Environment variables:\n");
 	printf("  btnchk_key   Comma-separated button labels (button uclass labels).\n");
@@ -263,16 +242,33 @@ static int btnchk_show_help(void)
 	printf("              Supports optional active-low override with '!'.\n");
 	printf("              Example: setenv btnchk_gpio 'gpio 12,!gpio 13'\n");
 	printf("\n");
-	printf("  btnchk_led   LED label blinked while waiting for a key press.\n");
-	printf("              Driven with the generic 'led' command.\n");
-	printf("              Example: setenv btnchk_led 'red:wan-18'\n");
+
+	printf("LED effects (driven by the failsafe component):\n");
+	printf("  failsafe_led_idle    waiting for a key press\n");
+	printf("  failsafe_led_ready   web failsafe running, waiting for an upload\n");
+	printf("  failsafe_led_upgrade an image was received and is being flashed\n");
+	printf("  failsafe_led_success upgrade finished successfully\n");
+	printf("  failsafe_led_fail    upgrade (or its validation) failed\n");
 	printf("\n");
-	printf("  failsafe_led LED label switched on when the web failsafe is entered.\n");
-	printf("              Example: setenv failsafe_led 'green:status-11'\n");
+	printf("  An effect is a list of frames separated by ';', each frame is a\n");
+	printf("  comma-separated list of '<led-label> [on|off|toggle|blink] [ms]'.\n");
+	printf("  Frames rotate every 'failsafe_led_period' ms (default 250); LEDs not\n");
+	printf("  listed in the current frame are switched off, a frame written as\n");
+	printf("  'off' blanks them all.\n");
+	printf("  Examples:\n");
+	printf("    setenv failsafe_led_ready   'green:power on'\n");
+	printf("    setenv failsafe_led_upgrade 'red:wan on;green:lan on;blue:status on'\n");
+	printf("    setenv failsafe_led_success 'green:power on'\n");
+	printf("    setenv failsafe_led_fail    'red:wan blink 100'\n");
+	printf("\n");
+	printf("  The historical single-LED variables are still honoured:\n");
+	printf("  btnchk_led -> failsafe_led_idle, failsafe_led -> failsafe_led_ready.\n");
 	printf("\n");
 
 	printf("Notes:\n");
-	printf("  - If btnchk_led/failsafe_led are unset, no LED is touched.\n");
+	printf("  - Unset/empty LED variables mean no LED activity for that phase.\n");
+	printf("  - LED indication requires CONFIG_WEBUI_FAILSAFE_LED; without it\n");
+	printf("    (or without CONFIG_LED) the variables above are ignored.\n");
 	printf("  - The reset key is NOT checked: on Airoha platforms it is\n");
 	printf("    reserved for the BootROM emergency upgrade flow.\n");
 	printf("  - Labels that do not exist on the board are silently skipped.\n");
@@ -321,7 +317,13 @@ static int do_btnchk(struct cmd_tbl *cmdtp, int flag, int argc,
 		return CMD_RET_USAGE;
 	}
 
-	led_control("btnchk_led", "blink 250");
+	/*
+	 * LED indication is owned by the failsafe component: it maps the
+	 * phase to the 'failsafe_led_*' environment variables (with the
+	 * historical btnchk_led/failsafe_led as fallbacks) and drives the
+	 * effects, including the software blink, from here on.
+	 */
+	failsafe_led_set_phase(FAILSAFE_LED_IDLE);
 
 	gpio_power_clr();
 
@@ -408,14 +410,12 @@ static int do_btnchk(struct cmd_tbl *cmdtp, int flag, int argc,
 
 	if (!pressed) {
 		printf("btnchk: no configured key is pressed (use 'btnchk help' for setup)\n");
-		/* Let blink run for ~1 second before cleanup */
+		/* Let the idle effect run for ~1 second before cleanup */
 		mdelay(1000);
-		led_control("btnchk_led", "off");
+		failsafe_led_off();
 		btnchk_free_keys(keys, key_count);
 		return CMD_RET_SUCCESS;
 	}
-
-	led_control("btnchk_led", "blink 500");
 
 	if (!button_desc)
 		button_desc = "button";
@@ -460,19 +460,25 @@ static int do_btnchk(struct cmd_tbl *cmdtp, int flag, int argc,
 
 		/*
 		 * udelay() -> schedule() -> cyclic_run() keeps the software
-		 * LED blinking alive while we poll the keys.
+		 * LED blinking alive while we poll the keys; poll() advances
+		 * the effect explicitly as well.
 		 */
+		failsafe_led_poll();
 		mdelay(50);
 	}
 
 	printf("\n");
 
-	led_control("btnchk_led", "off");
-
 	if (counter == 4) {
-		led_control("failsafe_led", "on");
+		/*
+		 * Hand the LED over to the web failsafe: from here on the
+		 * httpd poll loop keeps the 'ready' effect updated.
+		 */
+		failsafe_led_set_phase(FAILSAFE_LED_READY);
 		run_command("httpd", 0);
 	}
+
+	failsafe_led_off();
 
 	btnchk_free_keys(keys, key_count);
 
