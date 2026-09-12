@@ -1427,7 +1427,23 @@ function upload(formFieldName) {
                 location = "/fail.html";
                 return;
             }
-            const [sizeText, md5Text] = responseText.split(" ");
+            /*
+             * First line: "<size> <md5>" (the historical format).
+             * Optional following lines carry extra upload metadata as
+             * "key:value" pairs, currently the BL2 (preloader) banner:
+             *     bl2_version:v2.10.0 (release):00dba2b
+             *     bl2_date:14:09:01, Sep 11 2026
+             */
+            const responseLines = String(responseText).split("\n");
+            const [sizeText, md5Text] = responseLines[0].split(" ");
+            const uploadMeta = {};
+            for (let lineIndex = 1; lineIndex < responseLines.length; lineIndex++) {
+                const separator = responseLines[lineIndex].indexOf(":");
+                if (separator > 0) {
+                    uploadMeta[responseLines[lineIndex].slice(0, separator)] =
+                        responseLines[lineIndex].slice(separator + 1).trim();
+                }
+            }
 
             const filenameElement = document.getElementById("filename");
             if (filenameElement && selectedFileName) {
@@ -1458,6 +1474,20 @@ function upload(formFieldName) {
                 md5Element.innerHTML = `${t("label.md5")}${md5Text}` + (
                     md5Hint ? ` <span class="md5-status ${md5Class}">${md5Hint}</span>` : ""
                 );
+            }
+
+            const bl2VersionElement = document.getElementById("bl2_version");
+            if (bl2VersionElement && uploadMeta.bl2_version) {
+                bl2VersionElement.style.display = "block";
+                bl2VersionElement.textContent =
+                    t("label.bl2_version") + uploadMeta.bl2_version;
+            }
+
+            const bl2DateElement = document.getElementById("bl2_date");
+            if (bl2DateElement && uploadMeta.bl2_date) {
+                bl2DateElement.style.display = "block";
+                bl2DateElement.textContent =
+                    t("label.bl2_date") + uploadMeta.bl2_date;
             }
 
             const upgradeElement = document.getElementById("upgrade");

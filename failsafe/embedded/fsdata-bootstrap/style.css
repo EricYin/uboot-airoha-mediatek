@@ -1174,7 +1174,9 @@ ul li {
 #filename,
 #md5,
 #size,
-#mtd {
+#mtd,
+#bl2_version,
+#bl2_date {
     font-size: 0.9rem;
     color: var(--text);
     max-width: 520px;
