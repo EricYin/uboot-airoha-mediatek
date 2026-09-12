@@ -702,10 +702,13 @@ static int httpd_handle_request(struct httpd_instance *inst,
 			p += 4;
 
 			/*
-			 * make the data aligned by 4.
-			 * the previous 3 CR/LFs can be used as buffer.
+			 * Make the data aligned by 8: libfdt rejects a blob that is
+			 * not 8-byte aligned (FDT_ERR_ALIGNMENT), and uploaded FIT
+			 * images are handed to libfdt by the failsafe validation.
+			 * The previous CR/LFs and the tail of the (already parsed)
+			 * part header are used as the moving buffer.
 			 */
-			val->data = (char *)(((uintptr_t)p) & (~(4 - 1)));
+			val->data = (char *)(((uintptr_t)p) & (~(8 - 1)));
 
 			name_ptr = strstr(formdata[i], name_str);
 			filename_ptr = strstr(formdata[i], filename_str);
