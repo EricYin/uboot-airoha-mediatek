@@ -638,6 +638,7 @@ static int httpd_handle_request(struct httpd_instance *inst,
 	char *formdata_end[MAX_HTTP_FORM_VALUE_ITEMS], *p, *payload_end;
 	char *boundary, *name_ptr, *filename_ptr;
 	u32 i, numformdata = 0, boundarylen;
+	size_t pad;
 	struct httpd_form_value *val;
 
 	static const char name_str[] = "name=";
@@ -701,15 +702,6 @@ static int httpd_handle_request(struct httpd_instance *inst,
 			*p = 0;
 			p += 4;
 
-			/*
-			 * Make the data aligned by 8: libfdt rejects a blob that is
-			 * not 8-byte aligned (FDT_ERR_ALIGNMENT), and uploaded FIT
-			 * images are handed to libfdt by the failsafe validation.
-			 * The previous CR/LFs and the tail of the (already parsed)
-			 * part header are used as the moving buffer.
-			 */
-			val->data = (char *)(((uintptr_t)p) & (~(8 - 1)));
-
 			name_ptr = strstr(formdata[i], name_str);
 			filename_ptr = strstr(formdata[i], filename_str);
 
@@ -724,12 +716,30 @@ static int httpd_handle_request(struct httpd_instance *inst,
 			}
 
 			val->size = formdata_end[i] - p;
+			val->data = p;
 			req->form.count++;
 
-			/* move data if not aligned */
-			if (p != val->data) {
-				memmove((char *)val->data, p, val->size);
-				((char *)val->data)[val->size] = 0;
+			/*
+			 * Make the data aligned by 8: libfdt rejects a blob that is
+			 * not 8-byte aligned (FDT_ERR_ALIGNMENT), and uploaded FIT
+			 * images are handed to libfdt by the failsafe validation.
+			 *
+			 * The data is shifted *forward* into the padding that follows
+			 * it, never backwards into the part header: val->name and
+			 * val->filename point into that header and every handler looks
+			 * its fields up again by name after this loop, so a backward
+			 * shift silently corrupts them ("missing <field>", HTTP 400).
+			 * The forward shift must also keep clear of the next part,
+			 * whose header (and name) is parsed in the following round;
+			 * skip the alignment if the peer used an absurdly short
+			 * boundary that leaves no room.
+			 */
+			pad = (size_t)ALIGN((uintptr_t)p, 8) - (uintptr_t)p;
+			if (pad && val->size + pad + 1 <= (size_t)(payload_end - p) &&
+			    pad <= boundarylen + 2) {
+				memmove(p + pad, p, val->size);
+				p[val->size + pad] = 0;
+				val->data = p + pad;
 			}
 		}
 
