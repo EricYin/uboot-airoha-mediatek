@@ -988,8 +988,13 @@ function ajax(request) {
     const xhr = new XMLHttpRequest();
     xhr.upload.addEventListener("progress", (event) => request.progress?.(event));
     xhr.addEventListener("readystatechange", () => {
-        if (xhr.readyState === 4 && xhr.status === 200) {
+        if (xhr.readyState !== 4) return;
+        if (xhr.status === 200) {
             request.done?.(xhr.responseText);
+        } else {
+            /* Hand the server's rejection to the caller: an ignored non-200
+             * otherwise looks like a button that simply does nothing. */
+            request.fail?.(xhr);
         }
     });
     if (request.timeout) xhr.timeout = request.timeout;

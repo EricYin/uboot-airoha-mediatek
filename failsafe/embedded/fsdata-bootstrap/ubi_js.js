@@ -111,10 +111,30 @@
         return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
 
+    /*
+     * UBI endpoints report failures as JSON with a non-200 status ("missing
+     * volume name", "attach failed", ...).  The shared ajax() helper only
+     * calls done() for HTTP 200, so route the server's reason (or the bare
+     * status code) to `reporter` instead of failing silently.
+     */
+    function ubiAjax(opts, reporter) {
+        var show = reporter || setStatus;
+        opts.fail = function (xhr) {
+            var msg = "";
+            try {
+                msg = JSON.parse(xhr.responseText).error || "";
+            } catch (e) {
+                msg = "";
+            }
+            show(msg || t("ubi.error.http", "Request failed (HTTP $1).").replace("$1", xhr.status), true);
+        };
+        ajax(opts);
+    }
+
     function fetchUbiInfo() {
         var infoEl = document.getElementById("ubi_device_info");
         if (infoEl) infoEl.innerHTML = '<div class="sysinfo-line">' + t("ubi.loading") + '</div>';
-        ajax({
+        ubiAjax({
             url: "/ubi/info",
             done: function (resp) {
                 try {
@@ -135,7 +155,7 @@
     }
 
     function fetchVolumeList() {
-        ajax({
+        ubiAjax({
             url: "/ubi/volumes",
             done: function (resp) {
                 try {
@@ -150,7 +170,7 @@
     }
 
     function fetchMtdList() {
-        ajax({
+        ubiAjax({
             url: "/ubi/mtd_list",
             done: function (resp) {
                 try {
@@ -209,7 +229,7 @@
         var formData = new FormData();
         formData.append("mtd_name", mtdName);
 
-        ajax({
+        ubiAjax({
             url: "/ubi/attach",
             data: formData,
             done: function (resp) {
@@ -232,7 +252,7 @@
         setStatus(t("ubi.status.detaching"));
         var formData = new FormData();
 
-        ajax({
+        ubiAjax({
             url: "/ubi/detach",
             data: formData,
             done: function (resp) {
@@ -274,7 +294,7 @@
         formData.append("type", typeSelect ? typeSelect.value : "dynamic");
         formData.append("skipcheck", skipcheckInput && skipcheckInput.checked ? "1" : "0");
 
-        ajax({
+        ubiAjax({
             url: "/ubi/create",
             data: formData,
             done: function (resp) {
@@ -305,7 +325,7 @@
         var formData = new FormData();
         formData.append("name", name);
 
-        ajax({
+        ubiAjax({
             url: "/ubi/remove",
             data: formData,
             done: function (resp) {
@@ -336,7 +356,7 @@
         formData.append("old_name", oldName);
         formData.append("new_name", newName);
 
-        ajax({
+        ubiAjax({
             url: "/ubi/rename",
             data: formData,
             done: function (resp) {
@@ -360,7 +380,7 @@
         var formData = new FormData();
         formData.append("name", name);
 
-        ajax({
+        ubiAjax({
             url: "/ubi/check",
             data: formData,
             done: function (resp) {
@@ -385,7 +405,7 @@
         // Target mode = inverse of the current state
         formData.append("mode", skip ? "0" : "1");
 
-        ajax({
+        ubiAjax({
             url: "/ubi/skipcheck",
             data: formData,
             done: function (resp) {
@@ -434,7 +454,7 @@
             formData.append("full_size", fullSizeInput.value.trim());
         }
 
-        ajax({
+        ubiAjax({
             url: "/ubi/write",
             data: formData,
             progress: function (event) {
@@ -457,7 +477,7 @@
                     setWriteStatus(t("ubi.error.parse"), true);
                 }
             }
-        });
+        }, setWriteStatus);
     }
 
     function writeVolumeTo(name) {
