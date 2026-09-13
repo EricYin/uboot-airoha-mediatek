@@ -129,15 +129,35 @@ fi
 # Files actually copied by the current build; print_summary only lists these.
 COPIED_FILES=()
 
+# Insert an "_md5-<hash>" tag before the file extension so the failsafe web
+# UI can verify an upload against the filename.  The tag format follows the
+# rule enforced by failsafe/embedded/fsdata-bootstrap/main.js:
+#     /(?:^|[._-])md5-([0-9a-fA-F]{32})(?:$|[._-])/
+# i.e. the tag is delimited by start/".", "_" or "-" on both sides.
+insert_md5_into_name() {
+	local path="$1" md5="$2"
+	local fullbase="${path##*/}"
+	local dir="${path%/*}"
+	local name="${fullbase%.*}"
+	if [ "${name}" = "${fullbase}" ]; then
+		# No extension: tag is simply appended to the basename.
+		echo "${dir:+$dir/}${fullbase}_md5-${md5}"
+	else
+		local ext="${fullbase##*.}"
+		echo "${dir:+$dir/}${name}_md5-${md5}.${ext}"
+	fi
+}
+
 copy_with_md5() {
 	local file=$1
 	local dest=$2
 	local label=$3
-	local md5
+	local md5 md5_dest
 	md5=$(md5sum "$file" | awk '{print $1}')
-	cp -f "$file" "$dest"
-	COPIED_FILES+=("${dest}")
-	info "${label} (md5: ${md5}) -> ${dest}"
+	md5_dest=$(insert_md5_into_name "$dest" "$md5")
+	cp -f "$file" "$md5_dest"
+	COPIED_FILES+=("${md5_dest}")
+	info "${label} (md5: ${md5}) -> ${md5_dest}"
 }
 
 config_enabled() {
