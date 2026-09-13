@@ -1175,6 +1175,62 @@ function ensureSidebarAccentFallback() {
     applyI18n(controlsContainer);
 }
 
+/*
+ * ATF (BL2 / BL31) version row of the "More info" block.
+ *
+ * Reading the banners back from flash costs a storage read (and, for
+ * BL31, a decompression) on the device, so nothing is fetched until the
+ * user presses the button.  The answer is kept in APP_STATE so that
+ * re-rendering the block (language switch, sysinfo refresh) does not
+ * lose it.
+ */
+function renderSysInfoAtf(extra) {
+    const row = document.createElement("div");
+    row.className = "sysinfo-atf-head";
+
+    const section = document.createElement("div");
+    section.className = "sysinfo-section";
+    section.setAttribute("data-sysinfo", "atf");
+    section.textContent = t("sysinfo.atf", "ATF version:");
+    row.appendChild(section);
+
+    const button = document.createElement("button");
+    /* type=button: the sysinfo block lives inside the upload <form>. */
+    button.type = "button";
+    button.className = "button button-sm";
+    button.textContent = t("sysinfo.atf.fetch", "Fetch");
+    row.appendChild(button);
+
+    const output = document.createElement("div");
+    output.className = "sysinfo-atf-output";
+    output.hidden = true;
+    if (APP_STATE.atfText) {
+        output.textContent = APP_STATE.atfText;
+        output.hidden = false;
+    }
+
+    const fetchAtf = async () => {
+        button.disabled = true;
+        output.hidden = false;
+        output.textContent = t("sysinfo.atf.loading", "Reading...");
+        try {
+            const response = await fetch("/atfversion", { cache: "no-store" });
+            if (!response.ok) throw new Error(String(response.status));
+            APP_STATE.atfText = (await response.text()).trim();
+            output.textContent = APP_STATE.atfText;
+        } catch {
+            output.textContent = t("sysinfo.atf.error", "Failed to read the ATF version");
+        } finally {
+            button.disabled = false;
+        }
+    };
+
+    button.addEventListener("click", fetchAtf);
+
+    extra.appendChild(row);
+    extra.appendChild(output);
+}
+
 function renderSysInfo() {
     const sysinfoContainer = document.getElementById("sysinfo");
     let sysinfoData;
@@ -1237,6 +1293,9 @@ function renderSysInfo() {
         compatLine.textContent = t("sysinfo.compat", "Compatible") + " " + boardInfo.compatible;
         extra.appendChild(compatLine);
     }
+
+    /* On-demand ATF (BL2 / BL31) row - never fetched automatically. */
+    renderSysInfoAtf(extra);
 
     if (extra.childNodes.length) {
         details.appendChild(extra);

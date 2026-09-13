@@ -1377,6 +1377,27 @@ ul li {
     font-size: 0.75rem;
 }
 
+/* ── ATF version row (fetched on demand from /atfversion) ───────── */
+.sysinfo-atf-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.sysinfo-atf-head .sysinfo-section {
+    margin-top: 0;
+}
+
+.sysinfo-atf-output {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-align: left;
+    white-space: pre-line;
+}
+
 #ubi_backup_status {
     margin: 12px auto 0;
     text-align: center;
