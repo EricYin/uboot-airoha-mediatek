@@ -14,6 +14,7 @@
  *                                      target partition (MTD) or UBI volume
  *   - boot_from_mem()                — boot an uploaded image from DRAM
  *   - failsafe_bl2_version_info()    — extract the preloader banner
+ *   - failsafe_atf_version_info()    — read the flashed BL2 / BL31 banners
  *
  * Only the Airoha specific policy lives here:
  *   - the uploaded DRAM staging buffer and the RAM-boot fallback address,
@@ -49,6 +50,8 @@
 #include <failsafe/fw_type.h>
 #include <failsafe/internal.h>
 #include <failsafe/bl2.h>
+#include <failsafe/bl31.h>
+#include <failsafe/fip.h>
 #include <failsafe/image.h>
 #include <failsafe/storage.h>
 
@@ -237,7 +240,8 @@ int boot_from_mem(ulong data_load_addr)
 }
 
 int failsafe_bl2_version_info(const void *data, size_t size,
-			      failsafe_fw_t fw, struct failsafe_bl2_info *info)
+			      failsafe_fw_t fw,
+			      struct failsafe_version_info *info)
 {
 	const void *bl2;
 	size_t bl2_size;
@@ -266,4 +270,129 @@ int failsafe_bl2_version_info(const void *data, size_t size,
 		return -ENOENT;
 
 	return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Flashed BL2 / BL31 version banners (GET /atfversion)               */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Scratch area used to read the flashed boot chain: one
+ * FAILSAFE_STORAGE_STATIC_SIZE (1 MiB) fits the whole "fip" UBI volume
+ * and, clamped to its real size by the storage helper, the legacy
+ * 512 KiB "u-boot" partition.  With CONFIG_WEBUI_FAILSAFE_BL31 the BL31
+ * decompression scratch follows it.
+ */
+#define FAILSAFE_ATF_READ_MAX	FAILSAFE_STORAGE_STATIC_SIZE
+
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_BL31)
+#define FAILSAFE_ATF_SCRATCH_SIZE	(FAILSAFE_ATF_READ_MAX + \
+					 FAILSAFE_BL31_SCRATCH_SIZE)
+
+/* Extract the BL31 banner from the "soc-fw" entry of the boot image FIP.
+ * BL31 is LZMA-compressed in the Airoha FIP, so it is expanded into the
+ * second half of the scratch area first.
+ */
+static void airoha_atf_parse_bl31(const void *data, size_t size,
+				  u8 *scratch, size_t scratch_size,
+				  struct failsafe_version_info *info)
+{
+	const u8 *payload;
+	size_t payload_size;
+
+	if (failsafe_fip_find_at(data, size, airoha_bl2_fip_offsets,
+				 ARRAY_SIZE(airoha_bl2_fip_offsets),
+				 failsafe_fip_uuid_soc_fw, &payload,
+				 &payload_size))
+		return;
+
+	failsafe_bl31_parse_banner(payload, payload_size, scratch,
+				   scratch_size, info);
+}
+#else
+#define FAILSAFE_ATF_SCRATCH_SIZE	FAILSAFE_ATF_READ_MAX
+#endif /* CONFIG_WEBUI_FAILSAFE_BL31 */
+
+int failsafe_atf_version_info(struct failsafe_version_info *bl2,
+			      struct failsafe_version_info *bl31)
+{
+	u8 *read_buf;
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_BL31)
+	u8 *bl31_buf;
+#endif
+	size_t read_len;
+	const void *payload;
+	size_t payload_size;
+	int ret;
+
+	if (!bl2 || !bl31)
+		return -EINVAL;
+
+	memset(bl2, 0, sizeof(*bl2));
+	memset(bl31, 0, sizeof(*bl31));
+
+	/*
+	 * The upload staging buffer doubles as the read scratch: it is the
+	 * designated safe DRAM area, and the Web UI hides the fetch button
+	 * while an upload is running, so the two never overlap for the
+	 * normal single-client case.  (A second client uploading at the
+	 * same time would be clobbered - /atfversion is a manual debugging
+	 * endpoint, never polled in the background.)
+	 *
+	 * Split the area into the storage read buffer and the BL31
+	 * decompression scratch.
+	 */
+	read_buf = httpd_get_upload_buffer_ptr(FAILSAFE_ATF_SCRATCH_SIZE);
+	if (!read_buf)
+		return -ENOMEM;
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_BL31)
+	bl31_buf = read_buf + FAILSAFE_ATF_READ_MAX;
+#endif
+
+#ifdef CONFIG_AIROHA_BUILD_LEGACY
+	/*
+	 * Legacy 512 KiB image: BL2 and BL31 share the same internal FIP
+	 * (at 0x800, behind the BL1 / zero prefix) stored in the "u-boot"
+	 * MTD partition.
+	 */
+	ret = failsafe_storage_read("u-boot", 0, read_buf,
+				    FAILSAFE_ATF_READ_MAX, &read_len);
+	if (ret)
+		return ret;
+
+	failsafe_bl2_locate(read_buf, read_len, airoha_bl2_fip_offsets,
+			    ARRAY_SIZE(airoha_bl2_fip_offsets), &payload,
+			    &payload_size);
+	failsafe_bl2_parse_banner(payload, payload_size, bl2);
+
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_BL31)
+	airoha_atf_parse_bl31(read_buf, read_len, bl31_buf,
+			      FAILSAFE_BL31_SCRATCH_SIZE, bl31);
+#endif
+#else
+	/*
+	 * Modern split FIP: BL2 is the "tb-fw" entry of the preloader in
+	 * the "bl2" MTD partition, BL31 the "soc-fw" entry of the FIP in
+	 * the "fip" UBI volume.
+	 */
+	ret = failsafe_storage_read("bl2", 0, read_buf,
+				    FAILSAFE_ATF_READ_MAX, &read_len);
+	if (!ret) {
+		failsafe_bl2_locate(read_buf, read_len, airoha_bl2_fip_offsets,
+				    ARRAY_SIZE(airoha_bl2_fip_offsets),
+				    &payload, &payload_size);
+		failsafe_bl2_parse_banner(payload, payload_size, bl2);
+	}
+
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_BL31)
+	ret = failsafe_storage_read(FAILSAFE_STORAGE_STATIC_TARGET, 0,
+				    read_buf, FAILSAFE_ATF_READ_MAX,
+				    &read_len);
+	if (!ret)
+		airoha_atf_parse_bl31(read_buf, read_len, bl31_buf,
+				      FAILSAFE_BL31_SCRATCH_SIZE, bl31);
+#endif
+#endif
+
+	return (bl2->found || bl31->found) ? 0 : -ENOENT;
 }
