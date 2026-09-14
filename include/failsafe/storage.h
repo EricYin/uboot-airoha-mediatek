@@ -19,6 +19,14 @@
 /* UBI volume whose OpenWrt overlay ("rootfs_data") is rebuilt after a write. */
 #define FAILSAFE_STORAGE_FIT_TARGET	"fit"
 
+/* Bootloader targets, which always live in a raw MTD partition and can
+ * never be a UBI volume: the preloader (BL2), the second stage U-Boot
+ * (chainloader) and the self-contained legacy 512 KiB U-Boot image.
+ */
+#define FAILSAFE_STORAGE_BL2_TARGET		"bl2"
+#define FAILSAFE_STORAGE_CHAINLOADER_TARGET	"chainloader"
+#define FAILSAFE_STORAGE_UBOOT_TARGET		"u-boot"
+
 /**
  * failsafe_check_capacity() - generic storage capacity check
  * @target: MTD partition or UBI volume name
@@ -47,6 +55,10 @@ int failsafe_check_capacity(const char *target, u64 mtd_off, size_t size);
  * dynamic with the image size) and the image is written with
  * "ubi write".  After a FAILSAFE_STORAGE_FIT_TARGET write the OpenWrt
  * "rootfs_data" overlay volume is recreated.
+ *
+ * The bootloader targets (FAILSAFE_STORAGE_{BL2,CHAINLOADER,UBOOT}_TARGET)
+ * are MTD partitions only: when the partition is missing the write fails
+ * with -ENODEV rather than being rerouted to the UBI path.
  *
  * Returns 0 on success, a negative errno otherwise.
  */

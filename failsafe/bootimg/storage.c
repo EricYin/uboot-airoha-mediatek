@@ -9,7 +9,9 @@
  * name exists it is erased and written; otherwise the target is treated
  * as a UBI volume ("rootfs_data" is removed first to free space, the old
  * volume is removed, a new volume is created and the image is written
- * with "ubi write").
+ * with "ubi write").  Bootloader targets (bl2 / chainloader / u-boot)
+ * only ever exist as MTD partitions, so a missing one is reported as an
+ * error instead of being rerouted to the UBI path.
  */
 
 #include <command.h>
@@ -44,6 +46,24 @@ static bool is_mtd_partition(const char *name)
 
 	put_mtd_device(mtd);
 	return true;
+}
+
+/*
+ * Whether 'name' is a bootloader target, i.e. one that only ever exists
+ * as a raw MTD partition (preloader / chainloader / the legacy U-Boot
+ * image) and can never be a UBI volume.
+ *
+ * Without this check a missing partition - a typo, or a board built with
+ * the wrong device tree - made failsafe_storage_write() silently take the
+ * UBI branch and run "ubi create bl2", which fails with a misleading
+ * "not enough PEBs, only 0 available" (or, worse, succeeds and creates a
+ * bogus volume next to the real one).
+ */
+static bool is_mtd_only_target(const char *name)
+{
+	return !strcmp(name, FAILSAFE_STORAGE_BL2_TARGET) ||
+	       !strcmp(name, FAILSAFE_STORAGE_CHAINLOADER_TARGET) ||
+	       !strcmp(name, FAILSAFE_STORAGE_UBOOT_TARGET);
 }
 
 /*
@@ -135,6 +155,14 @@ int failsafe_check_capacity(const char *target, u64 mtd_off, size_t size)
 	if (is_mtd_partition(target))
 		return check_mtd_capacity(target, mtd_off, size);
 
+	/* A bootloader target without its MTD partition is a hard error:
+	 * never report "fits" for something that cannot be written.
+	 */
+	if (is_mtd_only_target(target)) {
+		printf("Failsafe: MTD partition '%s' not found\n", target);
+		return -ENODEV;
+	}
+
 	if (!strcmp(target, FAILSAFE_STORAGE_STATIC_TARGET) &&
 	    size > FAILSAFE_STORAGE_STATIC_SIZE) {
 		/* The "fip" static volume is created at the fixed
@@ -179,6 +207,14 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 			       target, ret);
 			return -EIO;
 		}
+	} else if (is_mtd_only_target(target)) {
+		/* A bootloader stage is always an MTD partition; falling
+		 * back to UBI here would create a bogus volume and hide the
+		 * real problem (missing partition / wrong device tree).
+		 */
+		printf("Failsafe: MTD partition '%s' not found, refusing to "
+		       "fall back to a UBI volume\n", target);
+		return -ENODEV;
 	} else {
 		/* ----- UBI volume ----- */
 		ret = ubi_ensure_attached();
