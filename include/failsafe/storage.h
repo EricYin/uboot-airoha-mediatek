@@ -49,12 +49,14 @@ int failsafe_check_capacity(const char *target, u64 mtd_off, size_t size);
  * @size: image size in bytes
  *
  * If an MTD partition named @target exists it is erased and written.  It
- * is otherwise treated as a UBI volume: "rootfs_data" is removed first to
- * free space, the old volume is removed, a new volume is created ("fip"
- * as a static volume of FAILSAFE_STORAGE_STATIC_SIZE, everything else
- * dynamic with the image size) and the image is written with
- * "ubi write".  After a FAILSAFE_STORAGE_FIT_TARGET write the OpenWrt
- * "rootfs_data" overlay volume is recreated.
+ * is otherwise treated as a UBI volume: for FAILSAFE_STORAGE_FIT_TARGET
+ * the OpenWrt "rootfs_data" overlay volume is removed *first* to free the
+ * PEBs it holds (it is created with the maximum available size), the old
+ * volume is removed, a new volume is created ("fip" as a static volume of
+ * FAILSAFE_STORAGE_STATIC_SIZE, everything else dynamic with the image
+ * size) and the image is written with "ubi write".  After a
+ * FAILSAFE_STORAGE_FIT_TARGET write the OpenWrt overlay volume is
+ * recreated, so the device boots with a fresh "rootfs_data".
  *
  * The bootloader targets (FAILSAFE_STORAGE_{BL2,CHAINLOADER,UBOOT}_TARGET)
  * are MTD partitions only: when the partition is missing the write fails

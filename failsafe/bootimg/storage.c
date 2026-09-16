@@ -109,35 +109,51 @@ static int ubi_ensure_attached(void)
 }
 
 /*
- * Recreate the OpenWrt "rootfs_data" UBI volume during a FIT upgrade.
+ * Remove the OpenWrt "rootfs_data" overlay volume, if present.
  *
- * The rootfs_data volume holds the writable overlay (user config).  After
- * a FIT upgrade we always rebuild it from scratch:
- *   - detect whether it already exists ("ubi check"),
- *   - if it exists, remove it first ("ubi remove"),
- *   - then create a fresh dynamic volume spanning all remaining space
- *     ("-" = maximum available size).
+ * "rootfs_data" is created as a dynamic volume spanning the maximum
+ * available size ("ubi create rootfs_data - dynamic"), so it owns every
+ * free PEB of the UBI device.  The "fit" volume is created from that very
+ * same pool, so the overlay has to be dropped *before* the new "fit"
+ * volume is created - otherwise "ubi create fit <size> dynamic" fails
+ * with "not enough PEBs, only N available" as soon as the device already
+ * carries an overlay, which is the normal case after the first boot.
+ *
+ * A missing volume is not an error: "ubi check" then returns non-zero and
+ * there is nothing to free.
+ */
+static int failsafe_remove_rootfs_data(void)
+{
+	char cmd[256];
+	int ret;
+
+	snprintf(cmd, sizeof(cmd), "ubi check rootfs_data");
+	if (run_command(cmd, 0))
+		return 0;
+
+	snprintf(cmd, sizeof(cmd), "ubi remove rootfs_data");
+	ret = run_command(cmd, 0);
+	if (ret) {
+		printf("Failsafe: remove 'rootfs_data' failed (ret=%d)\n",
+		       ret);
+		return -EIO;
+	}
+
+	return 0;
+}
+
+/*
+ * Rebuild the OpenWrt "rootfs_data" overlay volume after a FIT upgrade.
+ *
+ * A FIT upgrade deliberately starts from a fresh overlay: the volume is
+ * recreated as a dynamic volume spanning all space left over by the new
+ * "fit" volume ("-" = maximum available size).
  */
 static int failsafe_recreate_rootfs_data(void)
 {
 	char cmd[256];
 	int ret;
 
-	/* Detect: does rootfs_data already exist? */
-	snprintf(cmd, sizeof(cmd), "ubi check rootfs_data");
-	ret = run_command(cmd, 0);
-	if (!ret) {
-		/* Exists -> remove it first */
-		snprintf(cmd, sizeof(cmd), "ubi remove rootfs_data");
-		ret = run_command(cmd, 0);
-		if (ret) {
-			printf("Failsafe: remove 'rootfs_data' failed "
-			       "(ret=%d)\n", ret);
-			return -EIO;
-		}
-	}
-
-	/* Create a fresh dynamic volume with the maximum available size */
 	snprintf(cmd, sizeof(cmd), "ubi create rootfs_data - dynamic");
 	ret = run_command(cmd, 0);
 	if (ret) {
@@ -223,6 +239,19 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 			return -EIO;
 		}
 
+		/*
+		 * "fit" shares the UBI device with the OpenWrt overlay
+		 * volume, which is created with the maximum available
+		 * size: the overlay has to be dropped first, otherwise no
+		 * PEBs are left for the new "fit" volume.  It is rebuilt
+		 * once the FIT image has been written (see below).
+		 */
+		if (!strcmp(target, FAILSAFE_STORAGE_FIT_TARGET)) {
+			ret = failsafe_remove_rootfs_data();
+			if (ret)
+				return ret;
+		}
+
 		/* Remove old volume if it exists (best-effort). */
 		snprintf(cmd, sizeof(cmd),
 			 "ubi check %s && ubi remove %s",
@@ -264,9 +293,9 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 		}
 
 		/*
-		 * FIT upgrade: always rebuild the OpenWrt "rootfs_data"
-		 * volume (remove if present, then create) so the device
-		 * boots with a fresh overlay.
+		 * FIT upgrade: rebuild the OpenWrt "rootfs_data" volume
+		 * that was removed above, so the device boots with a fresh
+		 * overlay spanning the space left by the new "fit" volume.
 		 */
 		if (!strcmp(target, FAILSAFE_STORAGE_FIT_TARGET)) {
 			ret = failsafe_recreate_rootfs_data();
