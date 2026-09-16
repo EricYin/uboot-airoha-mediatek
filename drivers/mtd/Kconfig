@@ -250,6 +250,8 @@ config SYS_MAX_FLASH_BANKS_DETECT
 
 source "drivers/mtd/mtk-snand/Kconfig"
 
+source "drivers/mtd/airoha-pnand/Kconfig"
+
 source "drivers/mtd/nand/Kconfig"
 
 config SYS_NAND_MAX_OOBFREE

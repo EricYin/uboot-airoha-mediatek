@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config AIROHA_PARALLEL_NAND
+	bool "Airoha/EcoNet parallel (raw) NAND controller"
+	depends on MTD && DM_MTD && ARCH_AIROHA
+	help
+	  Support for the parallel NAND interface of the Airoha/EcoNet NFI
+	  controller, found on the AN7581/AN7583 family.
+
+	  The NFI block drives either a SPI-NAND device (through the SPI
+	  controller, see CONFIG_AIROHA_SNFI_SPI) or a parallel NAND bus; the
+	  mode is selected by the boot strap and reported by the hardware, so
+	  only one of the two drivers claims the block at runtime.
+
+	  Enable this when the board wires a raw NAND device to the NFI and
+	  describes it with a "airoha,en7581-nand" device tree node.
+
+config AIROHA_PARALLEL_NAND_TIMING
+	bool "Program the parallel NAND AC timing register"
+	depends on AIROHA_PARALLEL_NAND
+	default y
+	help
+	  Program the AC timing register (_PARALLEL_NFI_REGS_ACCCON) instead of
+	  keeping the hardware default.
+
+	  Keep this enabled on the AN7581/AN7583: the register default leaves
+	  every timing field at its maximum, which limits the interface to about
+	  3.9 MiB/s, and the boot stage does not calibrate the register.  The
+	  device table carries the legacy 112.5 MHz value for most devices, so
+	  entries using it are programmed with the 150 MHz setting instead.
+
+	  Only boards whose boot chain already programs a calibrated value for
+	  their APB rate should turn this off.
+
+	  A board whose device needs a different setting can state the raw
+	  register value in the device tree, where it takes precedence over the
+	  value from the device table:
+
+	      airoha,ac-timing = <0x40044326>;
+
+	  Instead of the raw value an ONFI async SDR timing mode can be asked
+	  for, the driver then derives every field and the data sampling strobe
+	  from the ONFI timings:
+
+	      airoha,nand-timing-mode = <1>;      /* 0..5 */
+
+	  Individual fields can be overridden on top of either of the two, which
+	  is what board tuning needs.  Note that a short RE# low time (small
+	  rlt) also needs the strobe, otherwise the data is sampled too early:
+
+	      airoha,ac-timing-rlt = <1>;
+	      airoha,ac-timing-wh = <1>;
+	      airoha,ac-timing-strobe = <1>;

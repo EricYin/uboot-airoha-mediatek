@@ -1,0 +1,207 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/mtd/airoha,en7581-nand.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Airoha EN7581/EN7583 parallel (raw) NAND controller
+
+maintainers:
+  - Zhi You <yuzhii0718@outlook.com>
+
+description: |
+  The NFI block of the Airoha EN7581/EN7583 SoCs drives either a SPI-NAND
+  device over its serial interface or a raw NAND device over its parallel bus.
+  The mode is selected by the boot strap and reported by the hardware; only one
+  of the two drivers claims the block at runtime.  This node describes the
+  parallel bus.
+
+  The controller identifies the attached device by itself (READID against the
+  vendor device table), so the chip subnode is optional and only needed for
+  extra NAND chip properties or partitions.
+
+  The AC timing register (NFI_ACCCON) holds seven cycle counts of the 150 MHz
+  APB clock (poecs, precs, c2r, w2r, wh, wst, rlt).  By default the driver
+  programs the value of the device table entry of the detected device, which is
+  0x40044326 on these SoCs.  The airoha,ac-timing* properties below replace it
+  with the raw register value, with the fields derived from an ONFI async SDR
+  timing mode, or with single field overrides.  Disabling
+  CONFIG_MTD_AIROHA_PNAND_TIMING leaves the register untouched instead, which
+  keeps the boot stage value; the hardware default is the slowest setting.
+
+properties:
+  compatible:
+    const: airoha,en7581-nand
+
+  reg:
+    items:
+      - description: NFI registers
+      - description: ECC registers
+      - description: SPI controller registers, shared with the SPI-NAND mode
+
+  reg-names:
+    items:
+      - const: nfi
+      - const: ecc
+      - const: spi
+
+  clocks:
+    maxItems: 1
+
+  clock-names:
+    items:
+      - const: spi
+
+  pinctrl-names: true
+
+  pinctrl-0: true
+
+  "#address-cells":
+    const: 1
+
+  "#size-cells":
+    const: 0
+
+  partitions:
+    $ref: /schemas/mtd/partitions/partitions.yaml
+
+  airoha,ac-timing:
+    description: |
+      Raw value of the NFI_ACCCON register, bits 31:28 poecs, 27:22 precs,
+      21:16 c2r, 15:12 w2r, 11:8 wh, 7:4 wst and 3:0 rlt.  Takes precedence
+      over airoha,nand-timing-mode and over the single field overrides.
+    $ref: /schemas/types.yaml#/definitions/uint32
+
+  airoha,nand-timing-mode:
+    description: |
+      ONFI async SDR timing mode (0..5) to derive all NFI_ACCCON fields from,
+      as well as the data sampling strobe of NFI_DEBUG_CON1 that the modes with
+      a short RE# low time need.  Ignored when airoha,ac-timing is present.
+    $ref: /schemas/types.yaml#/definitions/uint32
+    minimum: 0
+    maximum: 5
+
+  airoha,ac-timing-poecs:
+    description: Override the poecs field (CS post access time).
+    $ref: /schemas/types.yaml#/definitions/uint32
+    maximum: 15
+
+  airoha,ac-timing-precs:
+    description: Override the precs field (CS pre access time).
+    $ref: /schemas/types.yaml#/definitions/uint32
+    maximum: 63
+
+  airoha,ac-timing-c2r:
+    description: Override the c2r field (NCEB low to NREB low).
+    $ref: /schemas/types.yaml#/definitions/uint32
+    maximum: 63
+
+  airoha,ac-timing-w2r:
+    description: Override the w2r field (NREB high to NREB low).
+    $ref: /schemas/types.yaml#/definitions/uint32
+    maximum: 15
+
+  airoha,ac-timing-wh:
+    description: Override the wh field (RE#/WE# high time).
+    $ref: /schemas/types.yaml#/definitions/uint32
+    maximum: 15
+
+  airoha,ac-timing-wst:
+    description: Override the wst field (WE# low time).
+    $ref: /schemas/types.yaml#/definitions/uint32
+    maximum: 15
+
+  airoha,ac-timing-rlt:
+    description: |
+      Override the rlt field (RE# low time).  Shortening it also needs
+      airoha,ac-timing-strobe, otherwise the data is sampled too early.
+    $ref: /schemas/types.yaml#/definitions/uint32
+    maximum: 15
+
+  airoha,ac-timing-strobe:
+    description: |
+      Data sampling delay in APB cycles (NFI_DEBUG_CON1 bits 4:3).  Only
+      written when this property or airoha,nand-timing-mode selects it; the
+      hardware default is left in place otherwise.
+    $ref: /schemas/types.yaml#/definitions/uint32
+    minimum: 0
+    maximum: 3
+
+patternProperties:
+  "^nand@[a-f0-9]+$":
+    $ref: raw-nand-chip.yaml#
+    unevaluatedProperties: false
+
+required:
+  - compatible
+  - reg
+  - reg-names
+  - clocks
+  - clock-names
+
+unevaluatedProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/clock/en7523-clk.h>
+
+    scuclk: clock-controller {
+        #clock-cells = <1>;
+    };
+
+    pinctrl {
+        pnand_pins: pnand-pins {
+            /* parallel NAND pin group of the SoC */
+        };
+    };
+
+    soc {
+        #address-cells = <2>;
+        #size-cells = <2>;
+
+        nand@1fa11000 {
+            compatible = "airoha,en7581-nand";
+            reg = <0x0 0x1fa11000 0x0 0x600>,
+                  <0x0 0x1fa12000 0x0 0x200>,
+                  <0x0 0x1fa10000 0x0 0x140>;
+            reg-names = "nfi", "ecc", "spi";
+
+            clocks = <&scuclk EN7523_CLK_SPI>;
+            clock-names = "spi";
+
+            pinctrl-names = "default";
+            pinctrl-0 = <&pnand_pins>;
+
+            #address-cells = <1>;
+            #size-cells = <0>;
+        };
+    };
+
+  - |
+    #include <dt-bindings/clock/en7523-clk.h>
+
+    scuclk: clock-controller {
+        #clock-cells = <1>;
+    };
+
+    soc {
+        #address-cells = <2>;
+        #size-cells = <2>;
+
+        nand@1fa11000 {
+            compatible = "airoha,en7581-nand";
+            reg = <0x0 0x1fa11000 0x0 0x600>,
+                  <0x0 0x1fa12000 0x0 0x200>,
+                  <0x0 0x1fa10000 0x0 0x140>;
+            reg-names = "nfi", "ecc", "spi";
+
+            clocks = <&scuclk EN7523_CLK_SPI>;
+            clock-names = "spi";
+
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            /* Read and write the bus with the ONFI mode 4 timing. */
+            airoha,nand-timing-mode = <4>;
+        };
+    };
