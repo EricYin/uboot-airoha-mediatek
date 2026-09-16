@@ -194,6 +194,30 @@
 			};
 		};
 
+		/*
+		 * Parallel NAND mode of the same NFI block: mutually
+		 * exclusive with spi@1fa10000 above, only one of them may
+		 * be enabled at a time.
+		 */
+		nand: nand@1fa11000 {
+			compatible = "airoha,en7581-nand";
+			reg = <0x0 0x1fa11000 0x0 0x600>,
+			      <0x0 0x1fa12000 0x0 0x200>,
+			      <0x0 0x1fa10000 0x0 0x140>;
+			reg-names = "nfi", "ecc", "spi";
+
+			clocks = <&scuclk EN7523_CLK_SPI>;
+			clock-names = "spi";
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&pnand_pins>;
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			status = "disabled";
+		};
+
 		mmc0: mmc@1fa0e000 {
 			compatible = "mediatek,mt7622-mmc";
 			reg = <0x0 0x1fa0e000 0x0 0x1000>,
@@ -370,6 +394,13 @@
 
 				interrupt-controller;
 				#interrupt-cells = <2>;
+
+				pnand_pins: pnand-pins {
+					mux {
+						groups = "pnand";
+						function = "pnand";
+					};
+				};
 			};
 		};
 
