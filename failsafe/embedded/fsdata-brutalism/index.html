@@ -45,8 +45,9 @@
 
 		<p data-i18n="index.reboot_section">&#9654; SYSTEM REBOOT</p>
 		<form id="form-reboot" onsubmit="return false;">
-			<p><input type="button" id="btn-reboot" data-i18n-attr="value:index.reboot_btn" value="[ &#8635; Reboot Now ]" onclick="brutalismReboot(false)" /></p>
-			<p><input type="button" id="btn-reboot-failsafe" data-i18n-attr="value:index.reboot_failsafe_btn" value="[ &#8635; Reboot To Failsafe ]" onclick="brutalismReboot(true)" /></p>
+			<p><input type="button" id="btn-reboot" data-i18n-attr="value:index.reboot_btn" value="[ &#8635; Reboot Now ]" onclick="brutalismReboot('normal')" /></p>
+			<p><input type="button" id="btn-boot-system" data-i18n-attr="value:index.boot_btn" value="[ &#9654; Boot System ]" onclick="brutalismReboot('boot')" /></p>
+			<p><input type="button" id="btn-reboot-failsafe" data-i18n-attr="value:index.reboot_failsafe_btn" value="[ &#8635; Reboot To Failsafe ]" onclick="brutalismReboot('failsafe')" /></p>
 		</form>
 
 		<div id="upload-result" style="display:none;">

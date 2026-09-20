@@ -47,7 +47,13 @@
 			 */
 			var params = new URLSearchParams(window.location.search);
 			var mode = params.get("mode");
-			var url = (mode === "failsafe") ? "/reboot-failsafe" : "/reboot";
+			var url;
+			if (mode === "failsafe")
+				url = "/reboot-failsafe";
+			else if (mode === "boot")
+				url = "/boot";
+			else
+				url = "/reboot";
 
 			/* Small delay so the "REBOOT IN PROGRESS" UI is visible to the user. */
 			setTimeout(function () {

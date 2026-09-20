@@ -161,15 +161,19 @@
 	};
 
 	/* ---- Reboot control: navigate to /reboot.html first, then trigger
-	 * the actual reset from that page once it has finished loading.
-	 * failsafe=true: reboot back into failsafe mode (sets env then resets)
-	 * failsafe=false: normal reboot
-	 * We MUST NOT send the GET /reboot request here because the device
-	 * would reset before /reboot.html (its visual feedback page) could
-	 * be fetched, leaving the browser with no resources to render.
+	 * the actual action from that page once it has finished loading.
+	 *   mode="failsafe": reboot back into failsafe mode (sets env then resets)
+	 *   mode="boot":     run bootcmd and boot the installed firmware directly
+	 *   mode="normal" (default, also for legacy falsy arg): normal reboot
+	 * We MUST NOT send the GET /reboot (or /boot) request here because the
+	 * device would reset/boot before /reboot.html (its visual feedback
+	 * page) could be fetched, leaving the browser with no resources to render.
 	 */
-	w.brutalismReboot = function (failsafe) {
-		w.location = "/reboot.html?mode=" + (failsafe ? "failsafe" : "normal");
+	w.brutalismReboot = function (mode) {
+		var m = (mode === "failsafe") ? "failsafe" :
+			(mode === "boot") ? "boot" : "normal";
+
+		w.location = "/reboot.html?mode=" + m;
 	};
 
 	/* ---- Language switcher ---- */

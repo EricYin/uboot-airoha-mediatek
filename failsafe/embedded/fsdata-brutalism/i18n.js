@@ -23,6 +23,7 @@
 			"index.reboot_section": "\u25B6 SYSTEM REBOOT",
 			"index.reboot_btn": "[ \u21BB Reboot Now ]",
 			"index.reboot_failsafe_btn": "[ \u21BB Reboot To Failsafe ]",
+			"index.boot_btn": "[ \u25B6 Boot System ]",
 			"index.ticker": "\u26A0\uFE0F WARNING: THIS IS FAILSAFE RECOVERY MODE \u26A0\uFE0F DO NOT POWER OFF DURING FLASH \u26A0\uFE0F ALL DATA MAY BE LOST \u26A0\uFE0F PROCEED WITH CAUTION \u26A0\uFE0F AIROHA SEMICONDUCTOR \u26A0\uFE0F ",
 
 			/* Upload confirmation (shown after AJAX upload on index) */
@@ -114,6 +115,7 @@
 			"index.reboot_section": "\u25B6 系统重启",
 			"index.reboot_btn": "[ \u21BB 立即重启 ]",
 			"index.reboot_failsafe_btn": "[ \u21BB 重启至 Failsafe ]",
+			"index.boot_btn": "[ \u25B6 直接启动系统 ]",
 			"index.ticker": "\u26A0\uFE0F 警告：此为故障安全恢复模式 \u26A0\uFE0F 刷写过程中请勿断电 \u26A0\uFE0F 所有数据可能丢失 \u26A0\uFE0F 请谨慎操作 \u26A0\uFE0F AIROHA 半导体 \u26A0\uFE0F ",
 
 			/* 上传确认（AJAX 后在 index 上显示） */
