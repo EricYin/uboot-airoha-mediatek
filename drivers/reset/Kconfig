@@ -80,6 +80,13 @@ config RESET_BRCMSTB_RESCAL
 	  If you wish to use reset resources managed by the Broadcom
 	  Reset Controller, say Y here. Otherwise, say N.
 
+config RESET_ECONET
+	bool "Reset controller driver for EcoNet SoCs"
+	depends on DM_RESET && ARCH_ECONET
+	default y
+	help
+	  Support for reset controller on EcoNet SoCs.
+
 config RESET_UNIPHIER
 	bool "Reset controller driver for UniPhier SoCs"
 	depends on ARCH_UNIPHIER
