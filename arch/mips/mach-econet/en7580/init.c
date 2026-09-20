@@ -57,24 +57,14 @@ int dram_init(void)
 
 int dram_init_banksize(void)
 {
-	int bank;
-
-	gd->bd->bi_dram[0].start = gd->ram_base;
-	gd->bd->bi_dram[0].size = gd->ram_size;
-
-	for (bank = 1; bank < CONFIG_NR_DRAM_BANKS; bank++) {
-		gd->bd->bi_dram[bank].start = 0;
-		gd->bd->bi_dram[bank].size = 0;
-	}
-
 	return 0;
 }
 
 #ifdef CONFIG_OF_SYSTEM_SETUP
 int ft_system_setup(void *blob, struct bd_info *bd)
 {
-	u64 start[1] = { bd->bi_dram[0].start };
-	u64 size[1] = { bd->bi_dram[0].size };
+	u64 start[1] = { gd->ram_base };
+	u64 size[1] = { gd->ram_size };
 
 	return fdt_fixup_memory_banks(blob, start, size, 1);
 }
