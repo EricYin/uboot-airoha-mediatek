@@ -18,26 +18,6 @@
 
 #include "airoha-common.h"
 
-/* GPIOs */
-#define REG_GPIO_CTRL				0x0000
-#define REG_GPIO_DATA				0x0004
-#define REG_GPIO_INT				0x0008
-#define REG_GPIO_INT_EDGE			0x000c
-#define REG_GPIO_INT_LEVEL			0x0010
-#define REG_GPIO_OE				0x0014
-#define REG_GPIO_CTRL1				0x0020
-#define REG_GPIO_CTRL2				0x0060
-#define REG_GPIO_CTRL3				0x0064
-#define REG_GPIO_DATA1				0x0070
-#define REG_GPIO_OE1				0x0078
-#define REG_GPIO_INT1				0x007c
-#define REG_GPIO_INT_EDGE1			0x0080
-#define REG_GPIO_INT_EDGE2			0x0084
-#define REG_GPIO_INT_EDGE3			0x0088
-#define REG_GPIO_INT_LEVEL1			0x008c
-#define REG_GPIO_INT_LEVEL2			0x0090
-#define REG_GPIO_INT_LEVEL3			0x0094
-
 #define airoha_pinctrl_get_pullup_conf(pinctrl, pin, val)			\
 	airoha_pinctrl_get_conf((pinctrl), AIROHA_PINCTRL_CONFS_PULLUP,		\
 				(pin), (val))
@@ -105,7 +85,7 @@ static const u32 irq_edge_regs[] = {
 	REG_GPIO_INT_EDGE3
 };
 
-static struct airoha_gpiochip_regs airoha_gpiochip_regs = {
+static const struct airoha_pinctrl_gpiochip airoha_gpiochip = {
 	.data = gpio_data_regs,
 	.dir = gpio_dir_regs,
 	.out = gpio_out_regs,
@@ -143,7 +123,7 @@ static int airoha_gpio_set(struct airoha_pinctrl *pinctrl, unsigned int gpio,
 	u8 index = gpio / AIROHA_PIN_BANK_SIZE;
 
 	return regmap_update_bits(pinctrl->regmap,
-				  pinctrl->gpio_regs->data[index],
+				  pinctrl->gpiochip.data[index],
 				  BIT(offset), value ? BIT(offset) : 0);
 }
 
@@ -154,7 +134,7 @@ static int airoha_gpio_get(struct airoha_pinctrl *pinctrl, unsigned int gpio)
 	int err;
 
 	err = regmap_read(pinctrl->regmap,
-			  pinctrl->gpio_regs->data[index], &val);
+			  pinctrl->gpiochip.data[index], &val);
 
 	return err ? err : !!(val & BIT(pin));
 }
@@ -167,7 +147,7 @@ static int airoha_gpio_get_direction(struct airoha_pinctrl *pinctrl, unsigned in
 
 	index = gpio / AIROHA_REG_GPIOCTRL_NUM_PIN;
 	err = regmap_read(pinctrl->regmap,
-			  pinctrl->gpio_regs->dir[index], &val);
+			  pinctrl->gpiochip.dir[index], &val);
 	if (err)
 		return err;
 
@@ -185,7 +165,7 @@ static int airoha_gpio_set_direction(struct airoha_pinctrl *pinctrl,
 	mask = BIT(gpio % AIROHA_PIN_BANK_SIZE);
 	index = gpio / AIROHA_PIN_BANK_SIZE;
 	err = regmap_update_bits(pinctrl->regmap,
-				 pinctrl->gpio_regs->out[index],
+				 pinctrl->gpiochip.out[index],
 				 mask, !input ? mask : 0);
 	if (err)
 		return err;
@@ -195,7 +175,7 @@ static int airoha_gpio_set_direction(struct airoha_pinctrl *pinctrl,
 	index = gpio / AIROHA_REG_GPIOCTRL_NUM_PIN;
 
 	return regmap_update_bits(pinctrl->regmap,
-				  pinctrl->gpio_regs->dir[index], mask,
+				  pinctrl->gpiochip.dir[index], mask,
 				  !input ? mask : 0);
 }
 
@@ -988,7 +968,7 @@ int airoha_pinctrl_probe(struct udevice *dev)
 	if (IS_ERR(pinctrl->chip_scu))
 		return PTR_ERR(pinctrl->chip_scu);
 
-	pinctrl->gpio_regs = &airoha_gpiochip_regs;
+	pinctrl->gpiochip = airoha_gpiochip;
 
 	return 0;
 }
