@@ -26,7 +26,7 @@
 #endif
 
 #if IS_ENABLED(CONFIG_XZ)
-#include <xz/xz.h>
+#include <xz/unxz.h>
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -54,98 +54,11 @@ static bool bl31_is_lzma(const u8 *data, size_t size)
 #endif /* CONFIG_LZMA */
 
 #if IS_ENABLED(CONFIG_XZ)
-/* .xz container magic, see the .xz file format specification. */
-static const u8 bl31_xz_magic[6] = { 0xfd, '7', 'z', 'X', 'Z', 0x00 };
-
+/* .xz container magic, see the .xz file format specification (lib/xz/unxz.h). */
 static bool bl31_is_xz(const u8 *data, size_t size)
 {
-	return size >= sizeof(bl31_xz_magic) &&
-	       !memcmp(data, bl31_xz_magic, sizeof(bl31_xz_magic));
-}
-#endif /* CONFIG_XZ */
-
-/* ------------------------------------------------------------------ */
-/*  Decompressors                                                      */
-/* ------------------------------------------------------------------ */
-
-#if IS_ENABLED(CONFIG_XZ)
-/*
- * lib/xz is the "userspace" flavour of XZ Embedded: it takes its memory
- * from xz_malloc() and its kfree()/vfree() are no-ops, so the decoder
- * state of every stream would leak.  Remember the handful of blocks the
- * decoder asks for (one xz_dec plus one xz_dec_lzma2 in single-call
- * mode) and release them once xz_dec_end() has run.
- */
-#define BL31_XZ_MAX_ALLOCS	4
-
-static void *bl31_xz_allocs[BL31_XZ_MAX_ALLOCS];
-static unsigned int bl31_xz_nallocs;
-
-/*
- * lib/xz is built with its own CRC32 implementation (-DXZ_INTERNAL_CRC32
- * in lib/xz/Makefile), whose lookup table starts out zeroed and has to be
- * initialised by the caller - without it every stream fails with
- * XZ_DATA_ERROR.  The library does not declare the function for that
- * build, so the prototype is repeated here.
- */
-extern void xz_crc32_init(void);
-
-static bool bl31_xz_ready;
-
-void *xz_malloc(size_t size)
-{
-	void *p = malloc(size);
-
-	if (p && bl31_xz_nallocs < BL31_XZ_MAX_ALLOCS)
-		bl31_xz_allocs[bl31_xz_nallocs++] = p;
-
-	return p;
-}
-
-static void bl31_xz_free_allocs(void)
-{
-	while (bl31_xz_nallocs)
-		free(bl31_xz_allocs[--bl31_xz_nallocs]);
-}
-
-/*
- * Decompress a complete .xz stream into @out.  Single-call mode needs
- * the whole stream as input and decodes in one xz_dec_run(), using @out
- * as the LZMA2 dictionary, so @out must hold the complete result.
- *
- * Returns the number of bytes written, 0 on failure.
- */
-static size_t bl31_unxz(const void *data, size_t size, void *out,
-			size_t out_size)
-{
-	struct xz_buf buf = { 0 };
-	struct xz_dec *dec;
-	size_t out_len = 0;
-
-	if (!bl31_xz_ready) {
-		xz_crc32_init();
-		bl31_xz_ready = true;
-	}
-
-	bl31_xz_nallocs = 0;
-	dec = xz_dec_init(XZ_SINGLE, 0);
-	if (!dec) {
-		bl31_xz_free_allocs();
-		return 0;
-	}
-
-	buf.in = data;
-	buf.in_size = size;
-	buf.out = out;
-	buf.out_size = out_size;
-
-	if (xz_dec_run(dec, &buf) == XZ_STREAM_END)
-		out_len = buf.out_pos;
-
-	xz_dec_end(dec);
-	bl31_xz_free_allocs();
-
-	return out_len;
+	return size >= sizeof(xz_magic) &&
+	       !memcmp(data, xz_magic, sizeof(xz_magic));
 }
 #endif /* CONFIG_XZ */
 
@@ -159,8 +72,12 @@ bool failsafe_bl31_parse_banner(const void *data, size_t size,
 		size_t out_len = 0;
 
 #if IS_ENABLED(CONFIG_XZ)
-		if (bl31_is_xz(buf, size))
-			out_len = bl31_unxz(buf, size, scratch, scratch_size);
+		if (bl31_is_xz(buf, size)) {
+			size_t xz_len = 0;
+
+			if (unxz(buf, size, &xz_len, scratch, scratch_size) == UNXZ_OK)
+				out_len = xz_len;
+		}
 #endif
 #if IS_ENABLED(CONFIG_LZMA)
 		if (!out_len && bl31_is_lzma(buf, size)) {
