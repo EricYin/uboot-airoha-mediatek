@@ -44,6 +44,7 @@
 #include <failsafe/fip.h>
 #include <failsafe/image.h>
 #include <failsafe/storage.h>
+#include <failsafe/cprint.h>
 
 #include "failsafe_validate.h"
 
@@ -113,7 +114,7 @@ int failsafe_validate_image(const void *data, size_t size, failsafe_fw_t fw)
 	int ret;
 
 	if (!size) {
-		printf("Failsafe: empty image\n");
+		cprintln(ERROR, "Failsafe: empty image");
 		return -EINVAL;
 	}
 
@@ -142,8 +143,9 @@ int failsafe_validate_image(const void *data, size_t size, failsafe_fw_t fw)
 	 */
 #if IS_ENABLED(CONFIG_MTK_FAILSAFE_VALIDATE)
 	if (env_get_yesno("failsafe_validate") == 0) {
-		printf("Failsafe: structural image validation disabled by "
-		       "the 'failsafe_validate' environment variable\n");
+		cprintln(CAUTION, "Failsafe: structural image validation "
+			 "disabled by the 'failsafe_validate' environment "
+			 "variable");
 		return 0;
 	}
 #endif
@@ -157,7 +159,8 @@ int failsafe_write_image(const void *data, size_t size, failsafe_fw_t fw)
 
 	/* RAM boot (initramfs FIT or raw "go" image): nothing to flash */
 	if (!target) {
-		printf("Failsafe: no flash target for firmware type %d\n", fw);
+		cprintln(ERROR, "Failsafe: no flash target for firmware type %d",
+			 fw);
 		return -EINVAL;
 	}
 

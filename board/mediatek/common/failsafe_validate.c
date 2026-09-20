@@ -36,6 +36,7 @@
 #include <failsafe/fw_type.h>
 #include <failsafe/fip.h>
 #include <failsafe/image.h>
+#include <failsafe/cprint.h>
 
 #include "failsafe_validate.h"
 
@@ -109,7 +110,7 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 	u32 magic;
 
 	if (size < FAILSAFE_FIP_HEADER_SIZE) {
-		printf("Failsafe: 'bl2' image too small (%zu)\n", size);
+		cprintln(ERROR, "Failsafe: 'bl2' image too small (%zu)", size);
 		return -EINVAL;
 	}
 
@@ -129,17 +130,17 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 		   FAILSAFE_FIP_TOC_ENTRY_SIZE &&
 	    !memcmp((const u8 *)data + FAILSAFE_FIP_HEADER_SIZE,
 		    failsafe_fip_uuid_tb_fw, 16)) {
-		printf("Failsafe: 'bl2' image looks like a FIP with a bad "
-		       "header (BL2 ToC entry present, magic 0x%08x)\n",
-		       magic);
+		cprintln(ERROR, "Failsafe: 'bl2' image looks like a FIP with "
+			 "a bad header (BL2 ToC entry present, magic 0x%08x)",
+			 magic);
 		return -EINVAL;
 	}
 
 	/* Bare preloader: must carry one of the known Mediatek storage
 	 * magic headers. */
 	if (!mtk_bl2_storage_name(data, size)) {
-		printf("Failsafe: 'bl2' image has no known preloader "
-		       "header (magic 0x%08x)\n", magic);
+		cprintln(ERROR, "Failsafe: 'bl2' image has no known preloader "
+			 "header (magic 0x%08x)", magic);
 		return -EINVAL;
 	}
 
@@ -182,7 +183,8 @@ int failsafe_validate_image_content(const void *data, size_t size,
 	bool checked = false;
 	int ret = 0;
 
-	printf("Failsafe: validating '%s' image (%zu bytes)\n", name, size);
+	cprintln(NORMAL, "Failsafe: validating '%s' image (%zu bytes)",
+		 name, size);
 
 	/* Per-type structural validation.  Each validator is gated by its
 	 * own Kconfig toggle (board/mediatek/Kconfig, "Failsafe image
@@ -213,16 +215,16 @@ int failsafe_validate_image_content(const void *data, size_t size,
 	}
 
 	if (ret) {
-		printf("Failsafe: '%s' image validation FAILED (%d)\n",
-		       name, ret);
+		cprintln(ERROR, "Failsafe: '%s' image validation FAILED (%d)",
+			 name, ret);
 		return ret;
 	}
 
 	if (!checked)
-		printf("Failsafe: '%s' image validation skipped "
-		       "(no check enabled)\n", name);
+		cprintln(CAUTION, "Failsafe: '%s' image validation skipped "
+			 "(no check enabled)", name);
 	else
-		printf("Failsafe: '%s' image validation OK\n", name);
+		cprintln(SUCCESS, "Failsafe: '%s' image validation OK", name);
 
 	return 0;
 }
