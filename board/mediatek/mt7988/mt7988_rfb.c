@@ -19,7 +19,7 @@
 #include <asm/global_data.h>
 #include <linux/sizes.h>
 #include <linux/types.h>
-#include "../common/unxz.h"
+#include <xz/unxz.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
