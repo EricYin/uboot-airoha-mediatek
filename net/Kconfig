@@ -92,6 +92,7 @@ config NET_MAXDEFRAG
 
 config TFTP_WINDOWSIZE
 	int "TFTP window size"
+	default 8 if ARCH_AIROHA
 	default 1
 	help
 	  Default TFTP window size.
