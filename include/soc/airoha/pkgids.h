@@ -21,11 +21,16 @@
 #define AIROHA_NP_SCU_PACKAGE_ID_MASK	GENMASK(3, 0)
 #define AIROHA_NP_SCU_PACKAGE_ID_EXT	BIT(7)
 
+/*
+ * SoC family identifiers for the ARM-based Airoha platforms
+ * (EN7523 / AN7552 / EN7581 / AN7583). MIPS/econet families live in
+ * include/soc/airoha/pkgids-econet.h and must not be mixed into this header.
+ */
 enum airoha_pkg {
 	/* AN7583 */
 	AN7583_PKG = 0x10,
 
-	/* AM7552 */
+	/* AN7552 */
 	AN7552_PKG = 0xf,
 
 	/* EN7581 */
@@ -33,31 +38,10 @@ enum airoha_pkg {
 
 	/* EN7523 */
 	EN7523_PKG = 0xc,
-
-	/* EN7528 */
-	EN7528_PKG = 0xb,
-
-	/* EN7580 */
-	EN7580_PKG = 0xa,
-
-	/* EN7516, EN7527 */
-	EN751627_PKG = 0x9,
-
-	/* EN7526c, EN7522 */
-	EN7526C_PKG = 0x8,
-
-	/* EN7512, EN7521 */
-	EN751221_PKG = 0x7,
-
-	/* MT7505 */
-	MT7505_PKG = 0x6,
-
-	/* MT7510, MT7520 */
-	MT751020_PKG = 0x5,
 };
 
 enum airoha_pkg_ids {
-	/*EN7523*/
+	/* EN7523 */
 	EN7529DU,
 	EN7529DT,
 	EN7529CU,
@@ -82,53 +66,14 @@ enum airoha_pkg_ids {
 	EN7562CTM,
 	EN7523DTM,
 
-	/*EN7528*/
-	EN7528HU,
-	EN7528DU,
-	EN7561DU,
-	EN7526FHEN7528DU,
-	EN7521GEN7528DU,
+	/* AN7552 */
+	AN7552CT,
+	AN7552ST,
+	AN7552FT,
+	AN7563CT,
+	AN7563PT,
 
-	/* EN7580 */
-	EN7580GT,
-	EN7580ST,
-	EN7580GAT,
-	EN7565,
-	EN7580,
-
-	/* EN7516 */
-	EN7516G,
-
-	/* EN7527 */
-	EN7527G,
-	EN7561G,
-	EN751627,
-
-	/* EN7512 */
-	EN7512,
-	EN7513,
-	EN7513G,
-
-	/* EN7521, EN7521FC */
-	EN7521FCUD,
-	EN7521F,
-	EN7521S,
-	EN7526D,
-	EN7526F,
-	EN7526G,
-	EN7526FT,
-	EN7526FP,
-	EN7526FT_C,
-	EN751221,
-
-	/* MT7520 */
-	MT7520S,
-	MT7520,
-	MT7520G,
-	MT7525,
-	MT7525G,
-
-	/* AN7581 */
+	/* EN7581 */
 	AN7581GT,
 	AN7566GT,
 	AN7581PT,
@@ -143,13 +88,6 @@ enum airoha_pkg_ids {
 	AN7566PT,
 	AN7581IT,
 	AN7581SIT,
-
-	/* AN7552 */
-	AN7552CT,
-	AN7552ST,
-	AN7552FT,
-	AN7563CT,
-	AN7563PT,
 
 	/* AN7583 */
 	AN7583GT,
@@ -205,53 +143,14 @@ static const char *const airoha_pkg_id_names[] = {
 	AIROHA_PKG_ID_NAME(EN7562CTM),
 	AIROHA_PKG_ID_NAME(EN7523DTM),
 
-	/* EN7528 */
-	AIROHA_PKG_ID_NAME(EN7528HU),
-	AIROHA_PKG_ID_NAME(EN7528DU),
-	AIROHA_PKG_ID_NAME(EN7561DU),
-	AIROHA_PKG_ID_NAME(EN7526FHEN7528DU),
-	AIROHA_PKG_ID_NAME(EN7521GEN7528DU),
+	/* AN7552 */
+	AIROHA_PKG_ID_NAME(AN7552CT),
+	AIROHA_PKG_ID_NAME(AN7552ST),
+	AIROHA_PKG_ID_NAME(AN7552FT),
+	AIROHA_PKG_ID_NAME(AN7563CT),
+	AIROHA_PKG_ID_NAME(AN7563PT),
 
-	/* EN7580 */
-	AIROHA_PKG_ID_NAME(EN7580GT),
-	AIROHA_PKG_ID_NAME(EN7580ST),
-	AIROHA_PKG_ID_NAME(EN7580GAT),
-	AIROHA_PKG_ID_NAME(EN7565),
-	AIROHA_PKG_ID_NAME(EN7580),
-
-	/* EN7516 */
-	AIROHA_PKG_ID_NAME(EN7516G),
-
-	/* EN7527 */
-	AIROHA_PKG_ID_NAME(EN7527G),
-	AIROHA_PKG_ID_NAME(EN7561G),
-	AIROHA_PKG_ID_NAME(EN751627),
-
-	/* EN7512 */
-	AIROHA_PKG_ID_NAME(EN7512),
-	AIROHA_PKG_ID_NAME(EN7513),
-	AIROHA_PKG_ID_NAME(EN7513G),
-
-	/* EN7521 / EN7526 */
-	AIROHA_PKG_ID_NAME(EN7521FCUD),
-	AIROHA_PKG_ID_NAME(EN7521F),
-	AIROHA_PKG_ID_NAME(EN7521S),
-	AIROHA_PKG_ID_NAME(EN7526D),
-	AIROHA_PKG_ID_NAME(EN7526F),
-	AIROHA_PKG_ID_NAME(EN7526G),
-	AIROHA_PKG_ID_NAME(EN7526FT),
-	AIROHA_PKG_ID_NAME(EN7526FP),
-	AIROHA_PKG_ID_NAME(EN7526FT_C),
-	AIROHA_PKG_ID_NAME(EN751221),
-
-	/* MT7520 */
-	AIROHA_PKG_ID_NAME(MT7520S),
-	AIROHA_PKG_ID_NAME(MT7520),
-	AIROHA_PKG_ID_NAME(MT7520G),
-	AIROHA_PKG_ID_NAME(MT7525),
-	AIROHA_PKG_ID_NAME(MT7525G),
-
-	/* AN7581 */
+	/* EN7581 */
 	AIROHA_PKG_ID_NAME(AN7581GT),
 	AIROHA_PKG_ID_NAME(AN7566GT),
 	AIROHA_PKG_ID_NAME(AN7581PT),
@@ -266,13 +165,6 @@ static const char *const airoha_pkg_id_names[] = {
 	AIROHA_PKG_ID_NAME(AN7566PT),
 	AIROHA_PKG_ID_NAME(AN7581IT),
 	AIROHA_PKG_ID_NAME(AN7581SIT),
-
-	/* AN7552 */
-	AIROHA_PKG_ID_NAME(AN7552CT),
-	AIROHA_PKG_ID_NAME(AN7552ST),
-	AIROHA_PKG_ID_NAME(AN7552FT),
-	AIROHA_PKG_ID_NAME(AN7563CT),
-	AIROHA_PKG_ID_NAME(AN7563PT),
 
 	/* AN7583 */
 	AIROHA_PKG_ID_NAME(AN7583GT),
@@ -343,32 +235,6 @@ static inline enum airoha_pkg airoha_pkg_from_id(u32 id)
 	case 0x7529:
 	case 0x7562:
 		return EN7523_PKG;
-	case EN7528_PKG:
-	case 0x7528:
-	case 0x7561:
-		return EN7528_PKG;
-	case EN7580_PKG:
-	case 0x7580:
-	case 0x7565:
-		return EN7580_PKG;
-	case EN751627_PKG:
-	case 0x7516:
-	case 0x7527:
-		return EN751627_PKG;
-	case EN7526C_PKG:
-	case 0x7522:
-		return EN7526C_PKG;
-	case EN751221_PKG:
-	case 0x7512:
-	case 0x7513:
-	case 0x7521:
-	case 0x7526:
-		return EN751221_PKG;
-	case MT751020_PKG:
-	case 0x7510:
-	case 0x7520:
-	case 0x7525:
-		return MT751020_PKG;
 	default:
 		return 0;
 	}
@@ -385,18 +251,6 @@ static inline const char *airoha_pkg_family_name(enum airoha_pkg pkg)
 		return "EN7581";
 	case EN7523_PKG:
 		return "EN7523";
-	case EN7528_PKG:
-		return "EN7528";
-	case EN7580_PKG:
-		return "EN7580";
-	case EN751627_PKG:
-		return "EN7516/EN7527";
-	case EN7526C_PKG:
-		return "EN7526C/EN7522";
-	case EN751221_PKG:
-		return "EN7512/EN7521";
-	case MT751020_PKG:
-		return "MT7510/MT7520";
 	default:
 		return NULL;
 	}
@@ -414,19 +268,6 @@ airoha_soc_variant_name(enum airoha_pkg pkg, u32 pkgid)
 		return airoha_pkg_id_range_name(pkgid, AN7581GT, AN7581SIT);
 	case EN7523_PKG:
 		return airoha_pkg_id_range_name(pkgid, EN7529DU, EN7523DTM);
-	case EN7528_PKG:
-		return airoha_pkg_id_range_name(pkgid, EN7528HU,
-						EN7521GEN7528DU);
-	case EN7580_PKG:
-		return airoha_pkg_id_range_name(pkgid, EN7580GT, EN7580);
-	case EN751627_PKG:
-		return airoha_pkg_id_range_name(pkgid, EN7516G, EN751627);
-	case EN7526C_PKG:
-		return airoha_pkg_id_range_name(pkgid, EN7521FCUD, EN751221);
-	case EN751221_PKG:
-		return airoha_pkg_id_range_name(pkgid, EN7512, EN751221);
-	case MT751020_PKG:
-		return airoha_pkg_id_range_name(pkgid, MT7520S, MT7525G);
 	default:
 		return NULL;
 	}
