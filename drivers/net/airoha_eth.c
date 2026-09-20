@@ -77,6 +77,33 @@
 #define     SWITCH_FORCE_SPD_1000	FIELD_PREP(SWITCH_FORCE_SPD, 0x2)
 #define   SWITCH_FORCE_DPX		BIT(1)
 #define   SWITCH_FORCE_LNK		BIT(0)
+#define SWITCH_PMSR(_n)			0x3008 + ((_n) * 0x100)
+#define   SWITCH_PMSR_LNK		BIT(0)
+#define   SWITCH_PMSR_DPX		BIT(1)
+#define   SWITCH_PMSR_SPEED_100		BIT(2)
+#define   SWITCH_PMSR_SPEED_1000	BIT(3)
+#define SWITCH_PCR(_n)			0x2004 + ((_n) * 0x100)
+#define   SWITCH_PCR_MATRIX_MASK	GENMASK(23, 16)
+/* Reset default of the port matrix: every port is allowed to reach every port. */
+#define   SWITCH_PCR_MATRIX_ALL		FIELD_PREP(SWITCH_PCR_MATRIX_MASK, 0xff)
+#define SWITCH_PVC(_n)			0x2010 + ((_n) * 0x100)
+/*
+ * Reset defaults of a switch port, as left by a power on reset:
+ *  - user port: MAC enabled with an auto-negotiated link, so that
+ *    link/duplex/speed come from the internal PHY polling (no force mode),
+ *  - CPU port (SWITCH_PVC_CPU_DEFAULT): plain untagged mode, i.e. with the
+ *    special tag enable (BIT(5)) cleared and the special tag TPID still at
+ *    its reset value 0x8100.
+ * The Linux DSA driver programs the opposite (port matrix cleared while
+ * the port is down, mediaTek special tag mode on the CPU port), so a warm
+ * reboot from the OS must be undone before the switch is used.
+ */
+#define   SWITCH_PMCR_USER_DEFAULT					\
+		(SWITCH_IPG_CFG_SHORT | SWITCH_MAC_MODE |		\
+		 SWITCH_MAC_TX_EN | SWITCH_MAC_RX_EN |			\
+		 SWITCH_BKOFF_EN | SWITCH_BKPR_EN |			\
+		 SWITCH_FORCE_RX_FC | SWITCH_FORCE_TX_FC)
+#define   SWITCH_PVC_CPU_DEFAULT	0x810000c0
 #define SWITCH_SMACCR0			0x30e4
 #define   SMACCR0_MAC2			GENMASK(31, 24)
 #define   SMACCR0_MAC3			GENMASK(23, 16)
@@ -932,6 +959,22 @@ static bool airoha_switch_an7583_gephy_powered_down(struct airoha_eth *eth)
 	return false;
 }
 
+static void airoha_switch_restore_ports(struct airoha_eth *eth)
+{
+	int i;
+
+	/* User ports: MAC back on, auto-negotiated link and an open matrix. */
+	for (i = 1; i <= AIROHA_MAX_NUM_SWITCH_PORT; i++) {
+		airoha_switch_wr(eth, SWITCH_PMCR(i),
+				 SWITCH_PMCR_USER_DEFAULT);
+		airoha_switch_wr(eth, SWITCH_PCR(i), SWITCH_PCR_MATRIX_ALL);
+	}
+
+	/* CPU port: forward to every port again, untagged. */
+	airoha_switch_wr(eth, SWITCH_PCR(6), SWITCH_PCR_MATRIX_ALL);
+	airoha_switch_wr(eth, SWITCH_PVC(6), SWITCH_PVC_CPU_DEFAULT);
+}
+
 static int airoha_switch_init(struct udevice *dev, struct airoha_eth *eth)
 {
 	struct airoha_eth_soc_data *data = (void *)dev_get_driver_data(dev);
@@ -970,6 +1013,9 @@ static int airoha_switch_init(struct udevice *dev, struct airoha_eth *eth)
 			 SWITCH_PHY_PRE_EN |
 			 FIELD_PREP(SWITCH_PHY_END_ADDR, 0xc) |
 			 FIELD_PREP(SWITCH_PHY_ST_ADDR, 0x8));
+
+	if (eth->soc->version == 0x7523)
+		airoha_switch_restore_ports(eth);
 
 	/* AN7583 require tweak to GEPHY_CONN_CFG and PHY BMCR configuration */
 	if (!strcmp(data->switch_compatible, "airoha,an7583-switch"))
