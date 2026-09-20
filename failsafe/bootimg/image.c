@@ -7,12 +7,14 @@
  * per-platform image validators.
  */
 
+#include <asm/global_data.h>
 #include <command.h>
 #include <cpu_func.h>
 #include <env.h>
 #include <errno.h>
 #include <image.h>
 #include <linux/kconfig.h>
+#include <linux/libfdt.h>
 #include <linux/string.h>
 #include <vsprintf.h>
 
@@ -85,6 +87,79 @@ int failsafe_image_validate_legacy(const void *data, size_t size,
 
 	return 0;
 }
+
+#if CONFIG_IS_ENABLED(FIT)
+/*
+ * Strict model validation (opt-in, env 'failsafe_strict_model' == "1").
+ *
+ * The recovery runs on one specific board, identified by the 'compatible'
+ * string in this U-Boot's control device tree (e.g. "nokia,xg-040g-md").
+ * In strict mode a FIT firmware is only accepted when it declares a
+ * 'compatible' that matches the running board - using the same matching
+ * logic U-Boot itself uses to pick a FIT configuration
+ * (fit_conf_find_compat()).  This blocks, for example, an image built
+ * for a different board from being flashed on this one.
+ *
+ * The check is a no-op (returns 0) when:
+ *   - the switch is off,
+ *   - the running board DT has no 'compatible' (cannot decide),
+ *   - the image is not a FIT (nothing to match against; the structural
+ *     validator handles non-FIT firmware).
+ */
+int failsafe_firmware_check_model(const void *data, size_t size,
+				  const char *what)
+{
+	DECLARE_GLOBAL_DATA_PTR;
+	const char *strict = env_get("failsafe_strict_model");
+	const void *fdt = gd_fdt_blob();
+	const char *board_compat;
+	int off;
+
+	/* Default ON.  Only an explicit "0" disables the strict check. */
+	if (strict && !strcmp(strict, "0"))
+		return 0;
+
+	if (!fdt || fdt_check_header(fdt)) {
+		printf("Failsafe: %s strict-model check skipped "
+		       "(board DT unavailable)\n", what);
+		return 0;
+	}
+
+	board_compat = fdt_getprop(fdt, 0, "compatible", NULL);
+	if (!board_compat) {
+		printf("Failsafe: %s strict-model check skipped "
+		       "(board DT has no compatible)\n", what);
+		return 0;
+	}
+
+	if (fit_check_format(data, size)) {
+		printf("Failsafe: %s strict-model check skipped "
+		       "(not a FIT image)\n", what);
+		return 0;
+	}
+
+	off = fit_conf_find_compat(data, fdt);
+	if (off < 0) {
+		printf("Failsafe: %s rejected by strict-model check "
+		       "(firmware does not match board '%s')\n",
+		       what, board_compat);
+		return -EINVAL;
+	}
+
+	printf("Failsafe: %s strict-model check OK (matches board '%s')\n",
+	       what, board_compat);
+	return 0;
+}
+#else
+int failsafe_firmware_check_model(const void *data, size_t size,
+				  const char *what)
+{
+	(void)data;
+	(void)size;
+	(void)what;
+	return 0;
+}
+#endif
 
 int failsafe_boot_image_from_mem(ulong data_load_addr, size_t image_size,
 				 ulong load_fallback)

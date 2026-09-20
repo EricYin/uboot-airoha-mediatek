@@ -38,6 +38,25 @@ int failsafe_image_validate_legacy(const void *data, size_t size,
 				   const char *what);
 
 /**
+ * failsafe_firmware_check_model() - optional strict board-model check
+ * @data: image contents
+ * @size: image size in bytes
+ * @what: image type name used in the diagnostics
+ *
+ * Enabled by default.  A FIT firmware is only accepted if it declares a
+ * 'compatible' that matches the running U-Boot's control device tree
+ * (the board this recovery runs on).  Uses fit_conf_find_compat(), the
+ * same logic U-Boot uses to select a FIT configuration.  The check is
+ * disabled only when the environment variable 'failsafe_strict_model' is
+ * set to "0"; any other value (including unset) keeps it enabled.
+ *
+ * Returns 0 when allowed (or the check is disabled / not applicable),
+ * -EINVAL when the firmware does not match the board.
+ */
+int failsafe_firmware_check_model(const void *data, size_t size,
+				  const char *what);
+
+/**
  * failsafe_image_is_legacy() - does @data start with a legacy uImage?
  * @data: image contents
  * @size: image size in bytes
