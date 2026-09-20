@@ -47,6 +47,7 @@
 #include <failsafe/fw_type.h>
 #include <failsafe/fip.h>
 #include <failsafe/image.h>
+#include <failsafe/cprint.h>
 
 #include "failsafe_validate.h"
 
@@ -143,8 +144,9 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 	u32 magic;
 
 	if (size < AIROHA_FAILSAFE_BL2_MIN_SIZE) {
-		printf("Failsafe: 'bl2' image too small (%zu < 0x%zx)\n",
-		       size, (size_t)AIROHA_FAILSAFE_BL2_MIN_SIZE);
+		cprintln(ERROR, "Failsafe: 'bl2' image too small "
+			 "(%zu < 0x%zx)", size,
+			 (size_t)AIROHA_FAILSAFE_BL2_MIN_SIZE);
 		return -EINVAL;
 	}
 
@@ -165,9 +167,9 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 		   FAILSAFE_FIP_TOC_ENTRY_SIZE &&
 	    !memcmp((const u8 *)data + FAILSAFE_FIP_HEADER_SIZE,
 		    failsafe_fip_uuid_tb_fw, 16)) {
-		printf("Failsafe: 'bl2' image looks like a FIP with a bad "
-		       "header (BL2 ToC entry present, magic 0x%08x)\n",
-		       magic);
+		cprintln(ERROR, "Failsafe: 'bl2' image looks like a FIP with "
+			 "a bad header (BL2 ToC entry present, magic 0x%08x)",
+			 magic);
 		return -EINVAL;
 	}
 
@@ -185,8 +187,8 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 				if (s1[i] != 0x00 && s1[i] != 0xFF)
 					nz++;
 			if (nz < AIROHA_FAILSAFE_BL2_OPT_HDR_OFF / 8) {
-				printf("Failsafe: 'bl2' stage-1 (BL21) "
-				       "region blank\n");
+				cprintln(ERROR, "Failsafe: 'bl2' stage-1 "
+					 "(BL21) region blank");
 				return -EINVAL;
 			}
 
@@ -195,9 +197,9 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 			 * it back out for comparison. */
 			calc = crc32(0, data, size - 4) ^ 0xFFFFFFFF;
 			if (calc != stored) {
-				printf("Failsafe: 'bl2' CRC32 mismatch "
-				       "(stored 0x%08x, calc 0x%08x)\n",
-				       stored, calc);
+				cprintln(ERROR, "Failsafe: 'bl2' CRC32 "
+					 "mismatch (stored 0x%08x, calc "
+					 "0x%08x)", stored, calc);
 				return -EINVAL;
 			}
 		}
@@ -257,7 +259,8 @@ int failsafe_validate_image_content(const void *data, size_t size,
 	bool checked = false;
 	int ret = 0;
 
-	printf("Failsafe: validating '%s' image (%zu bytes)\n", name, size);
+	cprintln(NORMAL, "Failsafe: validating '%s' image (%zu bytes)",
+		 name, size);
 
 	/* Per-type structural validation.  Each validator is gated by its
 	 * own Kconfig toggle (board/airoha/Kconfig, "Failsafe image
@@ -300,16 +303,16 @@ int failsafe_validate_image_content(const void *data, size_t size,
 	}
 
 	if (ret) {
-		printf("Failsafe: '%s' image validation FAILED (%d)\n",
-		       name, ret);
+		cprintln(ERROR, "Failsafe: '%s' image validation FAILED (%d)",
+			 name, ret);
 		return ret;
 	}
 
 	if (!checked)
-		printf("Failsafe: '%s' image validation skipped "
-		       "(no check enabled)\n", name);
+		cprintln(CAUTION, "Failsafe: '%s' image validation skipped "
+			 "(no check enabled)", name);
 	else
-		printf("Failsafe: '%s' image validation OK\n", name);
+		cprintln(SUCCESS, "Failsafe: '%s' image validation OK", name);
 
 	return 0;
 }
