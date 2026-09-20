@@ -160,7 +160,14 @@ static int failsafe_validate_fip(const void *data, size_t size)
 #if defined(CONFIG_MTK_FAILSAFE_VALIDATE_FIRMWARE)
 static int failsafe_validate_firmware(const void *data, size_t size)
 {
-	return failsafe_image_validate_fit(data, size, "firmware");
+	int ret;
+
+	ret = failsafe_image_validate_fit(data, size, "firmware");
+	if (ret)
+		return ret;
+
+	/* Opt-in strict board-model gate (env 'failsafe_strict_model'). */
+	return failsafe_firmware_check_model(data, size, "firmware");
 }
 #endif /* CONFIG_MTK_FAILSAFE_VALIDATE_FIRMWARE */
 
