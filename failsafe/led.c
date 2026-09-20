@@ -68,6 +68,7 @@
 #include <vsprintf.h>
 
 #include <failsafe/led.h>
+#include <failsafe/cprint.h>
 
 /*
  * This file is only built when CONFIG_WEBUI_FAILSAFE_LED is enabled, which
@@ -492,8 +493,9 @@ void failsafe_led_set_phase(enum failsafe_led_phase phase)
 	if (!fsled.n_present) {
 		if (!(fsled.warned & (1 << phase))) {
 			fsled.warned |= 1 << phase;
-			printf("failsafe: no LED of '%s' exists on this board\n",
-			       fsled_env[phase]);
+			cprintln(CAUTION,
+				 "failsafe: no LED of '%s' exists on this "
+				 "board", fsled_env[phase]);
 		}
 
 		fsled.active = false;

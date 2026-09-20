@@ -22,6 +22,7 @@
 #include <vsprintf.h>
 
 #include <failsafe/storage.h>
+#include <failsafe/cprint.h>
 
 #if IS_ENABLED(CONFIG_CMD_UBI)
 #include <ubi_uboot.h>
@@ -82,15 +83,16 @@ static int check_mtd_capacity(const char *target, u64 off, size_t size)
 	mtd_probe_devices();
 	mtd = get_mtd_device_nm(target);
 	if (IS_ERR_OR_NULL(mtd)) {
-		printf("Failsafe: MTD partition '%s' not found\n", target);
+		cprintln(ERROR, "Failsafe: MTD partition '%s' not found",
+			 target);
 		return -ENODEV;
 	}
 
 	if (off + (u64)size > mtd->size) {
-		printf("Failsafe: image (%zu) exceeds partition '%s' "
-		       "(%llu), write offset 0x%llx\n",
-		       size, target, (unsigned long long)mtd->size,
-		       (unsigned long long)off);
+		cprintln(ERROR, "Failsafe: image (%zu) exceeds partition "
+			 "'%s' (%llu), write offset 0x%llx", size, target,
+			 (unsigned long long)mtd->size,
+			 (unsigned long long)off);
 		put_mtd_device(mtd);
 		return -EFBIG;
 	}
@@ -134,8 +136,8 @@ static int failsafe_remove_rootfs_data(void)
 	snprintf(cmd, sizeof(cmd), "ubi remove rootfs_data");
 	ret = run_command(cmd, 0);
 	if (ret) {
-		printf("Failsafe: remove 'rootfs_data' failed (ret=%d)\n",
-		       ret);
+		cprintln(ERROR, "Failsafe: remove 'rootfs_data' failed "
+			 "(ret=%d)", ret);
 		return -EIO;
 	}
 
@@ -157,12 +159,12 @@ static int failsafe_recreate_rootfs_data(void)
 	snprintf(cmd, sizeof(cmd), "ubi create rootfs_data - dynamic");
 	ret = run_command(cmd, 0);
 	if (ret) {
-		printf("Failsafe: 'ubi create rootfs_data' failed (ret=%d)\n",
-		       ret);
+		cprintln(ERROR, "Failsafe: 'ubi create rootfs_data' failed "
+			 "(ret=%d)", ret);
 		return -EIO;
 	}
 
-	printf("Failsafe: 'rootfs_data' recreated\n");
+	cprintln(SUCCESS, "Failsafe: 'rootfs_data' recreated");
 	return 0;
 }
 
@@ -175,7 +177,8 @@ int failsafe_check_capacity(const char *target, u64 mtd_off, size_t size)
 	 * never report "fits" for something that cannot be written.
 	 */
 	if (is_mtd_only_target(target)) {
-		printf("Failsafe: MTD partition '%s' not found\n", target);
+		cprintln(ERROR, "Failsafe: MTD partition '%s' not found",
+			 target);
 		return -ENODEV;
 	}
 
@@ -187,8 +190,9 @@ int failsafe_check_capacity(const char *target, u64 mtd_off, size_t size)
 		 * "ubi write" fails after the volume has already been
 		 * recreated empty.
 		 */
-		printf("Failsafe: '%s' image too big (%zu > 0x%zx)\n",
-		       target, size, (size_t)FAILSAFE_STORAGE_STATIC_SIZE);
+		cprintln(ERROR, "Failsafe: '%s' image too big (%zu > 0x%zx)",
+			 target, size,
+			 (size_t)FAILSAFE_STORAGE_STATIC_SIZE);
 		return -EFBIG;
 	}
 
@@ -201,16 +205,16 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 	char cmd[256];
 	int ret;
 
-	printf("\n*** Failsafe upgrade: %zu (0x%zx) bytes -> '%s' ***\n\n",
-	       size, size, target);
+	cprintln(NORMAL, "\n*** Failsafe upgrade: %zu (0x%zx) bytes -> "
+		 "'%s' ***\n", size, size, target);
 
 	if (is_mtd_partition(target)) {
 		/* ----- MTD partition ----- */
 		snprintf(cmd, sizeof(cmd), "mtd erase %s", target);
 		ret = run_command(cmd, 0);
 		if (ret) {
-			printf("Failsafe: erase '%s' failed (ret=%d)\n",
-			       target, ret);
+			cprintln(ERROR, "Failsafe: erase '%s' failed (ret=%d)",
+				 target, ret);
 			return -EIO;
 		}
 
@@ -219,8 +223,8 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 			 (unsigned long long)mtd_off, (unsigned long)size);
 		ret = run_command(cmd, 0);
 		if (ret) {
-			printf("Failsafe: write '%s' failed (ret=%d)\n",
-			       target, ret);
+			cprintln(ERROR, "Failsafe: write '%s' failed (ret=%d)",
+				 target, ret);
 			return -EIO;
 		}
 	} else if (is_mtd_only_target(target)) {
@@ -228,14 +232,15 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 		 * back to UBI here would create a bogus volume and hide the
 		 * real problem (missing partition / wrong device tree).
 		 */
-		printf("Failsafe: MTD partition '%s' not found, refusing to "
-		       "fall back to a UBI volume\n", target);
+		cprintln(ERROR, "Failsafe: MTD partition '%s' not found, "
+			 "refusing to fall back to a UBI volume", target);
 		return -ENODEV;
 	} else {
 		/* ----- UBI volume ----- */
 		ret = ubi_ensure_attached();
 		if (ret) {
-			printf("Failsafe: cannot attach UBI (ret=%d)\n", ret);
+			cprintln(ERROR, "Failsafe: cannot attach UBI (ret=%d)",
+				 ret);
 			return -EIO;
 		}
 
@@ -276,8 +281,8 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 				 "ubi create %s 0x%zx dynamic", target, size);
 		ret = run_command(cmd, 0);
 		if (ret) {
-			printf("Failsafe: 'ubi create %s' failed (ret=%d)\n",
-			       target, ret);
+			cprintln(ERROR, "Failsafe: 'ubi create %s' failed "
+				 "(ret=%d)", target, ret);
 			return -EIO;
 		}
 
@@ -287,8 +292,8 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 			 target, (unsigned long)size);
 		ret = run_command(cmd, 0);
 		if (ret) {
-			printf("Failsafe: 'ubi write %s' failed (ret=%d)\n",
-			       target, ret);
+			cprintln(ERROR, "Failsafe: 'ubi write %s' failed "
+				 "(ret=%d)", target, ret);
 			return -EIO;
 		}
 
@@ -304,7 +309,8 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 		}
 	}
 
-	printf("\n*** Failsafe upgrade completed ('%s') ***\n\n", target);
+	cprintln(SUCCESS, "\n*** Failsafe upgrade completed ('%s') ***\n",
+		 target);
 	return 0;
 }
 

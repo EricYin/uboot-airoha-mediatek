@@ -40,6 +40,7 @@
 #endif
 
 #include <failsafe/internal.h>
+#include <failsafe/cprint.h>
 
 /* Maximum payload of a single /simg/write request.  The browser must use
  * the exact same value (it is also reported by /simg/info as
@@ -200,8 +201,8 @@ static int simg_write_range(struct mtd_info *mtd, u64 start, const u8 *data,
 
 			ret = mtd_read(mtd, blk, erase_sz, &readlen, blkbuf);
 			if (ret && ret != -EUCLEAN) {
-				printf("simg: read 0x%llx failed: %d\n",
-				       blk, ret);
+				cprintln(ERROR, "simg: read 0x%llx failed: %d",
+					 blk, ret);
 				goto out;
 			}
 			if (readlen != erase_sz) {
@@ -212,7 +213,8 @@ static int simg_write_range(struct mtd_info *mtd, u64 start, const u8 *data,
 
 		ret = simg_erase_block(mtd, blk);
 		if (ret) {
-			printf("simg: erase 0x%llx failed: %d\n", blk, ret);
+			cprintln(ERROR, "simg: erase 0x%llx failed: %d",
+				 blk, ret);
 			goto out;
 		}
 
@@ -227,7 +229,8 @@ static int simg_write_range(struct mtd_info *mtd, u64 start, const u8 *data,
 		}
 
 		if (ret) {
-			printf("simg: write 0x%llx failed: %d\n", blk, ret);
+			cprintln(ERROR, "simg: write 0x%llx failed: %d",
+				 blk, ret);
 			goto out;
 		}
 
@@ -434,8 +437,8 @@ void simg_write_handler(enum httpd_uri_handler_status status,
 		return;
 	}
 
-	printf("simg: writing %s 0x%llx-0x%llx (%zu bytes)\n",
-	       mtd->name, start, end, len);
+	cprintln(NORMAL, "simg: writing %s 0x%llx-0x%llx (%zu bytes)",
+		 mtd->name, start, end, len);
 
 	ret = simg_write_range(mtd, start, (const u8 *)data_val->data, len,
 			       &written, &skipped);

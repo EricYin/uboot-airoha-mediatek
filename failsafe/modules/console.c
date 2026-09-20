@@ -25,6 +25,7 @@
 #endif
 
 #include <failsafe/internal.h>
+#include <failsafe/cprint.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -349,7 +350,8 @@ void webconsole_exec_handler(enum httpd_uri_handler_status status,
 		if (!prompt || !prompt[0])
 			prompt = "MTK> ";
 
-		printf("%s%s%s\n", prompt, need_space ? " " : "", cmd);
+		cprint(PROMPT, "%s", prompt);
+		cprintln(NORMAL, "%s%s", need_space ? " " : "", cmd);
 	}
 	ret = run_command(cmd, 0);
 
@@ -367,9 +369,8 @@ void webconsole_exec_handler(enum httpd_uri_handler_status status,
 			prompt = "MTK> ";
 
 		if (prompt[0] != '\n')
-			printf("\n%s", prompt);
-		else
-			printf("%s", prompt);
+			printf("\n");
+		cprint(PROMPT, "%s", prompt);
 	}
 
 	webconsole_exec_busy = false;

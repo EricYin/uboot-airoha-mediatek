@@ -19,18 +19,21 @@
 #include <vsprintf.h>
 
 #include <failsafe/image.h>
+#include <failsafe/cprint.h>
 
 #if CONFIG_IS_ENABLED(FIT)
 int failsafe_image_validate_fit(const void *data, size_t size,
 				const char *what)
 {
 	if (size < 4) {
-		printf("Failsafe: '%s' image too small (%zu)\n", what, size);
+		cprintln(ERROR, "Failsafe: '%s' image too small (%zu)", what,
+			 size);
 		return -EINVAL;
 	}
 
 	if (fit_check_format(data, size)) {
-		printf("Failsafe: '%s' image is not a valid FIT\n", what);
+		cprintln(ERROR, "Failsafe: '%s' image is not a valid FIT",
+			 what);
 		return -EINVAL;
 	}
 
@@ -42,8 +45,8 @@ int failsafe_image_validate_fit(const void *data, size_t size,
 {
 	(void)data;
 	(void)size;
-	printf("Failsafe: '%s' image rejected (no FIT support built in)\n",
-	       what);
+	cprintln(ERROR, "Failsafe: '%s' image rejected (no FIT support "
+		 "built in)", what);
 	return -EINVAL;
 }
 #endif
@@ -61,27 +64,30 @@ int failsafe_image_validate_legacy(const void *data, size_t size,
 	size_t dsize;
 
 	if (size < image_get_header_size()) {
-		printf("Failsafe: '%s' legacy image too small (%zu)\n",
-		       what, size);
+		cprintln(ERROR, "Failsafe: '%s' legacy image too small (%zu)",
+			 what, size);
 		return -EINVAL;
 	}
 	if (!image_check_magic(hdr)) {
-		printf("Failsafe: '%s' has no legacy uImage magic\n", what);
+		cprintln(ERROR, "Failsafe: '%s' has no legacy uImage magic",
+			 what);
 		return -EINVAL;
 	}
 	if (!image_check_hcrc(hdr)) {
-		printf("Failsafe: '%s' legacy header CRC mismatch\n", what);
+		cprintln(ERROR, "Failsafe: '%s' legacy header CRC mismatch",
+			 what);
 		return -EINVAL;
 	}
 
 	dsize = image_get_data_size(hdr);
 	if (dsize > size - image_get_header_size()) {
-		printf("Failsafe: '%s' legacy payload (0x%zx) exceeds "
-		       "image (%zu)\n", what, dsize, size);
+		cprintln(ERROR, "Failsafe: '%s' legacy payload (0x%zx) "
+			 "exceeds image (%zu)", what, dsize, size);
 		return -EINVAL;
 	}
 	if (!image_check_dcrc(hdr)) {
-		printf("Failsafe: '%s' legacy payload CRC mismatch\n", what);
+		cprintln(ERROR, "Failsafe: '%s' legacy payload CRC mismatch",
+			 what);
 		return -EINVAL;
 	}
 
@@ -120,34 +126,34 @@ int failsafe_firmware_check_model(const void *data, size_t size,
 		return 0;
 
 	if (!fdt || fdt_check_header(fdt)) {
-		printf("Failsafe: %s strict-model check skipped "
-		       "(board DT unavailable)\n", what);
+		cprintln(CAUTION, "Failsafe: %s strict-model check skipped "
+			 "(board DT unavailable)", what);
 		return 0;
 	}
 
 	board_compat = fdt_getprop(fdt, 0, "compatible", NULL);
 	if (!board_compat) {
-		printf("Failsafe: %s strict-model check skipped "
-		       "(board DT has no compatible)\n", what);
+		cprintln(CAUTION, "Failsafe: %s strict-model check skipped "
+			 "(board DT has no compatible)", what);
 		return 0;
 	}
 
 	if (fit_check_format(data, size)) {
-		printf("Failsafe: %s strict-model check skipped "
-		       "(not a FIT image)\n", what);
+		cprintln(CAUTION, "Failsafe: %s strict-model check skipped "
+			 "(not a FIT image)", what);
 		return 0;
 	}
 
 	off = fit_conf_find_compat(data, fdt);
 	if (off < 0) {
-		printf("Failsafe: %s rejected by strict-model check "
-		       "(firmware does not match board '%s')\n",
-		       what, board_compat);
+		cprintln(ERROR, "Failsafe: %s rejected by strict-model "
+			 "check (firmware does not match board '%s')",
+			 what, board_compat);
 		return -EINVAL;
 	}
 
-	printf("Failsafe: %s strict-model check OK (matches board '%s')\n",
-	       what, board_compat);
+	cprintln(SUCCESS, "Failsafe: %s strict-model check OK (matches "
+		 "board '%s')", what, board_compat);
 	return 0;
 }
 #else
@@ -199,13 +205,13 @@ int failsafe_boot_image_from_mem(ulong data_load_addr, size_t image_size,
 		 */
 		flush_cache(load_addr, image_size);
 		invalidate_icache_all();
-		printf("\n*** Failsafe: raw image - 'go 0x%lx' ***\n\n",
-		       load_addr);
+		cprintln(NORMAL, "\n*** Failsafe: raw image - 'go 0x%lx' ***\n",
+			 load_addr);
 		snprintf(cmd, sizeof(cmd), "go 0x%lx", load_addr);
 		ret = run_command(cmd, 0);
 		if (ret)
-			printf("Failsafe: 'go 0x%lx' failed (ret=%d)\n",
-			       load_addr, ret);
+			cprintln(ERROR, "Failsafe: 'go 0x%lx' failed (ret=%d)",
+				 load_addr, ret);
 		return ret;
 	}
 }

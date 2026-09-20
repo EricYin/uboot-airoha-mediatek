@@ -32,7 +32,6 @@
 #endif
 #include <linux/string.h>
 #include <linux/delay.h>
-#include <log.h>
 #include <rand.h>
 #include <u-boot/schedule.h>
 #include <vsprintf.h>
@@ -41,6 +40,7 @@
 #include <failsafe/led.h>
 
 #include <failsafe/internal.h>
+#include <failsafe/cprint.h>
 
 /* ------------------------------------------------------------------ */
 /*  Defines for default IP/netmask when env vars are not set             */
@@ -349,11 +349,11 @@ int start_web_failsafe(void)
 	{
 		u32 ip = ntohl(net_ip.s_addr);
 
-		printf("\nWeb failsafe UI started\n");
-		printf("URL: http://%u.%u.%u.%u/\n",
-		       (ip >> 24) & 0xff, (ip >> 16) & 0xff,
-		       (ip >> 8) & 0xff, ip & 0xff);
-		printf("Press Ctrl+C to exit\n");
+		cprintln(PROMPT, "\nWeb failsafe UI started");
+		cprintln(PROMPT, "URL: http://%u.%u.%u.%u/",
+			 (ip >> 24) & 0xff, (ip >> 16) & 0xff,
+			 (ip >> 8) & 0xff, ip & 0xff);
+		cprintln(PROMPT, "Press Ctrl+C to exit");
 	}
 
 	failsafe_httpd_running = true;
@@ -504,14 +504,14 @@ int start_web_failsafe(void)
 			services_auto_started = true;
 #ifdef CONFIG_MTK_DHCPD
 			if (!mtk_dhcpd_is_running()) {
-				printf("Starting DHCP server...\n");
+				cprintln(NORMAL, "Starting DHCP server...");
 				mtk_dhcpd_start();
 				need_poll = true;
 			}
 #endif
 #ifdef CONFIG_MTK_DNSD
 			if (!mtk_dnsd_is_running()) {
-				printf("Starting DNS server...\n");
+				cprintln(NORMAL, "Starting DNS server...");
 				mtk_dnsd_start();
 				need_poll = true;
 			}
@@ -645,7 +645,7 @@ U_BOOT_CMD(httpd, 1, 0, do_httpd,
 static int do_bootfailsafe(struct cmd_tbl *cmdtp, int flag, int argc,
 			   char *const argv[])
 {
-	puts("Boot failed, starting web failsafe\n");
+	cprintln(CAUTION, "Boot failed, starting web failsafe");
 
 	return do_httpd(cmdtp, flag, argc, argv);
 }
