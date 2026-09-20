@@ -373,6 +373,52 @@ end:
 	return ret;
 }
 
+#if IS_ENABLED(CONFIG_ARCH_AIROHA)
+/*
+ * Discard the frames the controller has already queued.
+ *
+ * A driver re-arms its receive descriptors when it is started again, and
+ * re-arming clears the DONE flag of every descriptor.  A frame the software
+ * had not consumed yet therefore loses the only indication the software has
+ * that its descriptor holds a packet: the software stalls on that descriptor
+ * while the hardware keeps filling the ring until it considers it full and
+ * stops, and nothing is delivered any more.  On the wire that looks like a
+ * link that is up: ARP requests go out, the controller counts received
+ * frames, and the net loop's "rx" counter does not move at all - until the
+ * ring is finally reset, e.g. by a warm reboot.
+ *
+ * Draining here, while the controller is still running, leaves no unconsumed
+ * frame behind, so the next start has nothing left to invalidate.  The upper
+ * layers never see these frames: the session that owned the interface is
+ * over.
+ *
+ * This only matters for the Airoha QDMA receive ring, so it is compiled in
+ * for CONFIG_ARCH_AIROHA builds only and is a no-op elsewhere.
+ */
+static void eth_rx_discard(struct udevice *dev)
+{
+	struct eth_ops *ops = eth_get_ops(dev);
+	uchar *packet;
+	int ret;
+	int i;
+
+	if (!ops->recv)
+		return;
+
+	/*
+	 * A ring holds at most ETH_PACKETS_BATCH_RECV descriptors; allow two
+	 * rounds so that a ring that is completely full is really emptied.
+	 */
+	for (i = 0; i < 2 * ETH_PACKETS_BATCH_RECV; i++) {
+		ret = ops->recv(dev, 0, &packet);
+		if (ret <= 0)
+			break;
+		if (ops->free_pkt)
+			ops->free_pkt(dev, packet, ret);
+	}
+}
+#endif /* CONFIG_ARCH_AIROHA */
+
 void eth_halt(void)
 {
 	struct udevice *current;
@@ -390,6 +436,10 @@ void eth_halt(void)
 	priv = dev_get_uclass_priv(current);
 	if (!priv || !priv->running)
 		goto end;
+
+#if IS_ENABLED(CONFIG_ARCH_AIROHA)
+	eth_rx_discard(current);
+#endif
 
 	eth_get_ops(current)->stop(current);
 	priv->state = ETH_STATE_PASSIVE;
