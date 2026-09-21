@@ -114,4 +114,20 @@ size_t json_escape(char *dst, size_t dst_sz, const char *src);
 int buf_appendf(char *buf, int size, int len, const char *fmt, ...)
 	__attribute__((format(printf, 4, 5)));
 
+/**
+ * failsafe_mmc_vendor_pretty - append the manufacturer name to an MMC vendor string
+ * @vendor: raw vendor string in format "Man XXXXXX Snr YYYYYYYY"
+ * @dst: output buffer
+ * @dst_sz: output buffer size
+ *
+ * Extracts the manufacturer ID (MID) from the vendor string and appends
+ * the manufacturer name in parentheses, e.g.
+ * "Man 00002c(HIKSEM/Kingston) Snr 02e9a8c9".  If the MID is not in the
+ * lookup table the original string is copied unchanged.
+ *
+ * Pure string handling, so it is available regardless of CONFIG_MMC:
+ * the flash module uses it whenever it reports an MMC device.
+ */
+void failsafe_mmc_vendor_pretty(const char *vendor, char *dst, size_t dst_sz);
+
 #endif /* _FAILSAFE_MODULES_HELPERS_H_ */

@@ -775,6 +775,9 @@ function ensureSidebar() {
     const ubiLink = createNavLink("/ubi.html", "nav.ubi", "ubi");
     ubiLink.style.display = "none";
     advancedSection.appendChild(ubiLink);
+    const flashLink = createNavLink("/flash.html", "nav.flash", "flash");
+    flashLink.style.display = "none";
+    advancedSection.appendChild(flashLink);
     const simgLink = createNavLink("/simg.html", "nav.simg", "simg");
     simgLink.style.display = "none";
     advancedSection.appendChild(simgLink);
@@ -1033,6 +1036,7 @@ function appInit(pageName) {
     pageName === "env" && typeof envInit === "function" && envInit()
     pageName === "settings" && typeof settingsInit === "function" && settingsInit();
     pageName === "ubi" && typeof ubiInit === "function" && ubiInit();
+    pageName === "flash" && typeof flashInit === "function" && flashInit();
     pageName === "simg" && typeof simgInit === "function" && simgInit();
 
     console.log('\n%c Yuzhii0718 ' + UBOOT_VERSION + ' %c ' + GITHUB_USER_URL + ' ', 'color: #fadfa3; background: #030307; padding:5px 0;', 'background: #fadfa3; padding:5px 0;');
@@ -1089,6 +1093,11 @@ const NAV_VISIBILITY_DEFS = {
         url: "/ubi.html",
         logPrefix: "UBI",
         hiddenReason: "feature not enabled or no NAND flash",
+    },
+    flash: {
+        url: "/flash.html",
+        logPrefix: "Flash",
+        hiddenReason: "feature not enabled in build config",
     },
     simg: {
         url: "/simg.html",

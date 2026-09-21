@@ -236,3 +236,113 @@ int buf_appendf(char *buf, int size, int len, const char *fmt, ...)
 		return len + n;
 	return len;
 }
+
+/* ------------------------------------------------------------------ */
+/*  MMC manufacturer ID lookup                                         */
+/* ------------------------------------------------------------------ */
+#ifdef CONFIG_MMC
+
+struct mmc_mid_entry {
+	unsigned int mid;
+	const char *name;
+};
+
+/* JEDEC / SD card manufacturer IDs read from the MMC CID (MID). */
+static const struct mmc_mid_entry mmc_mid_table[] = {
+	{ 0x00, "SanDisk/Spansion" },
+	{ 0x01, "Samsung" },
+	{ 0x02, "Kingston/SanDisk" },
+	{ 0x03, "Toshiba" },
+	{ 0x05, "Unknown" },
+	{ 0x06, "Unknown" },
+	{ 0x11, "Toshiba" },
+	{ 0x13, "Micron" },
+	{ 0x15, "Samsung/SanDisk/LG" },
+	{ 0x18, "Swissbit" },
+	{ 0x2c, "HIKSEM/Kingston" },
+	{ 0x2f, "Konsemi" },
+	{ 0x30, "SMART Modular" },
+	{ 0x32, "Qimonda" },
+	{ 0x37, "KingMax" },
+	{ 0x44, "ATP/Transcend" },
+	{ 0x45, "SanDisk/WesternDigital" },
+	{ 0x70, "Kingston" },
+	{ 0x88, "Longsys" },
+	{ 0x90, "SK hynix" },
+	{ 0x9b, "YMTC" },
+	{ 0x9c, "ATP" },
+	{ 0xce, "Samsung" },
+	{ 0xd6, "Longsys" },
+	{ 0xdf, "SCY" },
+	{ 0xea, "Kowin/SiliconGo/SPeMMC" },
+	{ 0xec, "ATO/Rayson" },
+	{ 0xf4, "BIWIN" },
+	{ 0xfe, "Foresee/Micron" },
+};
+
+static const char *mmc_mid_lookup(unsigned int mid)
+{
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(mmc_mid_table); i++) {
+		if (mmc_mid_table[i].mid == mid)
+			return mmc_mid_table[i].name;
+	}
+
+	return NULL;
+}
+
+/*
+ * Decorate an MMC vendor string:
+ *   "Man 00002c Snr 02e9a8c9" -> "Man 00002c(HIKSEM/Kingston) Snr 02e9a8c9"
+ * An unknown / unexpected format is copied through unchanged.
+ */
+void failsafe_mmc_vendor_pretty(const char *vendor, char *dst, size_t dst_sz)
+{
+	const char *p, *snr;
+	unsigned int mid;
+	const char *name;
+	char hex[7];
+	int i;
+
+	if (!vendor || !vendor[0] || !dst || !dst_sz)
+		return;
+
+	dst[0] = '\0';
+
+	/* Only transform strings starting with "Man ". */
+	if (strncmp(vendor, "Man ", 4))
+		goto copy_raw;
+
+	/* Parse the 6 character hex MID: "Man XXXXXX". */
+	p = vendor + 4;
+	if (strlen(p) < 6)
+		goto copy_raw;
+
+	memcpy(hex, p, 6);
+	hex[6] = '\0';
+
+	for (i = 0; i < 6; i++) {
+		if (!isxdigit((unsigned char)hex[i]))
+			goto copy_raw;
+	}
+
+	mid = simple_strtoul(hex, NULL, 16);
+
+	/* The serial number follows the MID. */
+	snr = strstr(p + 6, " Snr");
+	if (!snr)
+		goto copy_raw;
+
+	name = mmc_mid_lookup(mid);
+	if (!name)
+		goto copy_raw;
+
+	snprintf(dst, dst_sz, "Man %06x(%s)%s", mid, name, snr);
+	return;
+
+copy_raw:
+	strlcpy(dst, vendor ? vendor : "", dst_sz);
+}
+
+#endif /* CONFIG_MMC */

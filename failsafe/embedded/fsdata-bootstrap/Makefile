@@ -48,6 +48,10 @@ obj-y += flashing.o
 FILE_flashing.o := .min/flashing.html$(WEBUI_FAILSAFE_ZSUF)
 FSPATH_flashing.o := flashing.html
 
+obj-$(CONFIG_WEBUI_FAILSAFE_FLASH) += flash.o
+FILE_flash.o := .min/flash.html$(WEBUI_FAILSAFE_ZSUF)
+FSPATH_flash.o := flash.html
+
 obj-y += index.o
 FILE_index.o := .min/index.html$(WEBUI_FAILSAFE_ZSUF)
 FSPATH_index.o := index.html
@@ -95,6 +99,10 @@ FSPATH_console_js.o := console_js.js
 obj-$(CONFIG_WEBUI_FAILSAFE_ENV) += env_js.o
 FILE_env_js.o := .min/env_js.js$(WEBUI_FAILSAFE_ZSUF)
 FSPATH_env_js.o := env_js.js
+
+obj-$(CONFIG_WEBUI_FAILSAFE_FLASH) += flash_js.o
+FILE_flash_js.o := .min/flash_js.js$(WEBUI_FAILSAFE_ZSUF)
+FSPATH_flash_js.o := flash_js.js
 
 obj-$(CONFIG_WEBUI_FAILSAFE_I18N) += i18n.o
 FILE_i18n.o := .min/i18n.js$(WEBUI_FAILSAFE_ZSUF)

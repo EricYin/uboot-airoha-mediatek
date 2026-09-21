@@ -1746,6 +1746,185 @@ button.button.button-sm,
     border-radius: var(--radius-xs);
 }
 
+/* ── Flash management page (hex editor) ────────────────────────── */
+.flash-hint {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
+
+/* Single-line flash / MMC identification shown under the page title */
+.flash-device {
+    width: min(520px, 100%);
+    margin: 2px auto 0;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.flash-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.flash-status.red {
+    color: var(--danger);
+}
+
+.hex-editor {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background:
+        linear-gradient(180deg, rgba(var(--primary-rgb), 0.04), transparent),
+        var(--panel-2);
+    padding: 10px;
+    display: grid;
+    gap: 8px;
+    box-shadow: var(--shadow-sm);
+}
+
+.hex-header {
+    display: grid;
+    grid-template-columns: 90px 1fr 160px;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    align-items: center;
+}
+
+.hex-offset-title,
+.hex-x-title {
+    white-space: nowrap;
+    padding-left: 13px;
+}
+
+.hex-ascii-title {
+    white-space: nowrap;
+}
+
+.hex-body {
+    display: grid;
+    grid-template-columns: 90px 1fr 160px;
+    gap: 10px;
+    align-items: stretch;
+}
+
+.hex-offset,
+.hex-ascii {
+    margin: 0;
+    padding: 10px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--panel-strong);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.55;
+    white-space: pre;
+    overflow: auto;
+    min-height: 220px;
+}
+
+.hex-grid {
+    width: 100%;
+    min-height: 220px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--panel-strong);
+    color: var(--text);
+    outline: none;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.55;
+    overflow: auto;
+    cursor: default;
+}
+
+.hex-grid:focus-within {
+    border-color: rgba(var(--primary-rgb), 0.55);
+    box-shadow: var(--focus-ring);
+}
+
+.hex-row {
+    display: flex;
+}
+
+.hex-byte {
+    display: inline-block;
+    width: 3ch;
+    text-align: center;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: background 0.08s;
+}
+
+.hex-byte:hover {
+    background: rgba(var(--primary-rgb), 0.15);
+}
+
+.hex-byte.in-range {
+    background: rgba(var(--primary-rgb), 0.2);
+}
+
+.hex-byte.selected {
+    background: rgba(var(--primary-rgb), 0.4);
+    color: #fff;
+    outline: 1px solid rgba(var(--primary-rgb), 0.7);
+}
+
+.hex-byte.modified {
+    background: rgba(76, 175, 80, 0.35);
+    color: #fff;
+}
+
+.hex-byte.selected.modified {
+    background: #FF9800;
+}
+
+.hex-byte.in-range.modified {
+    background: rgba(76, 175, 80, 0.45);
+}
+
+.hex-overlay-input {
+    position: absolute;
+    left: -9999px;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+}
+
+.hex-jump-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    align-items: center;
+}
+
+.hex-page-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 4px 0;
+}
+
+.hex-page-controls .button-sm {
+    padding: 4px 14px;
+    font-size: 0.78rem;
+    min-width: 60px;
+}
+
 /* ── Reboot page ───────────────────────────────────────────────── */
 body[data-page="reboot"] #m {
     min-height: auto;
@@ -2064,6 +2243,21 @@ body[data-page="settings"] .upload-hero {
 
     .form-row-2 {
         grid-template-columns: 1fr;
+    }
+
+    .hex-header,
+    .hex-body {
+        grid-template-columns: 1fr;
+    }
+
+    .hex-jump-row {
+        grid-template-columns: 1fr;
+    }
+
+    .hex-offset,
+    .hex-ascii,
+    .hex-grid {
+        min-height: 140px;
     }
 
     .form-actions {

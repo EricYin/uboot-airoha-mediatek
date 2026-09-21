@@ -199,6 +199,7 @@ static const char *select_js_file(const char *uri)
 		"env_js.js",
 		"settings_js.js",
 		"ubi_js.js",
+		"flash_js.js",
 		"simg_js.js",
 		NULL
 	};
@@ -324,6 +325,9 @@ int start_web_failsafe(void)
 #endif
 #ifdef CONFIG_WEBUI_FAILSAFE_UBI
 	ubi_register_handlers(inst);
+#endif
+#ifdef CONFIG_WEBUI_FAILSAFE_FLASH
+	flash_register_handlers(inst);
 #endif
 #ifdef CONFIG_WEBUI_FAILSAFE_CONSOLE
 	console_register_handlers(inst);

@@ -239,6 +239,18 @@ void simg_write_handler(enum httpd_uri_handler_status status,
 	struct httpd_response *response);
 #endif
 
+#ifdef CONFIG_WEBUI_FAILSAFE_FLASH
+void flash_info_handler(enum httpd_uri_handler_status status,
+	struct httpd_request *request,
+	struct httpd_response *response);
+void flash_backup_handler(enum httpd_uri_handler_status status,
+	struct httpd_request *request,
+	struct httpd_response *response);
+void flash_handler(enum httpd_uri_handler_status status,
+	struct httpd_request *request,
+	struct httpd_response *response);
+#endif
+
 /* ------------------------------------------------------------------ */
 /*  Module registration functions                                      */
 /* ------------------------------------------------------------------ */
@@ -264,6 +276,9 @@ void console_register_handlers(struct httpd_instance *inst);
 #endif
 #ifdef CONFIG_WEBUI_FAILSAFE_SIMG
 void simg_register_handlers(struct httpd_instance *inst);
+#endif
+#ifdef CONFIG_WEBUI_FAILSAFE_FLASH
+void flash_register_handlers(struct httpd_instance *inst);
 #endif
 
 #endif /* _FAILSAFE_INTERNAL_H_ */

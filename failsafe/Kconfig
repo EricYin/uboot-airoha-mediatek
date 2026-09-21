@@ -217,8 +217,8 @@ config WEBUI_FAILSAFE_ADVANCED
 	default n
 	help
 	  Advanced failsafe features: Web console, U-Boot environment
-	  management, UBI volume management, RF-EEPROM / single-image
-	  upgrade pages.
+	  management, UBI volume management, flash management, RF-EEPROM /
+	  single-image upgrade pages.
 
 if WEBUI_FAILSAFE_ADVANCED
 
@@ -260,6 +260,39 @@ config WEBUI_FAILSAFE_SIMG
 
 	  WARNING: writing a wrong image overwrites the whole flash,
 	  including bootloaders and calibration data.
+
+config WEBUI_FAILSAFE_FLASH
+	bool "Enable flash management (backup / restore / edit / erase)"
+	default n
+	help
+	  Enable the flash management page: identify the flash chip
+	  (model + partitions), download a backup of a partition or of an
+	  arbitrary byte range, read/edit raw bytes in a hex editor,
+	  restore a backup file and erase storage ranges.
+
+	  This is the merged successor of the former "backup download" and
+	  "flash editor" pages: they now share one page and one module
+	  because both operate on the same raw storage targets.
+
+	  WARNING: writing or erasing raw flash can brick the device.
+
+config WEBUI_FAILSAFE_NAND_RAW
+	bool "Enable NAND raw/OOB backup and flash"
+	default n
+	depends on MTD && WEBUI_FAILSAFE_FLASH
+	help
+	  Extend the flash management page with NAND raw mode: pages are
+	  read / written including their OOB (spare area) data through
+	  MTD_OPS_RAW, which preserves the ECC layout and makes a NAND dump
+	  byte-exact.
+
+	  The mode only exists on NAND devices, so it is compiled out
+	  completely when disabled: the whole flash module then works on
+	  plain data only (MTD / MMC), and no NAND raw code is linked in.
+
+	  Raw mode needs significantly more memory (page size + OOB size
+	  per page) and the dump length is only known to the flash module,
+	  so a 128 MiB flash produces a dump larger than the chip size.
 
 config WEBUI_FAILSAFE_BL31
 	bool "Report the BL31 version banner"
