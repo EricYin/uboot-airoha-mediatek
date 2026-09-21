@@ -80,7 +80,18 @@ int board_init(void)
 		en7528_clear_eic_shadow_sets();
 
  	return 0;
- }
+}
+
+int board_late_init(void)
+{
+	/*
+	 * DRAM initialization and the post-DRAM flash/chainloader stage are
+	 * provided by the external airoha_mips_dramc project; U-Boot proper is
+	 * entered after DRAM is already up, so no late board setup is required
+	 * here beyond what the generic init sequence already performs.
+	 */
+	return 0;
+}
 
 void board_quiesce_devices(void)
 {
