@@ -90,6 +90,10 @@ static const char *fw_to_target(failsafe_fw_t fw)
 		return FAILSAFE_STORAGE_FIT_TARGET;
 	case FW_TYPE_BL2:
 		return "bl2";
+	case FW_TYPE_CHAINLOADER:
+		return "chainloader";
+	case FW_TYPE_UBOOT:
+		return "u-boot";
 	case FW_TYPE_FIP:
 		return FAILSAFE_STORAGE_STATIC_TARGET;
 	case FW_TYPE_INITRD:
