@@ -1,0 +1,9 @@
+
+EN7516/EN7527 REFERENCE BOARD
+S: Experimental
+F: arch/mips/mach-econet/include/mach/en751627.h
+F: board/airoha/en7516/
+F: configs/en751627_reference_defconfig
+F: arch/mips/dts/econet,en751627*.dts*
+F: include/configs/en7516.h
+F: doc/board/airoha/en751627.rst

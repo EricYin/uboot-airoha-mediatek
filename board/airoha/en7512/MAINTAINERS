@@ -1,0 +1,7 @@
+EN7512 REFERENCE BOARD
+S: Orphan
+F: arch/mips/mach-econet/
+F: board/airoha/en7512/
+F: configs/en7512_reference_defconfig
+F: arch/mips/dts/econet,en751221-reference.dts
+F: doc/board/airoha/

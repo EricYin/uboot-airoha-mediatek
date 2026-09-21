@@ -1,0 +1,8 @@
+EN7528 BOARD
+M: Matheus Sampaio Queiroga <srherobrine20@gmail.com>
+S: Maintained
+F: board/airoha/en7528/
+F: configs/en7528_reference_defconfig
+F: arch/mips/dts/econet,en7528*.dts*
+F: include/configs/en7528.h
+F: doc/board/airoha/en7528.rst

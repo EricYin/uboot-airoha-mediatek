@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: GPL-2.0+
+/dts-v1/;
+
+#include "econet,en751221.dtsi"
+
+/ {
+	model = "EcoNet EN751221 reference board";
+	compatible = "econet,en751221-reference", "econet,en751221", "airoha,en751221";
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+
+&eth {
+	status = "okay";
+};
+
+&gdm1 {
+	status = "okay";
+};
+
+&switch0 {
+	status = "okay";
+};
+
+&spi0 {
+	status = "okay";
+
+	nand: nand@0 {
+		compatible = "spi-nand";
+		reg = <0>;
+		spi-max-frequency = <50000000>;
+		spi-tx-bus-width = <1>;
+		spi-rx-bus-width = <2>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+	
+			partition@0 {
+				label = "u-boot";
+				reg = <0x000000 0x100000>;
+			};
+	
+			partition@100000 {
+				label = "ubi";
+				reg = <0x100000 0x000000>;
+			};
+		};
+	};
+};

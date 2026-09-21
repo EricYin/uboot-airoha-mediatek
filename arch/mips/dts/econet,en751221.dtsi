@@ -1,0 +1,149 @@
+// SPDX-License-Identifier: GPL-2.0+
+
+#include <dt-bindings/input/linux-event-codes.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/leds/common.h>
+#include <dt-bindings/clock/econet,en751221-scu.h>
+#include <dt-bindings/reset/econet,en751221-scu.h>
+
+/ {
+	compatible = "econet,en751221", "airoha,en751221";
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			compatible = "mips,mips34Kc";
+			device_type = "cpu";
+			reg = <0>;
+		};
+	};
+
+	aliases {
+		serial0 = &uart0;
+		ethernet0 = &gdm1;
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00000000 0x08000000>;
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		chip_scu: syscon@1fa20000 {
+			compatible = "airoha,chip-scu", "airoha,en751221-chip-scu", "syscon";
+			reg = <0x1fa20000 0x400>;
+		};
+
+		scuclk: system-controller@1fb00000 {
+			compatible = "airoha,en751221-scu", "syscon";
+			reg = <0x1fb00000 0x1000>;
+			airoha,chip-scu = <&chip_scu>;
+
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		system-controller@1fbf0200 {
+			compatible = "syscon", "simple-mfd";
+			reg = <0x1fbf0200 0xc0>;
+
+			pinctrl: pinctrl {
+				compatible = "airoha,en751221-pinctrl";
+				airoha,chip-scu = <&chip_scu>;
+
+				gpio-controller;
+				#gpio-cells = <2>;
+				gpio-ranges = <&pinctrl 0 13 31>;
+
+				interrupt-controller;
+				#interrupt-cells = <2>;
+			};
+		};
+
+		uart0: serial@1fbf0000 {
+			compatible = "econet,en751221-uart";
+			reg = <0x1fbf0000 0x30>;
+
+			clock-frequency = <20000000>;
+			current-speed = <115200>;
+
+			status = "disabled";
+		};
+
+		spi0: spi@1fa10000 {
+			compatible = "econet,en751221-spi";
+			reg = <0x1fa10000 0x140>;
+
+			clocks = <&scuclk EN751221_CLK_SPI>;
+			clock-names = "spi";
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			status = "disabled";
+		};
+
+		eth: ethernet@1fb50000 {
+			compatible = "econet,en751221-eth";
+			status = "disabled";
+			reg = <0x1fb50000 0x2600>,
+			      <0x1fb54000 0x1000>,
+			      <0x1fb55000 0x1000>,
+			      <0x1fbf9000 0x1000>;
+			reg-names = "fe", "qdma0", "qdma1", "gdmp";
+
+			resets = <&scuclk EN751221_FE_RST>,
+			         <&scuclk EN751221_FE_QDMA1_RST>,
+			         <&scuclk EN751221_FE_QDMA2_RST>,
+			         <&scuclk EN751221_GDMA_RST>,
+			         <&scuclk EN751221_FE_UNZIP_RST>,
+			         <&scuclk EN751221_GDMP_RST>,
+			         <&scuclk EN751221_GSW_RST>;
+			reset-names = "fe", "pdma", "qdma",
+			              "gdma", "fe-unzip", "gdmp",
+			              "switch";
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			gdm1: ethernet@1 {
+				compatible = "econet,eth-mac";
+				reg = <0>;
+				phy-mode = "internal";
+				status = "disabled";
+
+				fixed-link {
+					speed = <1000>;
+					full-duplex;
+					pause;
+				};
+			};
+		};
+
+		switch0: switch@1fb58000 {
+			compatible = "econet,en751221-switch";
+			reg = <0x1fb58000 0x8000>;
+
+			status = "disabled";
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+			dsa,member = <0 0>;
+
+			mdio {
+				#address-cells = <1>;
+				#size-cells = <0>;
+			};
+		};
+	};
+};

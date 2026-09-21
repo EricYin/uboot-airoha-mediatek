@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: GPL-2.0+
+/* Generic cold-boot reference target; adapt flash type and wiring to the board. */
+/dts-v1/;
+#include "econet,en751627.dtsi"
+
+/ {
+	model = "EcoNet EN7516/EN7527 reference board";
+	compatible = "econet,en751627-reference", "econet,en751627", "airoha,en751627";
+	memory@0 {
+		device_type = "memory";
+		/* Placeholder; dram_init uses the vendor calibrated size. */
+		reg = <0x00000000 0x10000000>;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+
+&spi0 {
+	status = "okay";
+
+	flash@0 {
+		compatible = "spi-nand";
+		reg = <0>;
+		spi-max-frequency = <25000000>;
+		spi-tx-bus-width = <1>;
+		spi-rx-bus-width = <1>;
+	};
+};
+
+&eth {
+	status = "okay";
+};
+
+&gdm1 {
+	status = "okay";
+};
+
+&switch {
+	status = "okay";
+};

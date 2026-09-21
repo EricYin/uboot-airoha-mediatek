@@ -1,0 +1,7 @@
+EN7580 REFERENCE BOARD
+S: Experimental
+F: arch/mips/mach-econet/en7580/
+F: board/airoha/en7580/
+F: configs/en7580_reference_defconfig
+F: arch/mips/dts/econet,en7580*.dts*
+F: include/configs/en7580.h

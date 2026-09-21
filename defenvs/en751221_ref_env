@@ -1,0 +1,5 @@
+loadaddr=0x89400000
+ipaddr=192.168.1.1
+serverip=192.168.1.10
+bootconf=config-1
+bootfile=openwrt-airoha-en751221-en751221_generic-initramfs-kernel.bin

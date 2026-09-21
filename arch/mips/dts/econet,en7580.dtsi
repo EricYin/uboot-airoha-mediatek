@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+
+#include <dt-bindings/reset/airoha,en7523-reset.h>
+
+/ {
+	compatible = "econet,en7580", "airoha,en7580";
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			compatible = "mips,mips1004Kc";
+			device_type = "cpu";
+			reg = <0>;
+		};
+	};
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		chip_scu: syscon@1fa20000 {
+			compatible = "airoha,en7580-chip-scu",
+				     "airoha,en7528-chip-scu", "syscon";
+			reg = <0x1fa20000 0x400>;
+		};
+
+		scuclk: system-controller@1fb00000 {
+			compatible = "airoha,en7580-scu", "airoha,en7528-scu",
+				     "syscon";
+			reg = <0x1fb00000 0x1000>;
+			airoha,chip-scu = <&chip_scu>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		uart0: serial@1fbf0000 {
+			compatible = "ns16550";
+			reg = <0x1fbf0000 0x30>;
+			reg-io-width = <4>;
+			reg-shift = <2>;
+			clock-frequency = <1843200>;
+			current-speed = <115200>;
+			status = "disabled";
+		};
+
+		spi0: spi@1fa10000 {
+			compatible = "econet,en75xx-spi";
+			reg = <0x1fa10000 0x140>,
+			      <0x1fa11000 0x600>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		eth: ethernet@1fb50000 {
+			compatible = "econet,en7580-eth";
+			reg = <0x1fb50000 0x2600>,
+			      <0x1fb54000 0x2000>,
+			      <0x1fb56000 0x2000>,
+			      <0x1fa40000 0x8000>;
+			reg-names = "fe", "qdma0", "qdma1", "gdmp";
+			resets = <&scuclk EN7523_FE_RST>,
+				 <&scuclk EN7523_FE_PDMA_RST>,
+				 <&scuclk EN7523_FE_QDMA_RST>;
+			reset-names = "fe", "pdma", "qdma";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+
+			gdm1: mac@1 {
+				compatible = "econet,eth-mac";
+				reg = <1>;
+				phy-mode = "internal";
+
+				fixed-link {
+					speed = <1000>;
+					full-duplex;
+					pause;
+				};
+			};
+		};
+
+		switch: switch@1fb58000 {
+			compatible = "econet,en7580-switch";
+			reg = <0x1fb58000 0x8000>;
+			status = "disabled";
+		};
+	};
+};
