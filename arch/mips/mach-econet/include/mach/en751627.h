@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
+#ifndef __MACH_EN751627_H__
+#define __MACH_EN751627_H__
+
+#define EN751627_SYS_GLOBAL_PARM	0xbfb00284
+#define EN751627_DRAM_SIZE_MASK	0x00000fff
+#define EN751627_DRAM_SIZE_SHIFT	0
+#define EN751627_SYS_CLK_MASK		0xfff00000
+#define EN751627_SYS_CLK_SHIFT		20
+
+#endif

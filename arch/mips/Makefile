@@ -9,6 +9,7 @@ endif
 
 ifeq ($(CONFIG_TPL_BUILD),y)
 head-$(CONFIG_SOC_MT7621) := arch/mips/mach-mtmips/mt7621/tpl/start.o
+head-$(CONFIG_ARCH_ECONET) := arch/mips/mach-econet/tpl/start.o
 endif
 
 libs-y += arch/mips/cpu/
@@ -16,6 +17,7 @@ libs-y += arch/mips/lib/
 
 machine-$(CONFIG_ARCH_ATH79) += ath79
 machine-$(CONFIG_ARCH_BMIPS) += bmips
+machine-$(CONFIG_ARCH_ECONET) += econet
 machine-$(CONFIG_ARCH_JZ47XX) += jz47xx
 machine-$(CONFIG_MACH_PIC32) += pic32
 machine-$(CONFIG_ARCH_MTMIPS) += mtmips
@@ -42,6 +44,7 @@ tune-$(CONFIG_MIPS_TUNE_14KC) += -mtune=14kc
 tune-$(CONFIG_MIPS_TUNE_24KC) += -mtune=24kc
 tune-$(CONFIG_MIPS_TUNE_34KC) += -mtune=34kc
 tune-$(CONFIG_MIPS_TUNE_74KC) += -mtune=74kc
+tune-$(CONFIG_MIPS_TUNE_1004KC) += -mtune=1004kc
 tune-${CONFIG_MIPS_TUNE_OCTEON3} += -mtune=octeon2
 
 # Include default header files

@@ -1,0 +1,86 @@
+menu "Airoha MIPS platforms"
+	depends on ARCH_ECONET
+
+choice
+	prompt "Airoha MIPS SoC"
+
+config TARGET_EN751221
+	bool "Airoha EN751221 SoC"
+	select SUPPORT_BIG_ENDIAN
+	select SYSCON
+	select MIPS_TUNE_34KC
+	select PINCTRL_AIROHA_EN751221
+
+config TARGET_EN751627
+	bool "Airoha EN751627 SoC"
+	select SUPPORT_BIG_ENDIAN
+	select SYSCON
+	select MIPS_TUNE_1004KC
+	select MIPS_SKIP_CP0_COUNT_CLEAR
+	help
+	  EN7516/EN7527 shares most peripheral support with EN7528 but boots
+	  big-endian. Early DDR/flash boot stages are built outside U-Boot.
+
+config TARGET_EN7528
+	bool "Airoha EN7528 SoC"
+	select SUPPORT_LITTLE_ENDIAN
+	select SYSCON
+	select MIPS_TUNE_1004KC
+	select MIPS_SKIP_CP0_COUNT_CLEAR
+	select PINCTRL_AIROHA_EN7528
+
+config TARGET_EN7580
+	bool "Airoha EN7580 SoC"
+	select SUPPORT_LITTLE_ENDIAN
+	select SYSCON
+	select MIPS_TUNE_1004KC
+	select MIPS_SKIP_CP0_COUNT_CLEAR
+	help
+	  Select support for the little-endian MIPS32r2 EN7580 family.
+	  U-Boot proper is entered after the external early-boot/DRAM stage.
+
+endchoice
+
+config SYS_VENDOR
+	default "airoha"
+
+config SYS_SOC
+	default "en751221" if TARGET_EN751221
+	default "en751627" if TARGET_EN751627
+	default "en7528" if TARGET_EN7528
+	default "en7580" if TARGET_EN7580
+
+config SYS_BOARD
+	default "en7512" if TARGET_EN751221
+	default "en7516" if TARGET_EN751627
+	default "en7528" if TARGET_EN7528
+	default "en7580" if TARGET_EN7580
+
+config SYS_CONFIG_NAME
+	default "en7512" if TARGET_EN751221
+	default "en7516" if TARGET_EN751627
+	default "en7528" if TARGET_EN7528
+	default "en7580" if TARGET_EN7580
+
+config SYS_MALLOC_F_LEN
+	default 0x2000
+
+config SYS_DCACHE_SIZE
+	default 32768
+
+config SYS_DCACHE_LINE_SIZE
+	default 32
+
+config SYS_ICACHE_SIZE
+	default 32768
+
+config SYS_ICACHE_LINE_SIZE
+	default 32
+
+config TEXT_BASE
+	default 0x81000000
+
+config BUILD_TARGET
+	default "u-boot.bin"
+
+endmenu

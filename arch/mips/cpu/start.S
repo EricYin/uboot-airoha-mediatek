@@ -124,7 +124,9 @@ ENTRY(_start)
 #endif
 
 reset:
+#ifndef CONFIG_MIPS_SKIP_CP0_COUNT_CLEAR
 	mtc0	zero, CP0_COUNT	# clear cp0 count for most accurate boot timing
+#endif
 #if __mips_isa_rev >= 6
 	mfc0	t0, CP0_CONFIG, 5
 	and	t0, t0, MIPS_CONF5_VP
