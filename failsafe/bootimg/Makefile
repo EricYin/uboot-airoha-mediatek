@@ -2,7 +2,8 @@
 #
 # Shared boot-image helpers (FIP / BL2 / image / storage)
 
-obj-y += bl2.o fip.o image.o storage.o
+obj-y += image.o storage.o
+obj-$(CONFIG_ARM) += bl2.o fip.o
 
 # BL31 support is optional: it is usually packaged together with BL33
 # (U-Boot) inside one FIP, so a board may prefer to leave it out.

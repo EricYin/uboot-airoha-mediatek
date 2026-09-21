@@ -180,6 +180,8 @@ int boot_from_mem(ulong data_load_addr)
 					    FAILSAFE_INITRAMFS_LOAD_FALLBACK);
 }
 
+#if IS_ENABLED(CONFIG_ARM)
+
 int failsafe_bl2_version_info(const void *data, size_t size,
 			      failsafe_fw_t fw,
 			      struct failsafe_version_info *info)
@@ -293,3 +295,5 @@ int failsafe_atf_version_info(struct failsafe_version_info *bl2,
 
 	return (bl2->found || bl31->found) ? 0 : -ENOENT;
 }
+
+#endif /* CONFIG_ARM */

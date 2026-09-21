@@ -93,6 +93,8 @@ config WEBUI_FAILSAFE_LAYOUT_UBOOT
 	    - U-Boot upgrade           (u-boot MTD partition)
 	    - Initramfs RAM boot
 
+if ARM
+
 config WEBUI_FAILSAFE_LAYOUT_FIP
 	bool "FIP layout (bl2 + fip partitions)"
 	help
@@ -110,6 +112,8 @@ config WEBUI_FAILSAFE_LAYOUT_CHAINLOADER
 	    - Preloader upgrade        (bl2 MTD partition)
 	    - Chainloader upgrade      (chainloader MTD partition)
 	    - Initramfs RAM boot
+
+endif # ARM
 
 endchoice
 
@@ -234,9 +238,8 @@ config WEBUI_FAILSAFE_ENV
 
 config WEBUI_FAILSAFE_UBI
 	bool "Enable UBI volume management"
+	depends on MTD && !ENV_IS_IN_MMC && CMD_UBI
 	default y
-	depends on MTD && !ENV_IS_IN_MMC
-	select CMD_UBI
 	help
 	  Enable the UBI volume management page: list / attach / detach /
 	  remove / resize UBI volumes. Useful on SPI-NAND / SPI-NOR boards
@@ -260,6 +263,7 @@ config WEBUI_FAILSAFE_SIMG
 
 config WEBUI_FAILSAFE_BL31
 	bool "Report the BL31 version banner"
+	depends on ARM
 	default y
 	help
 	  Report the version and build date of the BL31 (ATF EL3 runtime)
