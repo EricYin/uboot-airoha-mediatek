@@ -184,6 +184,37 @@ int dcache_status(void)
 	return cca != CONF_CM_UNCACHED;
 }
 
+void invalidate_icache_all(void)
+{
+	unsigned long conf1, il, ia, is, linesz, ways, sets, size;
+	unsigned long addr;
+
+	conf1 = read_c0_config1();
+	il = (conf1 & MIPS_CONF1_IL) >> MIPS_CONF1_IL_SHF;
+	ia = (conf1 & MIPS_CONF1_IA) >> MIPS_CONF1_IA_SHF;
+	is = (conf1 & MIPS_CONF1_IS) >> MIPS_CONF1_IS_SHF;
+
+	linesz = il ? (2 << il) : 0;
+	ways = ia + 1;
+	sets = is ? (64 << is) : 0;
+	size = linesz * ways * sets;
+
+	if (!size)
+		return;
+
+	/* Index operations ignore the tag, so iterating over the whole cache
+	 * array (all sets x ways) from a KSEG0 base invalidates every line.
+	 */
+	for (addr = CKSEG0; addr < CKSEG0 + size; addr += linesz)
+		mips_cache(INDEX_INVALIDATE_I, (void *)addr);
+
+	/* ensure cache ops complete before any further memory accesses */
+	sync();
+
+	/* ensure the pipeline doesn't contain now-invalid instructions */
+	instruction_hazard_barrier();
+}
+
 void dcache_enable(void)
 {
 	puts("Not supported!\n");
