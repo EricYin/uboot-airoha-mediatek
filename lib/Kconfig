@@ -877,6 +877,11 @@ config LZO
 	help
 	  This enables support for the LZO compression algorithm.
 
+config TAR
+	bool "Enable TAR archive support"
+	help
+	  This enables support for parsing TAR archives.
+
 config GZIP
 	bool "Enable gzip decompression support"
 	select ZLIB
