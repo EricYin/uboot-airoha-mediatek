@@ -1,4 +1,4 @@
-if ARCH_MEDIATEK
+if ARCH_MEDIATEK || ARCH_MTMIPS
 
 menu "Mediatek specific configurations"
 
@@ -24,6 +24,8 @@ menuconfig MTK_FAILSAFE_VALIDATE
 
 if MTK_FAILSAFE_VALIDATE
 
+if ARM
+
 config MTK_FAILSAFE_VALIDATE_BL2
 	bool "Validate 'bl2' (preloader) images"
 	default y
@@ -37,6 +39,8 @@ config MTK_FAILSAFE_VALIDATE_FIP
 	help
 	  Structurally validate uploaded 'fip' (UBI static volume) images
 	  before they are flashed.
+
+endif # ARM
 
 config MTK_FAILSAFE_VALIDATE_FIRMWARE
 	bool "Validate 'firmware' images"
@@ -61,4 +65,4 @@ config MTK_DEFAULT_FIT_BOOT_CONF
 
 endmenu # Mediatek specific configurations
 
-endif # ARCH_MEDIATEK
+endif # ARCH_MEDIATEK || ARCH_MTMIPS
