@@ -1,0 +1,87 @@
+.. SPDX-License-Identifier: GPL-2.0+
+
+EN7516/EN7527
+=============
+
+The EN751627 target is the big-endian member of the EN7528 MIPS1004Kc
+family. It shares the CPU implementation in ``arch/mips/mach-econet/en7528/``
+and the peripheral register map in ``econet,en7528.dtsi``, while its board
+files live in ``board/airoha/en7516/`` with ``include/configs/en7516.h``. It
+does not select ``TARGET_EN7528``. DDR calibration and flash-image
+construction are maintained outside the U-Boot tree.
+
+``board/airoha/en7516/board.c`` intentionally does not inherit the EN7528
+GIC/EIC and CP0 timer handoff workaround of ``board/airoha/en7528/board.c``:
+EN7516/EN7527 runs its own vendor boot2 stage, so the interrupt state handed
+over to U-Boot is not the EN7528 one.
+
+Build
+-----
+
+Use a GNU MIPS toolchain capable of generating big-endian MIPS32r2 code::
+
+   make O=build/en751627 en751627_reference_defconfig
+   make O=build/en751627 CROSS_COMPILE=mips-linux-gnu- -j4
+
+``build/en751627/u-boot.bin`` is a RAM-loaded image with an appended device
+tree, linked at 0x81000000. The preceding DDR/flash stage and any 1 MiB
+replacement ``tcboot.bin`` are built in the external early-boot repository.
+Peripheral bring-up, including switch PHY initialization, still needs board
+validation.
+
+Hardware description
+--------------------
+
+``econet,en751627.dtsi`` describes the common SoC, overriding the EN7528
+Ethernet compatible to select native big-endian QDMA descriptors. The SCU,
+reset and switch compatibles retain EN7528 fallbacks for their shared
+register layout. SPI and SCU regmaps use native-endian 32-bit MMIO; UART
+uses aligned big-endian 32-bit accesses.
+
+The generic reference DTS enables GDM1, the integrated switch and a single
+SPI-NAND on CS0. No board-specific flash partitions are assumed. For a
+SPI-NOR board, change the flash compatible to ``jedec,spi-nor`` in the
+board DTS; the SPI driver then uses its manual SPI-MEM path. Verify wiring,
+flash part support, RAM size and clocks against the actual board.
+``spi-max-frequency`` does not program the SFC clock without a clock provider;
+this configuration inherits that clock from the preceding stage.
+
+The initial 256 MiB memory node is a placeholder. ``dram_init()`` reads
+calibrated size from bits [11:0] of SYS_GLOBAL_PARM (0xbfb00284), whereas
+the EN7528 handoff uses bits [31:20]. ``OF_SYSTEM_SETUP`` fixes the kernel
+memory node before a supported FDT boot. The CP0 timer configuration assumes
+200 MHz, as in the existing EN7528 reference target; adjust it for boards
+with a different Count frequency.
+
+Ethernet and SPI
+----------------
+
+The EN751627 Ethernet data entry selects the shared EN7528 QDMA ring,
+moving-null RX/TX descriptor and integrated-switch profile. Its version
+field denotes that shared hardware profile. Unlike EN7528, it enables QDMA
+GLOBAL_CFG bit 27 (descriptor byte swap). Legacy descriptors are stored in
+native CPU order. Message-word and payload swap remain enabled on both
+variants; the TX destination field stays in bits [21:19].
+
+The SPI compatible binds the existing SNFI driver. Both SFC and NFI banks
+use native 32-bit register access, with FIFO data extracted byte by byte.
+SPI-NAND retains the existing DMA path and on-die ECC policy. This does not implement vendor controller-ECC/BMT image compatibility. NAND data written
+with a different ECC layout cannot be assumed readable by this driver.
+
+Evidence and validation
+-----------------------
+
+The reference consulted was the TP-Link VX830v GPL SDK under
+``bba_3_0_platform/sdk/en7516/bootrom/bootram/``:
+
+* ``include/asm/tc3162.h``: SYS_GLOBAL_PARM_T bitfield layout.
+* ``net/7512_eth.c``: QDMA descriptor swap conditional on
+  TCSUPPORT_LITTLE_ENDIAN.
+* ``net/7512_eth.h``: corresponding big/little-endian TX message bitfields.
+* ``flash/controller/spi_controller/spi_nfi.c``: NFI register helpers use
+  INREG32/OUTREG32, including helpers named REG16.
+
+Full cross-builds and compiled DTS checks cover EN751627 and EN7528.
+SDK TX-message and DRAM-handoff constants were compiled in both byte orders
+and checked against the fields used here. These checks do not validate live
+Ethernet traffic, flash DMA or booting on a physical EN7516/EN7527 board.

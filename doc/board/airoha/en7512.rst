@@ -1,0 +1,40 @@
+.. SPDX-License-Identifier: GPL-2.0+
+
+EN7512/EN7521 reference board
+=============================
+
+This target provides U-Boot proper for the MIPS-based EcoNet/Airoha EN7512
+and EN7521 SoCs. DDR calibration, BootROM recovery chainloaders and TCBoot
+flash-image construction are intentionally maintained outside the U-Boot tree.
+
+Boot flow
+---------
+
+An earlier stage initializes DRAM and loads U-Boot at ``0x81000000``. Depending
+on the board and recovery path that stage may be a vendor BootROM/DRAMC flow or
+an external replacement flash/chainloader project. U-Boot consumes the DRAM
+size and clock handoff left in ``REG_SAVE_INFO`` and does not rebuild or embed
+the early boot stages.
+
+Build
+-----
+
+Use a big-endian MIPS cross compiler::
+
+    make en7512_reference_defconfig
+    make CROSS_COMPILE=mips-linux-gnu-
+
+The U-Boot tree produces the normal U-Boot artifacts such as ``u-boot.bin``,
+``u-boot.img`` and the configured device tree. Construct any board-specific
+``tcboot.bin`` or recovery/DRAMC image in the external early-boot repository.
+
+Current limitations
+-------------------
+
+* The preceding DRAM stage must provide a valid ``REG_SAVE_INFO`` handoff.
+* U-Boot proper uses the Airoha EN7523 SPI-MEM driver with the EN751221 double
+  chip-select quirk. Verify the board BBT/BMT/ECC layout before modifying NAND.
+* Ethernet provides a polling U-Boot path through EN751221 QDMA0, GDM1 and the
+  integrated MT7530. Cold-boot PHY initialization remains board-specific.
+* U-Boot proper has been chainloaded and validated on physical hardware; the
+  reset-to-U-Boot path is owned and validated separately from this tree.
