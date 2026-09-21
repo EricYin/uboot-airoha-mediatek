@@ -1,6 +1,8 @@
-if ARCH_AIROHA
+if ARCH_AIROHA || ARCH_ECONET
 
 menu "Airoha specific configurations"
+
+if ARCH_AIROHA
 
 menuconfig BUILD_AIROHA
 	bool "Build Airoha bootloader images"
@@ -9,6 +11,8 @@ menuconfig BUILD_AIROHA
 	  Enable this to build Airoha bootloader images (modern FIP, legacy
 	  512 KiB, chainloader) for Airoha SoCs.  This is enabled by default
 	  for Airoha boards.
+
+endif # ARCH_AIROHA
 
 if BUILD_AIROHA
 
@@ -313,6 +317,8 @@ config AIROHA_FAILSAFE_VALIDATE_UBOOT
 	  The image size is bounded by the generic MTD partition capacity
 	  check (must fit the 'u-boot' partition, no fixed size limit).
 
+if ARM
+
 config AIROHA_FAILSAFE_VALIDATE_BL2
 	bool "Validate 'bl2' (preloader) images"
 	depends on AIROHA_BUILD_MODERN
@@ -355,6 +361,8 @@ config AIROHA_FAILSAFE_VALIDATE_CHAINLOADER
 	  check (must fit the 'chainloader' partition, no fixed size
 	  limit).
 
+endif # ARM
+
 config AIROHA_FAILSAFE_VALIDATE_FIRMWARE
 	bool "Validate 'firmware' images"
 	default y
@@ -378,4 +386,4 @@ config AIROHA_DEFAULT_FIT_BOOT_CONF
 
 endmenu # Airoha specific configurations
 
-endif # ARCH_AIROHA
+endif # ARCH_AIROHA || ARCH_ECONET
