@@ -1,0 +1,36 @@
+loadaddr=0x80100000
+ipaddr=192.168.1.1
+serverip=192.168.1.254
+netmask=255.255.255.0
+dhcpd_verbose=1
+btnchk_key=reset
+bootled_pwr=green:sys
+failsafe_led_idle=green:wan on;green:sys on
+failsafe_led_ready=green:sys blink 2000
+failsafe_led_upgrade=green:wan blink 200,green:sys blink 200
+failsafe_led_success=green:sys on
+failsafe_led_fail=green:wan blink 100
+
+bootconf=config-1
+bootfile=openwrt-mediatek-mt7628-mw305r-v9.0-initramfs-kernel.bin
+bootloaderfile=mt7628_mw305r-v9.0-uboot.bin
+
+boot_tftp=tftpboot $loadaddr $bootfile && bootm $loadaddr#$bootconf
+
+upgrade_uboot=\
+  mw.b 0x80100000 0xff 0x100000 && tftpboot 0x80100000 ${bootloaderfile} && \
+  mtd erase u-boot && mtd write u-boot 0x80100000
+
+failsafe_fit=setenv failsafe_part fit ; httpd
+failsafe_uboot=setenv failsafe_part u-boot ; httpd
+
+bootcmd=run boot_ubi
+bootdelay=3
+bootmenu_confirm_return=askenv - Press ENTER to return to menu ; bootmenu 20
+bootmenu_default=0
+bootmenu_delay=3
+bootmenu_title=      [0;34m( ( ( [1;39mOpenWrt[0;34m ) ) )[0m
+bootmenu_0=Boot system via TFTP.=run boot_tftp ; run bootmenu_confirm_return
+bootmenu_1=[31mLoad U-Boot FIP via TFTP then write to NAND[0m=run upgrade_uboot
+bootmenu_2=[32mStart Web failsafe.[0m=httpd
+bootmenu_3=Reboot.=reset
