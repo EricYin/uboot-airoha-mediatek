@@ -1519,7 +1519,7 @@ static void telnetd_callback(struct mtk_tcp_cb_data *cbd)
 
 		memcpy(sip, &cbd->sip, 4);
 		printf("Telnet connection from %d.%d.%d.%d:%d\n",
-		       sip[0], sip[1], sip[2], sip[3], ntohs(cbd->sp));
+		       sip[0], sip[1], sip[2], sip[3], ntohs(cbd->sport));
 		telnetd_send_greeting(cbd, pdata);
 		break;
 
@@ -1623,7 +1623,7 @@ static void telnetd_callback(struct mtk_tcp_cb_data *cbd)
 			}
 		memcpy(sip, &cbd->sip, 4);
 		printf("Telnet connection closed %d.%d.%d.%d:%d\n",
-		       sip[0], sip[1], sip[2], sip[3], ntohs(cbd->sp));
+		       sip[0], sip[1], sip[2], sip[3], ntohs(cbd->sport));
 		break;
 
 	default:
