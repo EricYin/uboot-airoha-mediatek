@@ -28,15 +28,21 @@
  *
  * Target selection is driven by the failsafe_fw_t firmware type that the
  * Web UI derives from the uploaded form field:
- *   firmware    → "fit"   (OpenWrt kernel/rootfs FIT, UBI dynamic volume)
- *   bl2         → "bl2"   (MTD partition, bootrom expects image at 0x800,
- *                          modern FIP devices only)
+ *   firmware    → the system image (one single FIT), written through the
+ *                 shared failsafe_storage_write_firmware() to the "fit" /
+ *                 "firmware" / "production" partition of an MMC device, or
+ *                 to the "fit" UBI volume
+ *   bl2         → the preloader; the "bl2" MTD partition on NAND / NOR
+ *                 devices, the fixed offset 0x800 of the MMC user area on
+ *                 eMMC / SD - see airoha_write_bl2()
  *   chainloader → "chainloader" (MTD partition, either an OpenWrt-style
  *                          second-stage U-Boot FIT or a shim-based
  *                          legacy uImage, modern FIP devices only)
  *   uboot       → "u-boot" (MTD partition, legacy-image devices; the
  *                          512 KiB boot image, with or without BL1)
- *   fip         → "fip"   (UBI static volume, modern FIP devices only)
+ *   fip         → "fip"   (UBI static volume on NAND; a GPT partition of
+ *                          that name on eMMC, which is where the Airoha
+ *                          BL2 looks for it - fill_io_block_spec_gpt())
  *   initramfs   → no flash target, RAM boot via boot_from_mem()
  */
 
@@ -55,6 +61,10 @@
 #include <failsafe/image.h>
 #include <failsafe/storage.h>
 #include <failsafe/cprint.h>
+
+#if IS_ENABLED(CONFIG_MMC)
+#include <failsafe/mmc.h>
+#endif
 
 #include "failsafe_validate.h"
 
@@ -95,6 +105,21 @@ DECLARE_GLOBAL_DATA_PTR;
 #define FAILSAFE_BL2_WRITE_OFFSET	0
 #else
 #define FAILSAFE_BL2_WRITE_OFFSET	0x800
+#endif
+
+/* The preloader offset on an MMC device.
+ *
+ * eMMC / SD cards have no "bl2" partition and the Airoha bootrom does not
+ * use the boot0 hardware partition either (that layout belongs to the
+ * MediaTek SoCs): it reads the preloader from the fixed address 0x800 of
+ * the user area, the same offset as in the MTD partition.  The image
+ * written with CONFIG_AIROHA_PRELOADER_BL1 carries its 2 KiB BL1 head, so
+ * it goes to offset 0 there too.
+ */
+#ifdef CONFIG_AIROHA_PRELOADER_BL1
+#define FAILSAFE_MMC_BL2_OFFSET		0
+#else
+#define FAILSAFE_MMC_BL2_OFFSET		0x800
 #endif
 
 /* Offset of the internal FIP in the legacy 512 KiB boot image: the 2 KiB
@@ -138,6 +163,8 @@ static const char *fw_to_target(failsafe_fw_t fw)
 		return "u-boot";
 	case FW_TYPE_FIP:
 		return FAILSAFE_STORAGE_STATIC_TARGET;
+	case FW_TYPE_GPT:
+		return FAILSAFE_STORAGE_GPT_TARGET;
 	case FW_TYPE_INITRD:
 		return NULL;	/* RAM boot, no flash target */
 	default:
@@ -145,18 +172,87 @@ static const char *fw_to_target(failsafe_fw_t fw)
 	}
 }
 
-/*
- * Return the offset (in bytes) within the MTD partition where the image
- * must be written.  Most partitions are written from offset 0; the Airoha
- * "bl2" partition is the exception (see FAILSAFE_BL2_WRITE_OFFSET).
- */
-static u64 failsafe_mtd_write_offset(const char *target)
-{
-	if (!strcmp(target, "bl2"))
-		return FAILSAFE_BL2_WRITE_OFFSET;
+/* ------------------------------------------------------------------ */
+/*  Airoha specific storage policy                                    */
+/* ------------------------------------------------------------------ */
 
-	return 0;
+/*
+ * Capacity check of the preloader location: the "bl2" MTD partition when
+ * the device has one (the image goes in at FAILSAFE_BL2_WRITE_OFFSET), the
+ * fixed offset of the MMC user area otherwise.
+ */
+static int airoha_bl2_capacity(size_t size)
+{
+	if (failsafe_mtd_exists(FAILSAFE_STORAGE_BL2_TARGET))
+		return failsafe_mtd_capacity(FAILSAFE_STORAGE_BL2_TARGET,
+					     FAILSAFE_BL2_WRITE_OFFSET, size);
+
+#if IS_ENABLED(CONFIG_MMC)
+	if (failsafe_mmc_present())
+		return failsafe_mmc_region_capacity(FAILSAFE_MMC_HWPART_USER,
+						    FAILSAFE_MMC_BL2_OFFSET,
+						    size);
+#endif
+
+	cprintln(ERROR, "Failsafe: no MTD partition '%s' and no MMC device "
+		 "to hold the preloader", FAILSAFE_STORAGE_BL2_TARGET);
+	return -ENODEV;
 }
+
+/*
+ * Write the preloader where the Airoha bootrom looks for it.  This is the
+ * board's business because the location is SoC specific: the MediaTek
+ * boards write it to the boot0 hardware partition of an eMMC, Airoha keeps
+ * it in the user area at a fixed offset (the bootrom does not read a
+ * partition table).
+ */
+static int airoha_write_bl2(const void *data, size_t size)
+{
+	int ret;
+
+	if (failsafe_mtd_exists(FAILSAFE_STORAGE_BL2_TARGET)) {
+		ret = failsafe_mtd_capacity(FAILSAFE_STORAGE_BL2_TARGET,
+					    FAILSAFE_BL2_WRITE_OFFSET, size);
+		if (ret)
+			return ret;
+
+		return failsafe_mtd_write(FAILSAFE_STORAGE_BL2_TARGET,
+					  FAILSAFE_BL2_WRITE_OFFSET, data,
+					  size);
+	}
+
+#if IS_ENABLED(CONFIG_MMC)
+	if (failsafe_mmc_present())
+		return failsafe_mmc_write_region(FAILSAFE_MMC_HWPART_USER,
+						 FAILSAFE_MMC_BL2_OFFSET,
+						 data, size);
+#endif
+
+	cprintln(ERROR, "Failsafe: no MTD partition '%s' and no MMC device "
+		 "to hold the preloader", FAILSAFE_STORAGE_BL2_TARGET);
+	return -ENODEV;
+}
+
+#ifndef CONFIG_AIROHA_BUILD_LEGACY
+/* Read the flashed preloader back, from the same two locations. */
+static int airoha_read_bl2(void *buf, size_t max_len, size_t *read_len)
+{
+	if (failsafe_mtd_exists(FAILSAFE_STORAGE_BL2_TARGET))
+		return failsafe_mtd_read(FAILSAFE_STORAGE_BL2_TARGET,
+					 FAILSAFE_BL2_WRITE_OFFSET, buf,
+					 max_len, read_len);
+
+#if IS_ENABLED(CONFIG_MMC)
+	if (failsafe_mmc_present())
+		return failsafe_mmc_read_region(FAILSAFE_MMC_HWPART_USER,
+						FAILSAFE_MMC_BL2_OFFSET, buf,
+						max_len, read_len);
+#endif
+
+	return -ENODEV;
+}
+#endif /* CONFIG_AIROHA_BUILD_LEGACY */
+
 
 /* ------------------------------------------------------------------ */
 /*  Public hooks – called by failsafe/failsafe_core.c                 */
@@ -187,10 +283,15 @@ int failsafe_validate_image(const void *data, size_t size, failsafe_fw_t fw)
 	 * storage safety), regardless of CONFIG_AIROHA_FAILSAFE_VALIDATE.
 	 * For MTD partitions the image, including the write offset, must
 	 * fit inside the partition; this is the single size gate for
-	 * bl2 / u-boot / chainloader.
+	 * u-boot / chainloader.  The preloader has its own two locations
+	 * (MTD partition with the bootrom offset, MMC user area), so it is
+	 * checked by the Airoha specific helper.
 	 */
-	ret = failsafe_check_capacity(target,
-				      failsafe_mtd_write_offset(target), size);
+	if (fw == FW_TYPE_BL2)
+		ret = airoha_bl2_capacity(size);
+	else
+		ret = failsafe_check_capacity(target, 0, size);
+
 	if (ret)
 		return ret;
 
@@ -225,8 +326,19 @@ int failsafe_write_image(const void *data, size_t size, failsafe_fw_t fw)
 		return -EINVAL;
 	}
 
-	return failsafe_storage_write(target, failsafe_mtd_write_offset(target),
-				      data, size);
+	/*
+	 * The preloader is the one type whose location is Airoha specific
+	 * (see airoha_write_bl2()); the system image is one FIT written
+	 * through the shared helper, and everything else is a generic
+	 * target that means the same thing on every SoC.
+	 */
+	if (fw == FW_TYPE_FW)
+		return failsafe_storage_write_firmware(target, data, size);
+
+	if (fw == FW_TYPE_BL2)
+		return airoha_write_bl2(data, size);
+
+	return failsafe_storage_write(target, 0, data, size);
 }
 
 /*
@@ -374,12 +486,12 @@ int failsafe_atf_version_info(struct failsafe_version_info *bl2,
 #endif
 #else
 	/*
-	 * Modern split FIP: BL2 is the "tb-fw" entry of the preloader in
-	 * the "bl2" MTD partition, BL31 the "soc-fw" entry of the FIP in
-	 * the "fip" UBI volume.
+	 * Modern split FIP: BL2 is the "tb-fw" entry of the preloader - the
+	 * one in the "bl2" MTD partition, or the one at the fixed offset of
+	 * the MMC user area - and BL31 the "soc-fw" entry of the FIP in the
+	 * "fip" volume / partition.
 	 */
-	ret = failsafe_storage_read("bl2", 0, read_buf,
-				    FAILSAFE_ATF_READ_MAX, &read_len);
+	ret = airoha_read_bl2(read_buf, FAILSAFE_ATF_READ_MAX, &read_len);
 	if (!ret) {
 		failsafe_bl2_locate(read_buf, read_len, airoha_bl2_fip_offsets,
 				    ARRAY_SIZE(airoha_bl2_fip_offsets),
