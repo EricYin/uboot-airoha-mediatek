@@ -161,14 +161,15 @@ static int failsafe_validate_fip(const void *data, size_t size)
 #if defined(CONFIG_MTK_FAILSAFE_VALIDATE_FIRMWARE)
 static int failsafe_validate_firmware(const void *data, size_t size)
 {
-	int ret;
-
-	ret = failsafe_image_validate_fit(data, size, "firmware");
-	if (ret)
-		return ret;
-
-	/* Opt-in strict board-model gate (env 'failsafe_strict_model'). */
-	return failsafe_firmware_check_model(data, size, "firmware");
+	/*
+	 * A single boot image (FIT) is checked structurally plus by the
+	 * opt-in strict board-model gate (env 'failsafe_strict_model').
+	 * On boards with an MMC system image (CONFIG_MMC) an OpenWrt
+	 * sysupgrade TAR - the split kernel + rootfs image - is accepted as
+	 * well; the shared helper picks the right check (see
+	 * failsafe_image_validate_firmware()).
+	 */
+	return failsafe_image_validate_firmware(data, size, "firmware");
 }
 #endif /* CONFIG_MTK_FAILSAFE_VALIDATE_FIRMWARE */
 

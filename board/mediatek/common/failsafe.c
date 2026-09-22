@@ -24,9 +24,16 @@
  *
  * Target selection is driven by the failsafe_fw_t firmware type that the
  * Web UI derives from the uploaded form field:
- *   firmware    → "fit"   (OpenWrt kernel/rootfs FIT, UBI dynamic volume)
- *   bl2         → "bl2"   (MTD partition, FIP-mode devices only)
- *   fip         → "fip"   (UBI static volume, FIP-mode devices only)
+ *   firmware    → the system image (one single FIT), written through the
+ *                 shared failsafe_storage_write_firmware() to the "fit" /
+ *                 "firmware" / "production" partition of an MMC device, or
+ *                 to the "fit" UBI volume
+ *   bl2         → the preloader; the "bl2" MTD partition on NAND / NOR
+ *                 devices, on MMC the eMMC boot0 hardware partition or the
+ *                 "bl2" partition of an SD card - see mtk_write_bl2()
+ *   fip         → "fip"   (UBI static volume on NAND; the GPT partition
+ *                          "fip" on eMMC, which is where the MediaTek ATF
+ *                          looks for it - generic_mmc_write_fip_uda())
  *   initramfs   → no flash target, RAM boot via boot_from_mem()
  */
 
@@ -34,6 +41,7 @@
 #include <env.h>
 #include <errno.h>
 #include <linux/kernel.h>
+#include <linux/sizes.h>
 #include <linux/string.h>
 #include <vsprintf.h>
 #include <asm/global_data.h>
@@ -45,6 +53,10 @@
 #include <failsafe/image.h>
 #include <failsafe/storage.h>
 #include <failsafe/cprint.h>
+
+#if IS_ENABLED(CONFIG_MMC)
+#include <failsafe/mmc.h>
+#endif
 
 #include "failsafe_validate.h"
 
@@ -96,11 +108,169 @@ static const char *fw_to_target(failsafe_fw_t fw)
 		return "u-boot";
 	case FW_TYPE_FIP:
 		return FAILSAFE_STORAGE_STATIC_TARGET;
+	case FW_TYPE_GPT:
+		return FAILSAFE_STORAGE_GPT_TARGET;
 	case FW_TYPE_INITRD:
 		return NULL;	/* RAM boot, no flash target */
 	default:
 		return NULL;
 	}
+}
+
+/* ------------------------------------------------------------------ */
+/*  MediaTek specific storage policy                                  */
+/* ------------------------------------------------------------------ */
+
+#if IS_ENABLED(CONFIG_MMC)
+/*
+ * The preloader area inside the eMMC boot0 partition.  boot0 is 4 MiB on
+ * the parts supported today and the preloader owns its first 1 MiB, the
+ * same layout the MediaTek tree uses (generic_emmc_write_bl2()).
+ */
+#define MTK_EMMC_BL2_AREA_SIZE		SZ_1M
+
+/*
+ * Point the bootrom at the boot0 partition it has just been given a
+ * preloader in: BOOT_BUS_WIDTH / PART_CONF / RST_N_FUNCTION, the three
+ * EXT_CSD fields mmc_setup_boot_options() of the MediaTek tree
+ * (board/mediatek/common/mmc_helper.c) writes.
+ *
+ * A failure is reported but not fatal: the image is already in flash.
+ */
+static void mtk_setup_boot_options(struct mmc *mmc)
+{
+#if IS_ENABLED(CONFIG_SUPPORT_EMMC_BOOT)
+	int ret;
+
+	ret = mmc_set_boot_bus_width(mmc, EXT_CSD_BUS_WIDTH_8, 0, 0);
+	if (ret)
+		cprintln(CAUTION, "Failsafe: set BOOT_BUS_WIDTH failed (%d)",
+			 ret);
+
+	ret = mmc_set_part_conf(mmc, 1, 1, 0);
+	if (ret)
+		cprintln(CAUTION, "Failsafe: set PART_CONF failed (%d)", ret);
+
+	ret = mmc_set_rst_n_function(mmc, 1);
+	if (ret)
+		cprintln(CAUTION, "Failsafe: set RST_N_FUNCTION failed (%d)",
+			 ret);
+#else
+	(void)mmc;
+#endif
+}
+#endif /* CONFIG_MMC */
+
+/*
+ * Capacity check of the preloader location: the "bl2" MTD partition when
+ * the device has one, on MMC the "bl2" partition of an SD card or the
+ * boot0 hardware partition of an eMMC.
+ */
+static int mtk_bl2_capacity(size_t size)
+{
+	if (failsafe_mtd_exists(FAILSAFE_STORAGE_BL2_TARGET))
+		return failsafe_mtd_capacity(FAILSAFE_STORAGE_BL2_TARGET, 0,
+					     size);
+
+#if IS_ENABLED(CONFIG_MMC)
+	switch (failsafe_mmc_is_sd()) {
+	case 1:
+		/* SD card: the preloader has its own partition. */
+		return failsafe_mmc_part_size(FAILSAFE_STORAGE_BL2_TARGET,
+					      NULL) ? -ENODEV : 0;
+	case 0:
+		/* eMMC: the first MTK_EMMC_BL2_AREA_SIZE bytes of boot0. */
+		if (size > MTK_EMMC_BL2_AREA_SIZE) {
+			cprintln(ERROR, "Failsafe: preloader (%zu) exceeds the "
+				 "0x%zx byte boot area of the eMMC boot0 "
+				 "partition", size,
+				 (size_t)MTK_EMMC_BL2_AREA_SIZE);
+			return -EFBIG;
+		}
+
+		return 0;
+	default:
+		break;
+	}
+#endif
+
+	cprintln(ERROR, "Failsafe: no MTD partition '%s' and no MMC device "
+		 "to hold the preloader", FAILSAFE_STORAGE_BL2_TARGET);
+	return -ENODEV;
+}
+
+/*
+ * Write the preloader where the MediaTek bootrom looks for it: the boot0
+ * hardware partition of an eMMC (it is addressable without any partition
+ * table, so this also works on a device that has never seen a GPT) or the
+ * "bl2" partition of an SD card (which has no hardware partitions).
+ */
+static int mtk_write_bl2(const void *data, size_t size)
+{
+#if IS_ENABLED(CONFIG_MMC)
+	struct mmc *mmc = failsafe_mmc_get_dev();
+	int ret;
+#endif
+
+	if (failsafe_mtd_exists(FAILSAFE_STORAGE_BL2_TARGET))
+		return failsafe_mtd_write(FAILSAFE_STORAGE_BL2_TARGET, 0, data,
+					  size);
+
+#if IS_ENABLED(CONFIG_MMC)
+	if (!mmc) {
+		cprintln(ERROR, "Failsafe: no MTD partition '%s' and no MMC "
+			 "device to hold the preloader",
+			 FAILSAFE_STORAGE_BL2_TARGET);
+		return -ENODEV;
+	}
+
+	if (failsafe_mmc_is_sd() == 1)
+		return failsafe_mmc_write_part(FAILSAFE_STORAGE_BL2_TARGET,
+					       data, size);
+
+	cprintln(NORMAL, "Failsafe: preloader -> MMC boot0 @ 0x0");
+
+	ret = failsafe_mmc_write_region(FAILSAFE_MMC_HWPART_BOOT0, 0, data,
+					size);
+	if (ret)
+		return ret;
+
+	mtk_setup_boot_options(mmc);
+	return 0;
+#else
+	cprintln(ERROR, "Failsafe: no MTD partition '%s' to hold the "
+		 "preloader", FAILSAFE_STORAGE_BL2_TARGET);
+	return -ENODEV;
+#endif /* CONFIG_MMC */
+}
+
+/* Read the flashed preloader back, from the same locations.  Used by the
+ * ARM only /atfversion hook, hence __maybe_unused.
+ */
+static int __maybe_unused mtk_read_bl2(void *buf, size_t max_len,
+				       size_t *read_len)
+{
+#if IS_ENABLED(CONFIG_MMC)
+	int is_sd;
+#endif
+
+	if (failsafe_mtd_exists(FAILSAFE_STORAGE_BL2_TARGET))
+		return failsafe_mtd_read(FAILSAFE_STORAGE_BL2_TARGET, 0, buf,
+					 max_len, read_len);
+
+#if IS_ENABLED(CONFIG_MMC)
+	is_sd = failsafe_mmc_is_sd();
+
+	if (is_sd == 1)
+		return failsafe_mmc_read_part(FAILSAFE_STORAGE_BL2_TARGET, 0,
+					      buf, max_len, read_len);
+
+	if (is_sd == 0)
+		return failsafe_mmc_read_region(FAILSAFE_MMC_HWPART_BOOT0, 0,
+						buf, max_len, read_len);
+#endif
+
+	return -ENODEV;
 }
 
 /* ------------------------------------------------------------------ */
@@ -131,9 +301,15 @@ int failsafe_validate_image(const void *data, size_t size, failsafe_fw_t fw)
 	/* Generic storage capacity checks - always performed (basic
 	 * storage safety), regardless of CONFIG_MTK_FAILSAFE_VALIDATE.
 	 * For MTD partitions the image must fit inside the partition;
-	 * this is the single size gate for bl2 / fip.
+	 * this is the single size gate for fip.  The preloader has its own
+	 * three locations (MTD partition, eMMC boot0, SD partition), so it
+	 * is checked by the MediaTek specific helper.
 	 */
-	ret = failsafe_check_capacity(target, 0, size);
+	if (fw == FW_TYPE_BL2)
+		ret = mtk_bl2_capacity(size);
+	else
+		ret = failsafe_check_capacity(target, 0, size);
+
 	if (ret)
 		return ret;
 
@@ -167,6 +343,18 @@ int failsafe_write_image(const void *data, size_t size, failsafe_fw_t fw)
 			 fw);
 		return -EINVAL;
 	}
+
+	/*
+	 * The preloader is the one type whose location is MediaTek specific
+	 * (see mtk_write_bl2()); the system image is one FIT written
+	 * through the shared helper, and everything else is a generic
+	 * target that means the same thing on every SoC.
+	 */
+	if (fw == FW_TYPE_FW)
+		return failsafe_storage_write_firmware(target, data, size);
+
+	if (fw == FW_TYPE_BL2)
+		return mtk_write_bl2(data, size);
 
 	return failsafe_storage_write(target, 0, data, size);
 }
@@ -269,12 +457,12 @@ int failsafe_atf_version_info(struct failsafe_version_info *bl2,
 #endif
 
 	/*
-	 * BL2: the preloader stored in the "bl2" MTD partition.  It is a
-	 * bare image on MediaTek, but the FIP probe keeps boards that wrap
-	 * it working.
+	 * BL2: the preloader stored in the "bl2" MTD partition, or on MMC
+	 * in the boot0 hardware partition / the "bl2" partition of an SD
+	 * card.  It is a bare image on MediaTek, but the FIP probe keeps
+	 * boards that wrap it working.
 	 */
-	ret = failsafe_storage_read("bl2", 0, read_buf, FAILSAFE_ATF_READ_MAX,
-				    &read_len);
+	ret = mtk_read_bl2(read_buf, FAILSAFE_ATF_READ_MAX, &read_len);
 	if (!ret) {
 		failsafe_bl2_locate(read_buf, read_len, fip_offsets,
 				    ARRAY_SIZE(fip_offsets), &payload,
