@@ -36,6 +36,7 @@
 #include <failsafe/mmc.h>
 #include <failsafe/storage.h>
 #include <failsafe/cprint.h>
+#include <failsafe/error.h>
 
 #if IS_ENABLED(CONFIG_MMC)
 
@@ -85,10 +86,8 @@ int failsafe_mmc_write_part(const char *name, const void *data, size_t size)
 
 	partition_size = (u64)dpart.size * dpart.blksz;
 	if ((u64)size > partition_size) {
-		cprintln(ERROR, "Failsafe: image (%zu) exceeds MMC "
-			 "partition '%s' (%llu)", size, name,
-			 (unsigned long long)partition_size);
-		return -EFBIG;
+		return failsafe_error(-EFBIG, "image (%zu) exceeds MMC "
+			"partition '%s' (%llu)", size, name, (unsigned long long)partition_size);
 	}
 
 	offset = (u64)dpart.start * dpart.blksz;
@@ -220,8 +219,8 @@ static int mmc_gpt_adjust(struct mmc *mmc, void *data, size_t size)
 	 * it must not be installed. */
 	if (le16_to_cpu(mbr->signature) != MSDOS_MBR_SIGNATURE ||
 	    mbr->partition_record[0].sys_ind != EFI_PMBR_OSTYPE_EFI_GPT) {
-		cprintln(ERROR, "Failsafe: image has no protective GPT MBR");
-		return -EINVAL;
+		return failsafe_error(-EINVAL,
+			"image has no protective GPT MBR");
 	}
 
 	memcpy(&gpt, (u8 *)data + GPT_HEADER_LBA * blksz, sizeof(gpt));
@@ -361,10 +360,10 @@ int failsafe_mmc_write_gpt(const void *data, size_t size)
 		return -ENODEV;
 
 	if (!data || !size || size > FAILSAFE_STORAGE_GPT_MAX_SIZE) {
-		cprintln(ERROR, "Failsafe: GPT image size %zu is out of range "
-			 "(1 - %u bytes)", size,
-			 (unsigned int)FAILSAFE_STORAGE_GPT_MAX_SIZE);
-		return -EINVAL;
+		return failsafe_error(-EINVAL,
+			"GPT image size %zu is out of range "
+			"(1 - %u bytes)",
+			size, (unsigned int)FAILSAFE_STORAGE_GPT_MAX_SIZE);
 	}
 
 	/* Work on a private copy: the staging buffer stays untouched. */
@@ -376,7 +375,7 @@ int failsafe_mmc_write_gpt(const void *data, size_t size)
 
 	ret = mmc_gpt_adjust(mmc, buf, size);
 	if (ret) {
-		cprintln(ERROR, "Failsafe: invalid GPT image (%d)", ret);
+		failsafe_error(ret, "invalid GPT image");
 		goto out;
 	}
 
@@ -385,14 +384,13 @@ int failsafe_mmc_write_gpt(const void *data, size_t size)
 
 	ret = failsafe_mmc_write(mmc, 0, buf, size);
 	if (ret) {
-		cprintln(ERROR, "Failsafe: GPT write failed (%d)", ret);
+		failsafe_error(ret, "GPT write failed");
 		goto out;
 	}
 
 	ret = mmc_gpt_write_secondary(mmc, buf, size);
 	if (ret) {
-		cprintln(ERROR, "Failsafe: secondary GPT write failed (%d)",
-			 ret);
+		failsafe_error(ret, "secondary GPT write failed");
 		goto out;
 	}
 
@@ -404,15 +402,13 @@ int failsafe_mmc_write_gpt(const void *data, size_t size)
 	 */
 	ret = mmc_gpt_verify_header(mmc, GPT_HEADER_LBA);
 	if (ret) {
-		cprintln(ERROR, "Failsafe: primary GPT is not readable "
-			 "back (%d)", ret);
+		failsafe_error(ret, "primary GPT is not readable back");
 		goto out;
 	}
 
 	ret = mmc_gpt_verify_header(mmc, (u64)failsafe_mmc_blk_desc(mmc)->lba - 1);
 	if (ret) {
-		cprintln(ERROR, "Failsafe: backup GPT is not readable "
-			 "back (%d)", ret);
+		failsafe_error(ret, "backup GPT is not readable back");
 		goto out;
 	}
 
@@ -480,11 +476,9 @@ static int mmc_region_begin(int hwpart, struct mmc **retmmc)
 
 	if (hwpart != FAILSAFE_MMC_HWPART_USER) {
 		ret = mmc_select_hwpart(mmc, hwpart);
-		if (ret) {
-			cprintln(ERROR, "Failsafe: cannot access MMC "
-				 "hardware partition %d (%d)", hwpart, ret);
-			return ret;
-		}
+		if (ret)
+			return failsafe_error(ret, "cannot access MMC hardware "
+				"partition %d", hwpart);
 	}
 
 	*retmmc = mmc;
@@ -514,11 +508,9 @@ int failsafe_mmc_region_capacity(int hwpart, u64 off, size_t size)
 		   failsafe_mmc_blk_desc(mmc)->blksz;
 
 	if (off + (u64)size > capacity) {
-		cprintln(ERROR, "Failsafe: region (%zu @ 0x%llx) is outside "
-			 "the MMC device (%llu bytes)", size,
-			 (unsigned long long)off,
-			 (unsigned long long)capacity);
-		ret = -EFBIG;
+		ret = failsafe_error(-EFBIG, "region (%zu @ 0x%llx) is outside "
+			"the MMC device (%llu bytes)", size, (unsigned long long)off,
+			(unsigned long long)capacity);
 	}
 
 	mmc_region_end(mmc, hwpart);

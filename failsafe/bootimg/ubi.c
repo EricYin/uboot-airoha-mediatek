@@ -27,6 +27,7 @@
 
 #include <failsafe/storage.h>
 #include <failsafe/cprint.h>
+#include <failsafe/error.h>
 
 #if IS_ENABLED(CONFIG_CMD_UBI)
 
@@ -65,9 +66,8 @@ static int failsafe_remove_rootfs_data(void)
 	snprintf(cmd, sizeof(cmd), "ubi remove rootfs_data");
 	ret = run_command(cmd, 0);
 	if (ret) {
-		cprintln(ERROR, "Failsafe: remove 'rootfs_data' failed "
-			 "(ret=%d)", ret);
-		return -EIO;
+		return failsafe_error(-EIO, "remove 'rootfs_data' failed "
+			"(ret=%d)", ret);
 	}
 
 	return 0;
@@ -88,9 +88,8 @@ static int failsafe_recreate_rootfs_data(void)
 	snprintf(cmd, sizeof(cmd), "ubi create rootfs_data - dynamic");
 	ret = run_command(cmd, 0);
 	if (ret) {
-		cprintln(ERROR, "Failsafe: 'ubi create rootfs_data' failed "
-			 "(ret=%d)", ret);
-		return -EIO;
+		return failsafe_error(-EIO, "'ubi create rootfs_data' failed "
+			"(ret=%d)", ret);
 	}
 
 	cprintln(SUCCESS, "Failsafe: 'rootfs_data' recreated");
@@ -106,9 +105,9 @@ int failsafe_ubi_capacity(const char *name, size_t size)
 		 * reject images that would not fit - otherwise "ubi write"
 		 * fails after the volume has already been recreated empty.
 		 */
-		cprintln(ERROR, "Failsafe: '%s' image too big (%zu > 0x%zx)",
-			 name, size, (size_t)FAILSAFE_STORAGE_STATIC_SIZE);
-		return -EFBIG;
+		return failsafe_error(-EFBIG,
+			"'%s' image too big (%zu > 0x%zx)", name, size,
+			(size_t)FAILSAFE_STORAGE_STATIC_SIZE);
 	}
 
 	return 0;
@@ -121,8 +120,7 @@ int failsafe_ubi_write(const char *name, const void *data, size_t size)
 
 	ret = failsafe_ubi_attach();
 	if (ret) {
-		cprintln(ERROR, "Failsafe: cannot attach UBI (ret=%d)", ret);
-		return -EIO;
+		return failsafe_error(-EIO, "cannot attach UBI (ret=%d)", ret);
 	}
 
 	/*
@@ -159,18 +157,16 @@ int failsafe_ubi_write(const char *name, const void *data, size_t size)
 
 	ret = run_command(cmd, 0);
 	if (ret) {
-		cprintln(ERROR, "Failsafe: 'ubi create %s' failed (ret=%d)",
-			 name, ret);
-		return -EIO;
+		return failsafe_error(-EIO, "'ubi create %s' failed (ret=%d)",
+			name, ret);
 	}
 
 	snprintf(cmd, sizeof(cmd), "ubi write 0x%lx %s 0x%lx",
 		 (unsigned long)(uintptr_t)data, name, (unsigned long)size);
 	ret = run_command(cmd, 0);
 	if (ret) {
-		cprintln(ERROR, "Failsafe: 'ubi write %s' failed (ret=%d)",
-			 name, ret);
-		return -EIO;
+		return failsafe_error(-EIO, "'ubi write %s' failed (ret=%d)",
+			name, ret);
 	}
 
 	/*

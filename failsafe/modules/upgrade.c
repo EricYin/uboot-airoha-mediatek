@@ -41,6 +41,7 @@
 
 #include <command.h>
 #include <env.h>
+#include <errno.h>
 #include <linux/string.h>
 #include <linux/types.h>
 #include <malloc.h>
@@ -52,6 +53,7 @@
 #include <version_string.h>
 #include <vsprintf.h>
 
+#include <failsafe/error.h>
 #include <failsafe/fw_type.h>
 #include <failsafe/internal.h>
 #include <failsafe/led.h>
@@ -311,6 +313,32 @@ static bool failsafe_auto_reboot_enabled(void)
 }
 
 /* ------------------------------------------------------------------ */
+/*  Failure reporting                                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Body of a response that reports a failed upgrade operation: the status
+ * word the Web UI reacts to on the first line (protocol unchanged) followed
+ * by the code and the message of the recorded error, so the page can tell
+ * the user what went wrong instead of pointing at the serial console
+ * (see <failsafe/error.h>).
+ */
+static const char *failsafe_upgrade_failure(char *buf, size_t size,
+					    const char *status)
+{
+	/* An operation that failed without recording a reason still gets a
+	 * code, so a report always carries one.
+	 */
+	if (!failsafe_error_code())
+		failsafe_error(-EIO, "upgrade failed");
+
+	snprintf(buf, size, "%s\ncode:%d\nerror:%s", status,
+		 failsafe_error_code(), failsafe_error_msg());
+
+	return buf;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Upload handler                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -320,6 +348,7 @@ void upload_handler(enum httpd_uri_handler_status status,
 {
 	static char md5_str[33] = "";
 	static char resp[288];
+	static char fail_resp[288];
 	struct httpd_form_value *fw;
 	u8 md5_sum[16];
 	static char hexchars[] = "0123456789abcdef";
@@ -327,6 +356,8 @@ void upload_handler(enum httpd_uri_handler_status status,
 
 	if (status != HTTP_CB_NEW)
 		return;
+
+	failsafe_error_reset();
 
 	response->status = HTTP_RESP_STD;
 	response->info.code = 200;
@@ -410,11 +441,15 @@ void upload_handler(enum httpd_uri_handler_status status,
 
 fail:
 	failsafe_led_set_phase(FAILSAFE_LED_FAIL);
-	response->data = "fail";
+	response->data = failsafe_upgrade_failure(fail_resp,
+						  sizeof(fail_resp), "fail");
 	response->size = strlen(response->data);
 	return;
 
 done:
+	/* Nothing to report for this upload (see GET /last-error). */
+	failsafe_error_reset();
+
 	upload_data_id = upload_id;
 	upload_data = fw->data;
 	upload_size = fw->size;
@@ -479,6 +514,7 @@ void result_handler(enum httpd_uri_handler_status status,
 		    struct httpd_response *response)
 {
 	struct flashing_status *st;
+	static char err_body[288];
 	u32 size;
 
 	if (status == HTTP_CB_NEW) {
@@ -521,6 +557,7 @@ void result_handler(enum httpd_uri_handler_status status,
 			if (fw_type == FW_TYPE_INITRD) {
 				st->ret = 0; /* RAM boot, nothing to flash */
 			} else {
+				failsafe_error_reset();
 				failsafe_led_set_phase(FAILSAFE_LED_UPGRADE);
 				st->ret = failsafe_write_image(upload_data,
 							       upload_size,
@@ -535,10 +572,13 @@ void result_handler(enum httpd_uri_handler_status status,
 		/* invalidate upload identifier */
 		upload_data_id = rand();
 
-		if (!st->ret)
+		if (!st->ret) {
+			failsafe_error_reset();
 			response->data = "success";
-		else
-			response->data = "failed";
+		} else {
+			response->data = failsafe_upgrade_failure(err_body,
+				sizeof(err_body), "failed");
+		}
 
 		response->size = strlen(response->data);
 
@@ -563,9 +603,42 @@ void result_handler(enum httpd_uri_handler_status status,
 /*  Registration                                                       */
 /* ------------------------------------------------------------------ */
 
+/**
+ * last_error_handler - GET /last-error
+ *
+ * Reports the failure of the last upgrade operation as
+ * {"code":-19,"error":"..."} - the same information a failed /upload or
+ * /result response carries, kept around so that a page (the fail page) can
+ * fetch it after the redirect, and so that it can be read with curl
+ * instead of attaching a serial console.
+ */
+void last_error_handler(enum httpd_uri_handler_status status,
+			struct httpd_request *request,
+			struct httpd_response *response)
+{
+	char *buf;
+
+	if (status != HTTP_CB_NEW)
+		return;
+
+	buf = malloc(FAILSAFE_ERROR_MSG_SIZE + 64);
+	if (!buf) {
+		failsafe_http_reply_text(response, 500, "out of memory");
+		return;
+	}
+
+	snprintf(buf, FAILSAFE_ERROR_MSG_SIZE + 64,
+		 "{\"code\":%d,\"error\":\"%s\"}",
+		 failsafe_error_code(), failsafe_error_msg());
+
+	failsafe_http_reply_json_alloc(response, 200, buf, buf);
+}
+
 void upgrade_register_handlers(struct httpd_instance *inst)
 {
 	httpd_register_uri_handler(inst, "/upload", &upload_handler, NULL);
+	httpd_register_uri_handler(inst, "/last-error", &last_error_handler,
+				   NULL);
 	httpd_register_uri_handler(inst, "/result", &result_handler, NULL);
 	httpd_register_uri_handler(inst, "/version", &version_handler, NULL);
 	httpd_register_uri_handler(inst, "/reboot", &reboot_handler, NULL);

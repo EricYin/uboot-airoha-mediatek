@@ -20,21 +20,20 @@
 
 #include <failsafe/image.h>
 #include <failsafe/cprint.h>
+#include <failsafe/error.h>
 
 #if CONFIG_IS_ENABLED(FIT)
 int failsafe_image_validate_fit(const void *data, size_t size,
 				const char *what)
 {
 	if (size < 4) {
-		cprintln(ERROR, "Failsafe: '%s' image too small (%zu)", what,
-			 size);
-		return -EINVAL;
+		return failsafe_error(-EINVAL, "'%s' image too small (%zu)",
+			what, size);
 	}
 
 	if (fit_check_format(data, size)) {
-		cprintln(ERROR, "Failsafe: '%s' image is not a valid FIT",
-			 what);
-		return -EINVAL;
+		return failsafe_error(-EINVAL, "'%s' image is not a valid FIT",
+			what);
 	}
 
 	return 0;
@@ -45,9 +44,8 @@ int failsafe_image_validate_fit(const void *data, size_t size,
 {
 	(void)data;
 	(void)size;
-	cprintln(ERROR, "Failsafe: '%s' image rejected (no FIT support "
-		 "built in)", what);
-	return -EINVAL;
+	return failsafe_error(-EINVAL, "'%s' image rejected (no FIT support "
+		"built in)", what);
 }
 #endif
 
@@ -64,31 +62,26 @@ int failsafe_image_validate_legacy(const void *data, size_t size,
 	size_t dsize;
 
 	if (size < image_get_header_size()) {
-		cprintln(ERROR, "Failsafe: '%s' legacy image too small (%zu)",
-			 what, size);
-		return -EINVAL;
+		return failsafe_error(-EINVAL,
+			"'%s' legacy image too small (%zu)", what, size);
 	}
 	if (!image_check_magic(hdr)) {
-		cprintln(ERROR, "Failsafe: '%s' has no legacy uImage magic",
-			 what);
-		return -EINVAL;
+		return failsafe_error(-EINVAL,
+			"'%s' has no legacy uImage magic", what);
 	}
 	if (!image_check_hcrc(hdr)) {
-		cprintln(ERROR, "Failsafe: '%s' legacy header CRC mismatch",
-			 what);
-		return -EINVAL;
+		return failsafe_error(-EINVAL,
+			"'%s' legacy header CRC mismatch", what);
 	}
 
 	dsize = image_get_data_size(hdr);
 	if (dsize > size - image_get_header_size()) {
-		cprintln(ERROR, "Failsafe: '%s' legacy payload (0x%zx) "
-			 "exceeds image (%zu)", what, dsize, size);
-		return -EINVAL;
+		return failsafe_error(-EINVAL, "'%s' legacy payload (0x%zx) "
+			"exceeds image (%zu)", what, dsize, size);
 	}
 	if (!image_check_dcrc(hdr)) {
-		cprintln(ERROR, "Failsafe: '%s' legacy payload CRC mismatch",
-			 what);
-		return -EINVAL;
+		return failsafe_error(-EINVAL,
+			"'%s' legacy payload CRC mismatch", what);
 	}
 
 	return 0;
@@ -156,10 +149,9 @@ int failsafe_firmware_check_model(const void *data, size_t size,
 
 	off = fit_conf_find_compat(data, fdt);
 	if (off < 0) {
-		cprintln(ERROR, "Failsafe: %s rejected by strict-model "
-			 "check (firmware does not match board '%s')",
-			 what, board_compat);
-		return -EINVAL;
+		return failsafe_error(-EINVAL, "%s rejected by strict-model "
+			"check (firmware does not match board '%s')", what,
+			board_compat);
 	}
 
 	cprintln(SUCCESS, "Failsafe: %s strict-model check OK (matches "
@@ -220,8 +212,8 @@ int failsafe_boot_image_from_mem(ulong data_load_addr, size_t image_size,
 		snprintf(cmd, sizeof(cmd), "go 0x%lx", load_addr);
 		ret = run_command(cmd, 0);
 		if (ret)
-			cprintln(ERROR, "Failsafe: 'go 0x%lx' failed (ret=%d)",
-				 load_addr, ret);
-		return ret;
+			return failsafe_error(ret, "'go 0x%lx' failed",
+				load_addr);
+		return 0;
 	}
 }

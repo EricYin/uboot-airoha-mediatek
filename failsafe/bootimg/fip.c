@@ -20,6 +20,7 @@
 
 #include <failsafe/fip.h>
 #include <failsafe/cprint.h>
+#include <failsafe/error.h>
 
 const u8 failsafe_fip_uuid_tb_fw[16] = {
 	0x5f, 0xf9, 0xec, 0x0b, 0x4d, 0x22, 0x3e, 0x4d,
@@ -151,16 +152,13 @@ int failsafe_fip_validate(const void *data, size_t size, size_t fip_off,
 	if (fip_off > size ||
 	    size - fip_off < FAILSAFE_FIP_HEADER_SIZE +
 			     FAILSAFE_FIP_TOC_ENTRY_SIZE) {
-		cprintln(ERROR, "Failsafe: '%s' image too small for a FIP",
-			 what);
-		return -EINVAL;
+		return failsafe_error(-EINVAL, "'%s' image too small for a FIP",
+			what);
 	}
 
 	if (!failsafe_fip_check(data, size, fip_off)) {
-		cprintln(ERROR, "Failsafe: '%s' image has no FIP ToC "
-			 "(magic 0x%08x)", what,
-			 get_unaligned_le32((const u8 *)data + fip_off));
-		return -EINVAL;
+		return failsafe_error(-EINVAL, "'%s' image has no FIP ToC "
+			"(magic 0x%08x)", what, get_unaligned_le32((const u8 *)data + fip_off));
 	}
 
 	/*
@@ -171,17 +169,14 @@ int failsafe_fip_validate(const void *data, size_t size, size_t fip_off,
 	ret = fip_find_entry(data, size, fip_off, want_uuid,
 			     want_uuid != NULL, &payload, &payload_size, &off);
 	if (ret == -EINVAL) {
-		cprintln(ERROR, "Failsafe: '%s' payload (off 0x%llx, len "
-			 "0x%llx) exceeds image (%zu)", what,
-			 (unsigned long long)off,
-			 (unsigned long long)payload_size, size);
-		return -EINVAL;
+		return failsafe_error(-EINVAL, "'%s' payload (off 0x%llx, len "
+			"0x%llx) exceeds image (%zu)", what, (unsigned long long)off,
+			(unsigned long long)payload_size, size);
 	}
 
 	if (ret == -ENOENT && want_uuid) {
-		cprintln(ERROR, "Failsafe: '%s' FIP has no expected image "
-			 "entry", what);
-		return -EINVAL;
+		return failsafe_error(-EINVAL, "'%s' FIP has no expected image "
+			"entry", what);
 	}
 
 	return 0;

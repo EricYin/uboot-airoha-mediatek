@@ -40,6 +40,7 @@
 #include <failsafe/storage.h>
 #include <failsafe/mtd.h>
 #include <failsafe/cprint.h>
+#include <failsafe/error.h>
 
 #if IS_ENABLED(CONFIG_MTD)
 
@@ -84,18 +85,15 @@ int failsafe_mtd_capacity(const char *name, u64 off, size_t size)
 	mtd_probe_devices();
 	mtd = get_mtd_device_nm(name);
 	if (IS_ERR_OR_NULL(mtd)) {
-		cprintln(ERROR, "Failsafe: MTD partition '%s' not found",
-			 name);
-		return -ENODEV;
+		return failsafe_error(-ENODEV, "MTD partition '%s' not found",
+			name);
 	}
 
 	if (off + (u64)size > mtd->size) {
-		cprintln(ERROR, "Failsafe: image (%zu) exceeds partition "
-			 "'%s' (%llu), write offset 0x%llx", size, name,
-			 (unsigned long long)mtd->size,
-			 (unsigned long long)off);
 		put_mtd_device(mtd);
-		return -EFBIG;
+		return failsafe_error(-EFBIG, "image (%zu) exceeds partition "
+			"'%s' (%llu), write offset 0x%llx", size, name,
+			(unsigned long long)mtd->size, (unsigned long long)off);
 	}
 
 	put_mtd_device(mtd);
@@ -111,9 +109,8 @@ int failsafe_mtd_write(const char *name, u64 off, const void *data,
 	snprintf(cmd, sizeof(cmd), "mtd erase %s", name);
 	ret = run_command(cmd, 0);
 	if (ret) {
-		cprintln(ERROR, "Failsafe: erase '%s' failed (ret=%d)",
-			 name, ret);
-		return -EIO;
+		return failsafe_error(-EIO, "erase '%s' failed (ret=%d)", name,
+			ret);
 	}
 
 	snprintf(cmd, sizeof(cmd), "mtd write %s 0x%lx 0x%llx 0x%lx",
@@ -121,9 +118,8 @@ int failsafe_mtd_write(const char *name, u64 off, const void *data,
 		 (unsigned long long)off, (unsigned long)size);
 	ret = run_command(cmd, 0);
 	if (ret) {
-		cprintln(ERROR, "Failsafe: write '%s' failed (ret=%d)", name,
-			 ret);
-		return -EIO;
+		return failsafe_error(-EIO, "write '%s' failed (ret=%d)", name,
+			ret);
 	}
 
 	return 0;

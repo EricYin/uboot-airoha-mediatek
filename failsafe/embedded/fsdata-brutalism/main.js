@@ -78,10 +78,12 @@
 			var res = d.getElementById("upload-result");
 			if (!res) return;
 
-			/* Determine success or failure */
+			/* Determine success or failure: the status word is the
+			 * first line, a rejected upload may append "code:" /
+			 * "error:" lines saying why (see GET /last-error). */
 			var ok = (x.status === 200);
 			var r = x.responseText || "";
-			if (ok && (r === "fail" || r.indexOf(" ") < 0))
+			if (ok && r.split("\n")[0].trim() === "fail")
 				ok = false;
 
 			if (!ok) {
@@ -96,6 +98,7 @@
 				showUploadError();
 				res.style.display = "block";
 				if (w.i18n) w.i18n.applyTranslations(res);
+				w.brutalismShowReportedFailure(res);
 				return;
 			}
 
@@ -130,6 +133,32 @@
 			if (w.i18n) w.i18n.applyTranslations(res);
 		};
 		x.send(fd);
+	};
+
+	/* ---- Replace the decorative error code with the reported one ---- */
+	/*
+	 * GET /last-error (see failsafe/modules/upgrade.c, fed by the failure
+	 * sites through <failsafe/error.h>) carries the code and the message
+	 * of the failed upgrade, so the reason shows up in the page instead of
+	 * only on the U-Boot console.  Without a report the static text stays.
+	 */
+	w.brutalismShowReportedFailure = function (root) {
+		if (!root || !w.fetch) return;
+
+		w.fetch("/last-error", { cache: "no-store" }).then(function (r) {
+			return r.ok ? r.json() : null;
+		}).then(function (report) {
+			var el;
+
+			if (!report || (!report.code && !report.error)) return;
+
+			el = root.querySelector('[data-i18n="fail.code"] strong') ||
+				root.querySelector('[data-i18n="fail.code"]');
+			if (!el) return;
+
+			el.textContent = (report.code ? String(report.code) : "?") +
+				(report.error ? " - " + report.error : "");
+		}).catch(function () { /* keep the static text */ });
 	};
 
 	/* ---- Reset: hide #upload-result, show all upload forms ---- */

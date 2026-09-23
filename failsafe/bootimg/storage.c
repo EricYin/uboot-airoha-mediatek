@@ -38,6 +38,7 @@
 
 #include <failsafe/storage.h>
 #include <failsafe/cprint.h>
+#include <failsafe/error.h>
 
 #if IS_ENABLED(CONFIG_MMC)
 #include <failsafe/mmc.h>
@@ -98,10 +99,8 @@ int failsafe_check_capacity(const char *target, u64 mtd_off, size_t size)
 	/* MMC only targets: the partition table image ("gpt"). */
 	if (is_mmc_only_target(target)) {
 		if (size > FAILSAFE_STORAGE_GPT_MAX_SIZE) {
-			cprintln(ERROR, "Failsafe: GPT image too big "
-				 "(%zu > %u)", size,
-				 (unsigned int)FAILSAFE_STORAGE_GPT_MAX_SIZE);
-			return -EFBIG;
+			return failsafe_error(-EFBIG, "GPT image too big "
+				"(%zu > %u)", size, (unsigned int)FAILSAFE_STORAGE_GPT_MAX_SIZE);
 		}
 
 		return 0;
@@ -114,12 +113,10 @@ int failsafe_check_capacity(const char *target, u64 mtd_off, size_t size)
 			return -ENODEV;
 
 		if (mtd_off + (u64)size > partition_size) {
-			cprintln(ERROR, "Failsafe: image (%zu) exceeds MMC "
-				 "partition '%s' (%llu), write offset 0x%llx",
-				 size, target,
-				 (unsigned long long)partition_size,
-				 (unsigned long long)mtd_off);
-			return -EFBIG;
+			return failsafe_error(-EFBIG, "image (%zu) exceeds MMC "
+				"partition '%s' (%llu), write offset 0x%llx",
+				size, target, (unsigned long long)partition_size,
+				(unsigned long long)mtd_off);
 		}
 
 		return 0;
@@ -130,9 +127,8 @@ int failsafe_check_capacity(const char *target, u64 mtd_off, size_t size)
 	 * never report "fits" for something that cannot be written.
 	 */
 	if (is_mtd_only_target(target)) {
-		cprintln(ERROR, "Failsafe: MTD partition '%s' not found",
-			 target);
-		return -ENODEV;
+		return failsafe_error(-ENODEV, "MTD partition '%s' not found",
+			target);
 	}
 
 #if IS_ENABLED(CONFIG_CMD_UBI)
@@ -141,8 +137,7 @@ int failsafe_check_capacity(const char *target, u64 mtd_off, size_t size)
 	/* Neither an MTD partition, nor an MMC one, nor a UBI volume:
 	 * nothing in this build can hold the target.
 	 */
-	cprintln(ERROR, "Failsafe: storage target '%s' not found", target);
-	return -ENODEV;
+	return failsafe_error(-ENODEV, "storage target '%s' not found", target);
 #endif
 }
 
@@ -168,9 +163,8 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 		 * back to UBI here would create a bogus volume and hide the
 		 * real problem (missing partition / wrong device tree).
 		 */
-		cprintln(ERROR, "Failsafe: MTD partition '%s' not found, "
-			 "refusing to fall back to a UBI volume", target);
-		ret = -ENODEV;
+		ret = failsafe_error(-ENODEV, "MTD partition '%s' not found, "
+			"refusing to fall back to a UBI volume", target);
 	} else {
 #if IS_ENABLED(CONFIG_MMC)
 		if (is_mmc_only_target(target)) {
@@ -186,9 +180,8 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 			/* ----- UBI volume ----- */
 			ret = failsafe_ubi_write(target, data, size);
 #else
-			cprintln(ERROR, "Failsafe: storage target '%s' not "
-				 "found", target);
-			ret = -ENODEV;
+			ret = failsafe_error(-ENODEV,
+				"storage target '%s' not found", target);
 #endif /* CONFIG_CMD_UBI */
 		}
 	}

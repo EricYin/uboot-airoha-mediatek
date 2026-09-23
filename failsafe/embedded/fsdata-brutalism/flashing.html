@@ -67,6 +67,28 @@
 				'<p><input type="button" data-i18n-attr="value:reboot.btn" value="[ &#8635; REBOOT NOW ]" onclick="brutalismReboot(false)" /></p>' +
 				'<p><input type="button" data-i18n-attr="value:reboot.failsafe_btn" value="[ &#8635; REBOOT TO FAILSAFE ]" onclick="brutalismReboot(true)" /></p>';
 
+			/* Replace the decorative error code of the fail fragment with what
+			 * the firmware reported (GET /last-error, see
+			 * failsafe/modules/upgrade.c): the code and the message of the
+			 * failure, so the reason is readable here as well as on the
+			 * console.  Without a report the static text stays. */
+			function showReportedFailure(root) {
+				fetch("/last-error", { cache: "no-store" }).then(function (r) {
+					return r.ok ? r.json() : null;
+				}).then(function (report) {
+					var el;
+
+					if (!report || (!report.code && !report.error)) return;
+
+					el = root.querySelector('[data-i18n="fail.code"] strong') ||
+						root.querySelector('[data-i18n="fail.code"]');
+					if (!el) return;
+
+					el.textContent = (report.code ? String(report.code) : "?") +
+						(report.error ? " - " + report.error : "");
+				}).catch(function () { /* keep the static text */ });
+			}
+
 			var interval = window.setInterval(function () {
 				var xmlhttp = new XMLHttpRequest();
 
@@ -80,7 +102,7 @@
 						var main = document.getElementById("main");
 						if (!main) return;
 
-						if (xmlhttp.responseText === "success") {
+						if (xmlhttp.responseText.split("\n")[0].trim() === "success") {
 							main.innerHTML = successHtml;
 							main.className = "state-success";
 						} else {
@@ -92,6 +114,9 @@
 						if (window.i18n) {
 							window.i18n.applyTranslations(main);
 						}
+
+						if (main.className === "state-fail")
+							showReportedFailure(main);
 					}
 				};
 			}, 1000);
