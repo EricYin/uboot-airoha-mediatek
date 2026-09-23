@@ -180,6 +180,19 @@
         return false;
     }
 
+    /*
+     * "[MMC] boot0 (512.00 KiB)" - the raw regions of the device (the boot
+     * partitions and the read-only RPMB), named by /flash/info.
+     */
+    function regionLabel(region) {
+        var name = region.name || "";
+        var label = t("flash.target." + name, name);
+
+        return "[MMC] " + label +
+            (region.size ? " (" + human(region.size) + ")" : "") +
+            (region.ro ? " (" + t("flash.target.readonly", "read only") + ")" : "");
+    }
+
     function refreshTargetI18n() {
         var select = $("flash_target");
         if (!select) return;
@@ -190,7 +203,13 @@
                 option.textContent = t(option.dataset.i18nKey);
                 continue;
             }
-            if (option.dataset.kind === "mtd-full") {
+            if (option.dataset.kind === "mmc-region") {
+                option.textContent = regionLabel({
+                    name: option.dataset.regionName,
+                    size: option.dataset.size ? parseInt(option.dataset.size, 10) : 0,
+                    ro: option.dataset.ro === "1"
+                });
+            } else if (option.dataset.kind === "mtd-full") {
                 var name = option.dataset.mtdName || "";
                 option.textContent = "[MTD] " + t("flash.target.full_disk") +
                     (name ? " (" + name + ")" : "") +
@@ -275,6 +294,20 @@
                 option.dataset.size = part.size ? String(part.size) : "";
                 option.textContent = "[MMC] " + part.name +
                     (part.size ? " (" + human(part.size) + ")" : "");
+                select.appendChild(option);
+            });
+
+            /* Raw regions that are not partitions: boot0 / boot1 (read
+             * and write) and the RPMB (read only). */
+            (mmc.regions || []).forEach(function (region) {
+                if (!region || !region.name) return;
+                var option = document.createElement("option");
+                option.value = "mmc:" + region.name;
+                option.dataset.kind = "mmc-region";
+                option.dataset.regionName = region.name;
+                option.dataset.size = region.size ? String(region.size) : "";
+                option.dataset.ro = region.ro ? "1" : "0";
+                option.textContent = regionLabel(region);
                 select.appendChild(option);
             });
         }

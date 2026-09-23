@@ -574,4 +574,147 @@ int failsafe_mmc_read_region(int hwpart, u64 off, void *buf, size_t max_len,
 	return ret;
 }
 
+u64 failsafe_mmc_region_size(int hwpart)
+{
+	struct mmc *mmc = failsafe_mmc_get_dev();
+
+	if (!mmc)
+		return 0;
+
+	switch (hwpart) {
+	case FAILSAFE_MMC_HWPART_BOOT0:
+	case FAILSAFE_MMC_HWPART_BOOT1:
+		/* Both boot partitions have the same size; an SD card has
+		 * none (and reports MMCPART_NOAVAILABLE). */
+		if (mmc->part_config == MMCPART_NOAVAILABLE)
+			return 0;
+
+		return mmc->capacity_boot;
+	case FAILSAFE_MMC_HWPART_USER:
+		return mmc->capacity_user;
+	default:
+		return 0;
+	}
+}
+
+int failsafe_mmc_erase_region(int hwpart, u64 off, u64 size)
+{
+	struct mmc *mmc;
+	u64 limit;
+	int ret;
+
+	ret = mmc_region_begin(hwpart, &mmc);
+	if (ret)
+		return ret;
+
+	limit = failsafe_mmc_region_size(hwpart);
+	if (!limit || off >= limit) {
+		mmc_region_end(mmc, hwpart);
+		return -EINVAL;
+	}
+
+	if (!size || off + size > limit)
+		size = limit - off;
+
+	cprintln(NORMAL, "Failsafe: erasing MMC hardware partition %d @ "
+		 "0x%llx (%llu bytes)", hwpart, (unsigned long long)off,
+		 (unsigned long long)size);
+
+	ret = failsafe_mmc_erase(mmc, off, (size_t)size);
+
+	mmc_region_end(mmc, hwpart);
+	return ret;
+}
+
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_RPMB)
+
+u64 failsafe_mmc_rpmb_size(void)
+{
+	struct mmc *mmc = failsafe_mmc_get_dev();
+
+	if (!mmc)
+		return 0;
+
+	return mmc->capacity_rpmb;
+}
+
+int failsafe_mmc_rpmb_read(u64 off, void *buf, size_t max_len,
+			   size_t *read_len)
+{
+	struct mmc *mmc = failsafe_mmc_get_dev();
+	u64 size;
+	size_t done = 0;
+	int ret;
+
+	if (read_len)
+		*read_len = 0;
+
+	if (!mmc || !buf || !max_len)
+		return -EINVAL;
+
+	size = mmc->capacity_rpmb;
+	if (!size)
+		return -ENOTSUPP;
+
+	if (off >= size)
+		return -EINVAL;
+
+	if (off + max_len > size)
+		max_len = (size_t)(size - off);
+
+	/* The device is addressed in whole 256 byte blocks, so a request
+	 * that starts inside a block is served through a scratch block; the
+	 * surplus bytes of a trailing partial block are dropped, exactly as
+	 * for a normal MMC read.
+	 */
+	if (off % FAILSAFE_MMC_RPMB_BLOCK) {
+		size_t skip = (size_t)(off % FAILSAFE_MMC_RPMB_BLOCK);
+		size_t head = min_t(size_t, FAILSAFE_MMC_RPMB_BLOCK - skip,
+				    max_len);
+		unsigned short blk = (unsigned short)
+				     (off / FAILSAFE_MMC_RPMB_BLOCK);
+		u8 *block = malloc(FAILSAFE_MMC_RPMB_BLOCK);
+
+		if (!block)
+			return -ENOMEM;
+
+		ret = mmc_rpmb_read(mmc, block, blk, 1, NULL);
+		if (ret != 1) {
+			free(block);
+			return -EIO;
+		}
+
+		memcpy(buf, block + skip, head);
+		free(block);
+		done = head;
+	}
+
+	/* The whole blocks go out in one call: the RPMB layer loops over
+	 * them internally, one exchange per block.
+	 */
+	if (max_len > done) {
+		unsigned short blk = (unsigned short)
+				     ((off + done) / FAILSAFE_MMC_RPMB_BLOCK);
+		unsigned short blocks = (unsigned short)
+					((max_len - done) /
+					 FAILSAFE_MMC_RPMB_BLOCK);
+
+		if (blocks) {
+			ret = mmc_rpmb_read(mmc, (u8 *)buf + done, blk, blocks,
+					    NULL);
+			if (ret != blocks)
+				return -EIO;
+
+			done += (size_t)blocks * FAILSAFE_MMC_RPMB_BLOCK;
+		}
+	}
+
+	if (read_len)
+		*read_len = done;
+
+	return 0;
+}
+
+#endif /* CONFIG_WEBUI_FAILSAFE_RPMB */
+
 #endif /* IS_ENABLED(CONFIG_MMC) */

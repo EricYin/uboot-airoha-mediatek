@@ -342,6 +342,29 @@ config WEBUI_FAILSAFE_NAND_RAW
 	  per page) and the dump length is only known to the flash module,
 	  so a 128 MiB flash produces a dump larger than the chip size.
 
+config WEBUI_FAILSAFE_RPMB
+	bool "Read the eMMC RPMB partition from the flash page"
+	default y
+	depends on WEBUI_FAILSAFE_FLASH && MMC
+	select SUPPORT_EMMC_RPMB
+	help
+	  Offer the RPMB (replay protected memory block) of an eMMC as a
+	  read-only target of the flash management page, next to boot0 and
+	  boot1: it can be dumped and its blocks looked at in the hex
+	  editor.
+
+	  Reading is not authenticated, so the blocks come back exactly as
+	  the device stores them (usually encrypted by whatever wrote them);
+	  the response MAC is not verified because that needs the
+	  authentication key.  Writing is deliberately not supported: it
+	  would have to be authenticated with that key, which a bootloader
+	  does not have.
+
+	  This selects the RPMB support of the MMC layer
+	  (CONFIG_SUPPORT_EMMC_RPMB), which brings in its SHA-256 HMAC
+	  implementation (a few KiB of code) - that is the only cost of
+	  this option.
+
 config WEBUI_FAILSAFE_BL31
 	bool "Report the BL31 version banner"
 	depends on ARM

@@ -104,8 +104,9 @@ const KEY_LITERAL =
     /["'`]([A-Za-z0-9_][A-Za-z0-9_.\-]*\.[A-Za-z0-9_.\-]+)["'`]/g;
 /* data-i18n-attr="value:key" (or "a:k1;b:k2"). */
 const KEY_ATTR = /data-i18n-attr=["']([^"']+)["']/g;
-/* "prefix." + something - the subtree is built at runtime. */
-const KEY_PREFIX = /["'`]([A-Za-z0-9_][A-Za-z0-9_]*\.)["'`]\s*\+/g;
+/* "prefix." + something - the subtree is built at runtime.  The prefix may
+ * have several segments (t("ubi.type." + type), t("flash.target." + name)). */
+const KEY_PREFIX = /["'`]([A-Za-z0-9_][A-Za-z0-9_.\-]*\.)["'`]\s*\+/g;
 /* `${...}suffix` - the key name is built at runtime. */
 const KEY_SUFFIX = /\$\{[^}]*\}(\.[A-Za-z0-9_.\-]+)?/g;
 

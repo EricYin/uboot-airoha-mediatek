@@ -49,6 +49,7 @@
 #endif
 
 #include <failsafe/mmc.h>
+#include <failsafe/cprint.h>
 
 #ifdef CONFIG_PARTITIONS
 #include <part.h>
@@ -77,9 +78,28 @@ DECLARE_GLOBAL_DATA_PTR;
 /*  Storage target abstraction (MTD / MMC)                             */
 /* ------------------------------------------------------------------ */
 
+/*
+ * A storage target is one of:
+ *
+ *   FAILSAFE_SRC_MTD         a raw MTD partition;
+ *   FAILSAFE_SRC_MMC         an MMC partition (GPT / MBR label), or the
+ *                            whole user area when the target is "raw";
+ *   FAILSAFE_SRC_MMC_HWPART  a hardware partition of an eMMC - boot0 or
+ *                            boot1 - addressed without any partition
+ *                            table, the same regions the board code uses
+ *                            for a preloader that lives there;
+ *   FAILSAFE_SRC_RPMB        the eMMC replay protected memory block, read
+ *                            only (CONFIG_WEBUI_FAILSAFE_RPMB).
+ *
+ * Where the first byte of an MMC partition is depends on the partition
+ * table, so @base carries it and the operations add it to their offset;
+ * the hardware partitions and the RPMB are addressed from 0.
+ */
 enum failsafe_storage_src {
 	FAILSAFE_SRC_MTD = 0,
 	FAILSAFE_SRC_MMC = 1,
+	FAILSAFE_SRC_MMC_HWPART = 2,
+	FAILSAFE_SRC_RPMB = 3,
 };
 
 struct flash_target {
@@ -90,6 +110,7 @@ struct flash_target {
 	struct mtd_info *mtd;
 #endif
 #if IS_ENABLED(CONFIG_MMC)
+	int hwpart;		/* FAILSAFE_MMC_HWPART_* */
 	struct mmc *mmc;
 	struct disk_partition dpart;
 #endif
@@ -325,11 +346,41 @@ static int flash_open_target(const char *storage_sel, const char *target_name,
 		return -ENODEV;
 
 	t->src = FAILSAFE_SRC_MMC;
+	t->hwpart = FAILSAFE_MMC_HWPART_USER;
 	if (!strcmp(target_name, "raw")) {
 		t->base = 0;
 		t->size = t->mmc->capacity_user;
 		return 0;
 	}
+
+	/* eMMC hardware partitions: no partition table, no name lookup -
+	 * the boot ROM of a board that boots from there reads them the
+	 * same way.  An SD card has none, which the size check catches.
+	 */
+	if (!strcmp(target_name, "boot0") || !strcmp(target_name, "boot1")) {
+		t->src = FAILSAFE_SRC_MMC_HWPART;
+		t->hwpart = !strcmp(target_name, "boot0") ?
+			    FAILSAFE_MMC_HWPART_BOOT0 :
+			    FAILSAFE_MMC_HWPART_BOOT1;
+		t->base = 0;
+		t->size = failsafe_mmc_region_size(t->hwpart);
+		if (!t->size)
+			return -ENOTSUPP;
+
+		return 0;
+	}
+
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_RPMB)
+	if (!strcmp(target_name, "rpmb")) {
+		t->src = FAILSAFE_SRC_RPMB;
+		t->base = 0;
+		t->size = failsafe_mmc_rpmb_size();
+		if (!t->size)
+			return -ENOTSUPP;
+
+		return 0;
+	}
+#endif /* CONFIG_WEBUI_FAILSAFE_RPMB */
 
 	if (failsafe_mmc_find_part(t->mmc, target_name, &t->dpart))
 		return -ENODEV;
@@ -351,6 +402,140 @@ static void flash_close_target(struct flash_target *t)
 		put_mtd_device(t->mtd);
 	t->mtd = NULL;
 #endif
+}
+
+/* ------------------------------------------------------------------ */
+/*  Target operations                                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * One place per operation, so that every handler supports every target:
+ * the backends differ only in the call they make, and keeping that in one
+ * function is what keeps the hex editor, the streamed backup, the restore
+ * path and the erase path in sync - an MMC hardware partition, for
+ * instance, is read and written through the region helpers, not through a
+ * partition lookup.
+ */
+
+/* Read @len bytes of @t at @off.  A short read is reported through
+ * @read_len and treated as an error by the callers.
+ */
+static int flash_target_read(const struct flash_target *t, u64 off, void *buf,
+			     size_t len, size_t *read_len)
+{
+	if (read_len)
+		*read_len = 0;
+
+	switch (t->src) {
+	case FAILSAFE_SRC_MTD:
+#ifdef CONFIG_MTD
+		return failsafe_mtd_read_range(t->mtd, off, len, buf, read_len);
+#else
+		return -ENODEV;
+#endif
+	case FAILSAFE_SRC_MMC:
+#if IS_ENABLED(CONFIG_MMC)
+		if (failsafe_mmc_read(t->mmc, t->base + off, buf, len))
+			return -EIO;
+
+		if (read_len)
+			*read_len = len;
+
+		return 0;
+#else
+		return -ENODEV;
+#endif
+	case FAILSAFE_SRC_MMC_HWPART:
+#if IS_ENABLED(CONFIG_MMC)
+		return failsafe_mmc_read_region(t->hwpart, off, buf, len,
+						read_len);
+#else
+		return -ENODEV;
+#endif
+	case FAILSAFE_SRC_RPMB:
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_RPMB)
+		return failsafe_mmc_rpmb_read(off, buf, len, read_len);
+#else
+		return -ENOTSUPP;
+#endif
+	}
+
+	return -EINVAL;
+}
+
+/*
+ * Write @len bytes to @t at @off.  @erase_first selects how an MTD target
+ * is programmed: a whole backup covering the range erases it first, while
+ * the hex editor patches it block by block and leaves the rest alone.  An
+ * MMC device overwrites in place, so both are the same write there.
+ */
+static int flash_target_write(const struct flash_target *t, u64 off,
+			      const void *buf, size_t len, bool erase_first)
+{
+	switch (t->src) {
+	case FAILSAFE_SRC_MTD:
+#ifdef CONFIG_MTD
+		if (erase_first)
+			return failsafe_mtd_restore_range(t->mtd, off, buf,
+							  len);
+
+		return failsafe_mtd_update_range(t->mtd, off, buf, len);
+#else
+		return -ENODEV;
+#endif
+	case FAILSAFE_SRC_MMC:
+#if IS_ENABLED(CONFIG_MMC)
+		return failsafe_mmc_write(t->mmc, t->base + off, buf, len);
+#else
+		return -ENODEV;
+#endif
+	case FAILSAFE_SRC_MMC_HWPART:
+#if IS_ENABLED(CONFIG_MMC)
+		return failsafe_mmc_write_region(t->hwpart, off, buf, len);
+#else
+		return -ENODEV;
+#endif
+	case FAILSAFE_SRC_RPMB:
+		/* Writing the RPMB has to be authenticated with the key the
+		 * device was programmed with, which a bootloader does not
+		 * have - see the Kconfig help of CONFIG_WEBUI_FAILSAFE_RPMB.
+		 */
+		cprintln(ERROR, "Failsafe: the RPMB partition is read only "
+			 "(writing it needs its authentication key)");
+		return -ENOTSUPP;
+	}
+
+	return -EINVAL;
+}
+
+/* Erase [off, off + len) of @t. */
+static int flash_target_erase(const struct flash_target *t, u64 off, u64 len)
+{
+	switch (t->src) {
+	case FAILSAFE_SRC_MTD:
+#ifdef CONFIG_MTD
+		return failsafe_mtd_erase_range(t->mtd, off, len);
+#else
+		return -ENODEV;
+#endif
+	case FAILSAFE_SRC_MMC:
+#if IS_ENABLED(CONFIG_MMC)
+		return failsafe_mmc_erase(t->mmc, t->base + off, (size_t)len);
+#else
+		return -ENODEV;
+#endif
+	case FAILSAFE_SRC_MMC_HWPART:
+#if IS_ENABLED(CONFIG_MMC)
+		return failsafe_mmc_erase_region(t->hwpart, off, len);
+#else
+		return -ENODEV;
+#endif
+	case FAILSAFE_SRC_RPMB:
+		cprintln(ERROR, "Failsafe: the RPMB partition is read only");
+		return -ENOTSUPP;
+	}
+
+	return -EINVAL;
 }
 
 /*
@@ -710,9 +895,57 @@ void flash_info_handler(enum httpd_uri_handler_status status,
 		}
 #endif
 		len = buf_appendf(buf, left, len, "]");
+
+		/* The raw regions of the device that are not partitions: the
+		 * two boot partitions of an eMMC and its RPMB.  The front end
+		 * offers them as additional targets; "ro" marks the ones that
+		 * can only be read (see the RPMB note in <failsafe/mmc.h>).
+		 */
+		len = buf_appendf(buf, left, len, ",\"regions\":[");
+		if (present) {
+			static const char *const boot_names[] = {
+				"boot0", "boot1",
+			};
+			bool first = true;
+			int i;
+
+			for (i = 0; i < ARRAY_SIZE(boot_names); i++) {
+				int hwpart = i ? FAILSAFE_MMC_HWPART_BOOT1 :
+						 FAILSAFE_MMC_HWPART_BOOT0;
+				u64 rsize = failsafe_mmc_region_size(hwpart);
+
+				if (!rsize)
+					continue;
+
+				len = buf_appendf(buf, left, len,
+						 "%s{\"name\":\"%s\","
+						 "\"size\":%llu,\"ro\":false}",
+						 first ? "" : ",",
+						 boot_names[i],
+						 (unsigned long long)rsize);
+				first = false;
+			}
+
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_RPMB)
+			{
+				u64 rsize = failsafe_mmc_rpmb_size();
+
+				if (rsize) {
+					len = buf_appendf(buf, left, len,
+							 "%s{\"name\":\"rpmb\","
+							 "\"size\":%llu,\"ro\":true}",
+							 first ? "" : ",",
+							 (unsigned long long)rsize);
+					first = false;
+				}
+			}
+#endif /* CONFIG_WEBUI_FAILSAFE_RPMB */
+		}
+		len = buf_appendf(buf, left, len, "]");
 	}
 #else
-	len = buf_appendf(buf, left, len, "\"present\":false,\"parts\":[]");
+	len = buf_appendf(buf, left, len,
+			  "\"present\":false,\"parts\":[],\"regions\":[]");
 #endif
 	len = buf_appendf(buf, left, len, "},");
 
@@ -845,14 +1078,11 @@ struct flash_backup_session {
 	void *buf;
 	size_t buf_size;
 
-#ifdef CONFIG_MTD
-	struct mtd_info *mtd;
-#endif
-#if IS_ENABLED(CONFIG_MMC)
-	struct mmc *mmc;
-	struct disk_partition dpart;
-	u64 mmc_base;
-#endif
+	/* The target stays open for the whole transfer, so the stream loop
+	 * only has to read from it (it owns the MTD reference, released by
+	 * flash_close_target() below).
+	 */
+	struct flash_target tgt;
 };
 
 /**
@@ -882,10 +1112,7 @@ void flash_backup_handler(enum httpd_uri_handler_status status,
 	if (status == HTTP_CB_CLOSED) {
 		st = response->session_data;
 		if (st) {
-#ifdef CONFIG_MTD
-			if (st->mtd)
-				put_mtd_device(st->mtd);
-#endif
+			flash_close_target(&st->tgt);
 			free(st->buf);
 			free(st);
 		}
@@ -944,32 +1171,25 @@ void flash_backup_handler(enum httpd_uri_handler_status status,
 
 		st->src = tgt.src;
 		st->target_size = tgt.size;
+
+		/* The session takes the open target over, including the MTD
+		 * reference: flash_close_target() on the local copy must not
+		 * release it.
+		 */
+		st->tgt = tgt;
 #ifdef CONFIG_MTD
-		st->mtd = tgt.mtd;
-		/* Transfer ownership: flash_close_target() must not release it. */
 		tgt.mtd = NULL;
-#endif
-#if IS_ENABLED(CONFIG_MMC)
-		if (tgt.src == FAILSAFE_SRC_MMC) {
-			st->mmc = tgt.mmc;
-			st->dpart = tgt.dpart;
-			if (!strcmp(target_name, "raw"))
-				st->mmc_base = 0;
-			else
-				st->mmc_base = (u64)st->dpart.start *
-					       st->dpart.blksz;
-		}
 #endif
 		flash_close_target(&tgt);
 
 		/* --- Raw NAND mode initialization --- */
 #ifdef CONFIG_WEBUI_FAILSAFE_NAND_RAW
 		if (raw_mode && st->src == FAILSAFE_SRC_MTD) {
-			if (!nand_raw_is_nand(st->mtd))
+			if (!nand_raw_is_nand(st->tgt.mtd))
 				goto bad_raw;
 
 			st->raw = true;
-			st->raw_page_sz = nand_raw_page_size(st->mtd);
+			st->raw_page_sz = nand_raw_page_size(st->tgt.mtd);
 			if (!st->raw_page_sz)
 				goto bad_range;
 
@@ -985,7 +1205,7 @@ void flash_backup_handler(enum httpd_uri_handler_status status,
 			}
 
 			/* Raw dumps cover the whole chip, OOB included. */
-			st->target_size = nand_raw_total_size(st->mtd);
+			st->target_size = nand_raw_total_size(st->tgt.mtd);
 		}
 #endif
 
@@ -1012,7 +1232,8 @@ void flash_backup_handler(enum httpd_uri_handler_status status,
 
 			if (st->src == FAILSAFE_SRC_MMC) {
 #if IS_ENABLED(CONFIG_MMC)
-				struct blk_desc *bd = failsafe_mmc_blk_desc(st->mmc);
+				struct blk_desc *bd =
+					failsafe_mmc_blk_desc(st->tgt.mmc);
 
 				if (bd)
 					strlcpy(model, bd->product,
@@ -1020,8 +1241,8 @@ void flash_backup_handler(enum httpd_uri_handler_status status,
 #endif
 			} else {
 #ifdef CONFIG_MTD
-				if (st->mtd && st->mtd->name)
-					strlcpy(model, st->mtd->name,
+				if (st->tgt.mtd && st->tgt.mtd->name)
+					strlcpy(model, st->tgt.mtd->name,
 						sizeof(model));
 #endif
 			}
@@ -1079,53 +1300,31 @@ void flash_backup_handler(enum httpd_uri_handler_status status,
 
 		to_read = (size_t)min_t(u64, remain, st->buf_size);
 
-		if (st->src == FAILSAFE_SRC_MTD) {
-#ifdef CONFIG_MTD
-			if (st->raw) {
 #ifdef CONFIG_WEBUI_FAILSAFE_NAND_RAW
-				u64 first_page, pages_to_read;
-				size_t actual;
+		if (st->raw) {
+			u64 first_page, pages_to_read;
+			size_t actual;
 
-				/* Align to raw page boundary */
-				first_page = (st->start + st->cur) /
-					     st->raw_page_sz;
-				pages_to_read = to_read / st->raw_page_sz;
-				if (!pages_to_read)
-					pages_to_read = 1;
+			/* Align to raw page boundary */
+			first_page = (st->start + st->cur) / st->raw_page_sz;
+			pages_to_read = to_read / st->raw_page_sz;
+			if (!pages_to_read)
+				pages_to_read = 1;
 
-				ret = nand_raw_read_pages(st->mtd, first_page,
-							  pages_to_read,
-							  st->buf, st->buf_size,
-							  &actual);
-				if (ret)
-					goto io_err;
-
-				got = actual;
-#else
-				goto io_err;
-#endif
-			} else {
-				ret = failsafe_mtd_read_range(st->mtd,
-							      st->start + st->cur,
-							      to_read, st->buf,
-							      &got);
-				if (ret)
-					goto io_err;
-			}
-#else
-			goto io_err;
-#endif
-		} else {
-#if IS_ENABLED(CONFIG_MMC)
-			ret = failsafe_mmc_read(st->mmc, st->mmc_base + st->start +
-					      st->cur, st->buf, to_read);
+			ret = nand_raw_read_pages(st->tgt.mtd, first_page,
+						  pages_to_read, st->buf,
+						  st->buf_size, &actual);
 			if (ret)
 				goto io_err;
 
-			got = to_read;
-#else
-			goto io_err;
+			got = actual;
+		} else
 #endif
+		{
+			ret = flash_target_read(&st->tgt, st->start + st->cur,
+						st->buf, to_read, &got);
+			if (ret)
+				goto io_err;
 		}
 
 		if (!got)
@@ -1152,10 +1351,7 @@ bad_target:
 	return;
 
 bad_range:
-#ifdef CONFIG_MTD
-	if (st->mtd)
-		put_mtd_device(st->mtd);
-#endif
+	flash_close_target(&st->tgt);
 	free(st->buf);
 	free(st);
 	failsafe_http_reply_text(response, 400, "invalid range");
@@ -1163,7 +1359,7 @@ bad_range:
 
 #ifdef CONFIG_WEBUI_FAILSAFE_NAND_RAW
 bad_raw:
-	put_mtd_device(st->mtd);
+	flash_close_target(&st->tgt);
 	free(st->buf);
 	free(st);
 	failsafe_http_reply_text(response, 400,
@@ -1360,39 +1556,14 @@ void flash_handler(enum httpd_uri_handler_status status,
 				goto oom;
 			}
 
-			if (tgt.src == FAILSAFE_SRC_MTD) {
-#ifdef CONFIG_MTD
-				size_t readsz = 0;
+			size_t readsz = 0;
 
-				ret = failsafe_mtd_read_range(tgt.mtd,
-							      read_start,
-							      read_len, buf,
-							      &readsz);
-				if (ret || readsz != read_len) {
-					free(buf);
-					flash_close_target(&tgt);
-					goto io_err;
-				}
-#else
+			ret = flash_target_read(&tgt, read_start, buf,
+						read_len, &readsz);
+			if (ret || readsz != read_len) {
 				free(buf);
 				flash_close_target(&tgt);
-				goto bad_target;
-#endif
-			} else {
-#if IS_ENABLED(CONFIG_MMC)
-				ret = failsafe_mmc_read(tgt.mmc,
-							 tgt.base + read_start,
-							 buf, read_len);
-				if (ret) {
-					free(buf);
-					flash_close_target(&tgt);
-					goto io_err;
-				}
-#else
-				free(buf);
-				flash_close_target(&tgt);
-				goto bad_target;
-#endif
+				goto io_err;
 			}
 		}
 
@@ -1515,19 +1686,14 @@ void flash_handler(enum httpd_uri_handler_status status,
 			} else
 #endif
 			{
-				ret = failsafe_mtd_update_range(tgt.mtd, start,
-								buf, len);
+				ret = flash_target_write(&tgt, start, buf, len,
+							 false);
 			}
 #else
 			ret = -ENODEV;
 #endif
 		} else {
-#if IS_ENABLED(CONFIG_MMC)
-			ret = failsafe_mmc_write(tgt.mmc, tgt.base + start,
-						  buf, len);
-#else
-			ret = -ENODEV;
-#endif
+			ret = flash_target_write(&tgt, start, buf, len, false);
 		}
 
 		flash_close_target(&tgt);
@@ -1642,20 +1808,15 @@ void flash_handler(enum httpd_uri_handler_status status,
 			} else
 #endif
 			{
-				ret = failsafe_mtd_restore_range(tgt.mtd, start,
-								 fw->data,
-								 len);
+				ret = flash_target_write(&tgt, start, fw->data,
+							 len, true);
 			}
 #else
 			ret = -ENODEV;
 #endif
 		} else {
-#if IS_ENABLED(CONFIG_MMC)
-			ret = failsafe_mmc_write(tgt.mmc, tgt.base + start,
-						  fw->data, len);
-#else
-			ret = -ENODEV;
-#endif
+			ret = flash_target_write(&tgt, start, fw->data, len,
+						 true);
 		}
 
 		flash_close_target(&tgt);
@@ -1717,19 +1878,7 @@ void flash_handler(enum httpd_uri_handler_status status,
 
 		len = end - start;
 
-		if (tgt.src == FAILSAFE_SRC_MTD) {
-#ifdef CONFIG_MTD
-			ret = failsafe_mtd_erase_range(tgt.mtd, start, len);
-#else
-			ret = -ENODEV;
-#endif
-		} else {
-#if IS_ENABLED(CONFIG_MMC)
-			ret = failsafe_mmc_erase(tgt.mmc, tgt.base + start, len);
-#else
-			ret = -ENODEV;
-#endif
-		}
+		ret = flash_target_erase(&tgt, start, len);
 
 		flash_close_target(&tgt);
 

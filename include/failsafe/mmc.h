@@ -400,6 +400,66 @@ int failsafe_mmc_write_region(int hwpart, u64 off, const void *data,
 int failsafe_mmc_read_region(int hwpart, u64 off, void *buf, size_t max_len,
 			     size_t *read_len);
 
+/**
+ * failsafe_mmc_region_size() - size of a hardware partition
+ * @hwpart: hardware partition (FAILSAFE_MMC_HWPART_*)
+ *
+ * Returns the size in bytes, or 0 when this device has no such partition:
+ * an SD card has neither boot0 nor boot1, and the two boot partitions of an
+ * eMMC always have the same size.
+ */
+u64 failsafe_mmc_region_size(int hwpart);
+
+/**
+ * failsafe_mmc_erase_region() - erase a raw region of a hardware partition
+ * @hwpart: hardware partition (FAILSAFE_MMC_HWPART_*)
+ * @off:    byte offset inside the hardware partition
+ * @size:   number of bytes to erase (0 erases to the end of the partition)
+ *
+ * Erasing is block based, so the range is rounded outwards; the device is
+ * switched to @hwpart for the erase and back to the user area afterwards.
+ *
+ * Returns 0 on success, -ENOTSUPP when the hardware partition does not
+ * exist, a negative errno otherwise.
+ */
+int failsafe_mmc_erase_region(int hwpart, u64 off, u64 size);
+
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_RPMB)
+/*
+ * eMMC RPMB (replay protected memory block).
+ *
+ * The RPMB is not a normal partition: it is accessed in fixed 256 byte
+ * blocks, one request/response exchange per block, and *writing* it
+ * requires the authentication key the device was programmed with.  Reading
+ * does not: the response carries a MAC that can only be verified with that
+ * key, so without one the blocks are returned exactly as stored - which is
+ * what a dump wants.  Writing is deliberately not offered by the failsafe
+ * UI: it would have to authenticate with a key the bootloader does not
+ * have.
+ */
+#define FAILSAFE_MMC_RPMB_BLOCK		256
+
+/** failsafe_mmc_rpmb_size() - RPMB size in bytes (0 when there is none) */
+u64 failsafe_mmc_rpmb_size(void);
+
+/**
+ * failsafe_mmc_rpmb_read() - read a byte range of the RPMB partition
+ * @off:     byte offset inside the RPMB
+ * @buf:     destination buffer
+ * @max_len: capacity of @buf
+ * @read_len: receives the number of bytes read (may be NULL)
+ *
+ * The request is rounded down to whole 256 byte blocks, like any other MMC
+ * read: the bytes of a trailing partial block are dropped.  No
+ * authentication key is used, so the data is not verified.
+ *
+ * Returns 0 on success, -ENOTSUPP when the device has no RPMB, a negative
+ * errno otherwise.
+ */
+int failsafe_mmc_rpmb_read(u64 off, void *buf, size_t max_len,
+			   size_t *read_len);
+#endif /* CONFIG_WEBUI_FAILSAFE_RPMB */
+
 #endif /* CONFIG_MMC */
 
 #endif /* IS_ENABLED(CONFIG_MMC) */
