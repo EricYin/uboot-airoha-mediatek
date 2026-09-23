@@ -22,14 +22,14 @@
  *     failsafe_write_image() - which picks the storage target for the
  *     firmware type (an MTD partition, a UBI volume or an MMC partition,
  *     see failsafe/bootimg/) - or hand an uploaded image to the RAM-boot
- *     path (booted by boot_from_mem() from failsafe_core.c: FIT / legacy
+ *     path (booted by boot_from_mem() from core.c: FIT / legacy
  *     images via bootm, other raw binaries via the "go" command), and
  *     report success / failed.
  *
  * The shared state (upload_data_id / upload_data / upload_size /
  * upgrade_success / auto_action_pending / fw_type) is referenced by
- * failsafe_core.c.  The HTTP entry point (do_httpd), the Web page
- * handlers and the RAM-boot staging live in failsafe_core.c, sysinfo.c /
+ * core.c.  The HTTP entry point (do_httpd), the Web page
+ * handlers and the RAM-boot staging live in core.c, sysinfo.c /
  * theme.c and the board layer respectively.
  *
  * Airoha supports only: firmware (UBI volume), bl2, chainloader and
@@ -277,7 +277,7 @@ void boot_system_handler(enum httpd_uri_handler_status status,
 }
 
 /* ------------------------------------------------------------------ */
-/*  Shared state (referenced by failsafe_core.c)                       */
+/*  Shared state (referenced by core.c)                       */
 /* ------------------------------------------------------------------ */
 
 u32 upload_data_id;

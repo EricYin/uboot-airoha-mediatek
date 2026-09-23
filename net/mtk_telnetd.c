@@ -31,7 +31,7 @@
 DECLARE_GLOBAL_DATA_PTR;
 
 /*
- * Implemented in failsafe/failsafe_core.c.  That directory is only built
+ * Implemented in failsafe/core.c.  That directory is only built
  * when CONFIG_WEBUI_FAILSAFE is enabled, so a weak fallback keeps telnetd
  * linkable on its own.
  */

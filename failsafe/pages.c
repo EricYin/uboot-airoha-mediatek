@@ -9,7 +9,7 @@
  * resource that is served for it and, optionally, its page script.
  * Everything that used to be maintained per page is derived from it:
  *
- *   - the URI registrations (failsafe_core.c used to list the bootloader
+ *   - the URI registrations (core.c used to list the bootloader
  *     and UI pages, each module the rest),
  *   - the JS name whitelist of js_handler() (the registered URI *is* the
  *     asset name, so the handler needs no second list),

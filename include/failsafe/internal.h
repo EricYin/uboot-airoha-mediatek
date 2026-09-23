@@ -20,7 +20,7 @@
 #include <failsafe/helpers.h>
 
 /* ------------------------------------------------------------------ */
-/*  Core weak functions (defined in failsafe_core.c, used by modules)  */
+/*  Core weak functions (defined in core.c, used by modules)  */
 /* ------------------------------------------------------------------ */
 
 int failsafe_validate_image(const void *data, size_t size,
@@ -49,7 +49,7 @@ extern size_t upload_size;
  *
  * Board-level hook implemented in board/airoha/common/failsafe.c and
  * board/mediatek/common/failsafe.c; the weak default in
- * failsafe_core.c reports no information.  @fw tells the board which
+ * core.c reports no information.  @fw tells the board which
  * uploads may carry a preloader: a direct BL2 upload always does, and
  * on Airoha the legacy 512 KiB U-Boot image (BL2 + BL31 + U-Boot in one
  * internal FIP) does as well.
@@ -68,7 +68,7 @@ int failsafe_bl2_version_info(const void *data, size_t size,
  *
  * Board-level hook implemented in board/airoha/common/failsafe.c and
  * board/mediatek/common/failsafe.c; the weak default in
- * failsafe_core.c reports no information.  It reads the boot chain that
+ * core.c reports no information.  It reads the boot chain that
  * is currently stored in flash through the shared storage helper and
  * extracts the version / build-date banners, so a manual GET on
  * /atfversion shows what the device is actually running.
@@ -127,10 +127,10 @@ void failsafe_notify_network_cmd_done(void);
 void failsafe_register_pages(struct httpd_instance *inst);
 
 /* ------------------------------------------------------------------ */
-/*  Handler declarations (used by failsafe_core.c for the URI table)   */
+/*  Handler declarations (used by core.c for the URI table)   */
 /* ------------------------------------------------------------------ */
 
-/* ---- core handlers (failsafe_core.c) ---- */
+/* ---- core handlers (core.c) ---- */
 void js_handler(enum httpd_uri_handler_status status,
 	struct httpd_request *request,
 	struct httpd_response *response);

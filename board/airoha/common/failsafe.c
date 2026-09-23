@@ -4,7 +4,7 @@
  *
  * Airoha failsafe board hooks (Web recovery / httpd upload).
  *
- * Covers the __weak hooks required by failsafe/failsafe_core.c and used
+ * Covers the __weak hooks required by failsafe/core.c and used
  * by failsafe/modules/upgrade.c:
  *   - httpd_get_upload_buffer_ptr()  — return a safe DRAM staging buffer
  *   - failsafe_validate_image()      — basic size check plus the generic
@@ -255,7 +255,7 @@ static int airoha_read_bl2(void *buf, size_t max_len, size_t *read_len)
 
 
 /* ------------------------------------------------------------------ */
-/*  Public hooks – called by failsafe/failsafe_core.c                 */
+/*  Public hooks – called by failsafe/core.c                 */
 /* ------------------------------------------------------------------ */
 
 void *httpd_get_upload_buffer_ptr(size_t size)
