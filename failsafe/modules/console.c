@@ -541,8 +541,9 @@ void console_register_handlers(struct httpd_instance *inst)
 {
 	/* Enable recording early so we can stream output to the browser */
 	failsafe_webconsole_ensure_recording();
-	httpd_register_uri_handler(inst, "/console.html", &html_handler, NULL);
-	httpd_register_uri_handler(inst, "/console_js.js", &js_handler, NULL);
+
+	/* The page and its script are registered by the page inventory
+	 * (failsafe/pages.c); this module only owns the endpoints. */
 	httpd_register_uri_handler(inst, "/console/poll", &webconsole_poll_handler, NULL);
 	httpd_register_uri_handler(inst, "/console/exec", &webconsole_exec_handler, NULL);
 	httpd_register_uri_handler(inst, "/console/abort", &webconsole_abort_handler, NULL);

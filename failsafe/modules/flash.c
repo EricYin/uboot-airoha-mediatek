@@ -1974,8 +1974,8 @@ io_err:
 #ifdef CONFIG_WEBUI_FAILSAFE_FLASH
 void flash_register_handlers(struct httpd_instance *inst)
 {
-	httpd_register_uri_handler(inst, "/flash.html", &html_handler, NULL);
-	httpd_register_uri_handler(inst, "/flash_js.js", &js_handler, NULL);
+	/* The page and its script are registered by the page inventory
+	 * (failsafe/pages.c); this module only owns the endpoints. */
 	httpd_register_uri_handler(inst, "/flash/info", &flash_info_handler,
 				   NULL);
 	httpd_register_uri_handler(inst, "/flash/backup", &flash_backup_handler,

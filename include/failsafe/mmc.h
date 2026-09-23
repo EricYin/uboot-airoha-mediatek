@@ -20,7 +20,8 @@
  *     (user area / boot0 / boot1) and the partition table itself.
  *
  * Whether a partition or region belongs to the preloader, the FIP or the
- * system image is decided by the board code (board/*/common/failsafe.c).
+ * system image is decided by the board code
+ * (board/{airoha,mediatek}/common/failsafe.c).
  *
  * The vendor string beautifier (failsafe_mmc_vendor_pretty) is declared
  * in <failsafe/helpers.h> and implemented in failsafe/modules/helpers.c.

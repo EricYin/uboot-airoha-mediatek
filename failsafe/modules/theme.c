@@ -335,9 +335,10 @@ out_free:
 #ifdef CONFIG_WEBUI_FAILSAFE_UI_BOOTSTRAP
 void theme_register_handlers(struct httpd_instance *inst)
 {
+	/* The settings page and its script are registered by the page
+	 * inventory (failsafe/pages.c); what is bootstrap specific here is
+	 * the favicon, the theme script and the theme endpoints. */
 	httpd_register_uri_handler(inst, "/favicon.svg", &picture_handler, NULL);
-	httpd_register_uri_handler(inst, "/settings.html", &html_handler, NULL);
-	httpd_register_uri_handler(inst, "/settings_js.js", &js_handler, NULL);
 	httpd_register_uri_handler(inst, "/theme.js", &js_handler, NULL);
 	httpd_register_uri_handler(inst, "/theme/get", &theme_get_handler, NULL);
 	httpd_register_uri_handler(inst, "/theme/set", &theme_set_handler, NULL);

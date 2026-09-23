@@ -186,74 +186,22 @@ static void style_handler(enum httpd_uri_handler_status status,
 }
 
 /*
- * Select JS file name from request URI. If the basename matches a known
- * JavaScript filename, return it; otherwise fall back to "main.js".
+ * A registered JS URI is the name of the embedded asset, so the file is
+ * served straight from the request URI (the handler only runs for a URI
+ * that was registered, see failsafe/pages.c and the modules).  A script
+ * that was not embedded for this build - its option is off - is reported
+ * as 404 instead of a plain-text error masquerading as gzip-encoded JS.
  */
-static const char *select_js_file(const char *uri)
-{
-	static const char *allowed[] = {
-		"main.js",
-		"i18n.js",
-		"theme.js",
-		"console_js.js",
-		"env_js.js",
-		"settings_js.js",
-		"ubi_js.js",
-		"flash_js.js",
-		"simg_js.js",
-		NULL
-	};
-	const char *basename;
-	const char *slash_ptr;
-	size_t basename_len;
-	int allowed_index;
-
-	if (!uri || !uri[0])
-		return "main.js";
-
-	slash_ptr = strrchr(uri, '/');
-	basename = slash_ptr ? slash_ptr + 1 : uri;
-
-	/* strip query/hash if present */
-	{
-		const char *query_ptr = strchr(basename, '?');
-		const char *hash_ptr = strchr(basename, '#');
-		const char *end_ptr = basename + strlen(basename);
-
-		if (query_ptr && query_ptr < end_ptr)
-			end_ptr = query_ptr;
-		if (hash_ptr && hash_ptr < end_ptr)
-			end_ptr = hash_ptr;
-
-		basename_len = end_ptr - basename;
-	}
-	if (basename_len == 0)
-		return "main.js";
-
-	for (allowed_index = 0; allowed[allowed_index]; allowed_index++) {
-		if (strlen(allowed[allowed_index]) == basename_len &&
-			strncmp(allowed[allowed_index], basename, basename_len) == 0)
-			return allowed[allowed_index];
-	}
-
-	return "main.js";
-}
-
 void js_handler(enum httpd_uri_handler_status status,
 	struct httpd_request *request,
 	struct httpd_response *response)
 {
-	if (status == HTTP_CB_NEW) {
-		const char *uri = request && request->urih ? request->urih->uri : NULL;
-		const char *file = select_js_file(uri);
+	if (status != HTTP_CB_NEW)
+		return;
 
-		if (failsafe_output_file(response, file, "text/javascript")) {
-			/* requested JS not embedded: serve 404 page instead of
-			 * a plain-text error masquerading as gzip-encoded JS */
-			not_found_handler(status, request, response);
-			return;
-		}
-	}
+	if (failsafe_output_file(response, request->urih->uri + 1,
+				 "text/javascript"))
+		not_found_handler(status, request, response);
 }
 
 void html_handler(enum httpd_uri_handler_status status,
@@ -287,57 +235,22 @@ int start_web_failsafe(void)
 
 	/* Register handlers from each module */
 
-	/* Common UI routes (always available) */
+	/*
+	 * The entry points and the resources that are not pages come from
+	 * here; every page (its HTML resource, its script, the endpoints of
+	 * its module and the /ui/pages list the Web UI asks for) comes from
+	 * the page inventory in failsafe/pages.c.
+	 */
+	httpd_register_uri_handler(inst, "", &not_found_handler, NULL);
 	httpd_register_uri_handler(inst, "/", &index_handler, NULL);
-	httpd_register_uri_handler(inst, "/booting.html", &html_handler, NULL);
 	httpd_register_uri_handler(inst, "/cgi-bin/luci", &index_handler, NULL);
 	httpd_register_uri_handler(inst, "/cgi-bin/luci/", &index_handler, NULL);
-	httpd_register_uri_handler(inst, "/fail.html", &html_handler, NULL);
-	httpd_register_uri_handler(inst, "/flashing.html", &html_handler, NULL);
-	httpd_register_uri_handler(inst, "/initramfs.html", &html_handler, NULL);
-	httpd_register_uri_handler(inst, "/main.js", &js_handler, NULL);
 	httpd_register_uri_handler(inst, "/style.css", &style_handler, NULL);
-	httpd_register_uri_handler(inst, "", &not_found_handler, NULL);
-	httpd_register_uri_handler(inst, "/reboot.html", &html_handler, NULL);
 #ifdef CONFIG_WEBUI_FAILSAFE_I18N
 	httpd_register_uri_handler(inst, "/i18n.js", &js_handler, NULL);
 #endif
-#ifdef CONFIG_WEBUI_FAILSAFE_GPT
-	httpd_register_uri_handler(inst, "/gpt.html", &html_handler, NULL);
-#endif
-#ifdef CONFIG_WEBUI_FAILSAFE_LAYOUT_UBOOT
-	httpd_register_uri_handler(inst, "/uboot.html", &html_handler, NULL);
-#endif
-#ifdef CONFIG_WEBUI_FAILSAFE_LAYOUT_FIP
-	httpd_register_uri_handler(inst, "/bl2.html", &html_handler, NULL);
-	httpd_register_uri_handler(inst, "/fip.html", &html_handler, NULL);
-#endif
-#ifdef CONFIG_WEBUI_FAILSAFE_LAYOUT_CHAINLOADER
-	httpd_register_uri_handler(inst, "/chainloader.html", &html_handler, NULL);
-#endif
 
-#ifdef CONFIG_WEBUI_FAILSAFE_ADVANCED
-	sysinfo_register_handlers(inst);
-#endif
-	upgrade_register_handlers(inst);
-#ifdef CONFIG_WEBUI_FAILSAFE_ENV
-	env_register_handlers(inst);
-#endif
-#ifdef CONFIG_WEBUI_FAILSAFE_UI_BOOTSTRAP
-	theme_register_handlers(inst);
-#endif
-#ifdef CONFIG_WEBUI_FAILSAFE_UBI
-	ubi_register_handlers(inst);
-#endif
-#ifdef CONFIG_WEBUI_FAILSAFE_FLASH
-	flash_register_handlers(inst);
-#endif
-#ifdef CONFIG_WEBUI_FAILSAFE_CONSOLE
-	console_register_handlers(inst);
-#endif
-#ifdef CONFIG_WEBUI_FAILSAFE_SIMG
-	simg_register_handlers(inst);
-#endif
+	failsafe_register_pages(inst);
 
 #ifdef CONFIG_MTK_TELNETD
 	if (IS_ENABLED(CONFIG_MTK_TELNETD)) {

@@ -474,8 +474,8 @@ void simg_write_handler(enum httpd_uri_handler_status status,
 #ifdef CONFIG_WEBUI_FAILSAFE_SIMG
 void simg_register_handlers(struct httpd_instance *inst)
 {
-	httpd_register_uri_handler(inst, "/simg.html", &html_handler, NULL);
-	httpd_register_uri_handler(inst, "/simg_js.js", &js_handler, NULL);
+	/* The page and its script are registered by the page inventory
+	 * (failsafe/pages.c); this module only owns the endpoints. */
 	httpd_register_uri_handler(inst, "/simg/info", &simg_info_handler, NULL);
 	httpd_register_uri_handler(inst, "/simg/write", &simg_write_handler, NULL);
 }

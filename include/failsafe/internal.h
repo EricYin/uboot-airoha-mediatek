@@ -113,6 +113,20 @@ int boot_from_mem(ulong data_load_addr);
 void failsafe_notify_network_cmd_done(void);
 
 /* ------------------------------------------------------------------ */
+/*  Page inventory (pages.c)                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * failsafe_register_pages() - register the pages of the Web UI
+ * @inst: HTTP instance to register the URI handlers on
+ *
+ * Registers every page listed in failsafe_pages[] (its HTML resource and
+ * its page script, if any) plus GET /ui/pages, which reports the page ids
+ * to the Web UI.  See failsafe/pages.c for the table itself.
+ */
+void failsafe_register_pages(struct httpd_instance *inst);
+
+/* ------------------------------------------------------------------ */
 /*  Handler declarations (used by failsafe_core.c for the URI table)   */
 /* ------------------------------------------------------------------ */
 

@@ -803,10 +803,10 @@ function ensureSidebar() {
     sidebar.appendChild(navContainer);
 
     applyI18n(sidebar);
-    // Probe all Kconfig-controlled pages
-    for (const navId of Object.keys(NAV_VISIBILITY_DEFS)) {
-        updateNavVisibility(navId);
-    }
+
+    // Show the pages this firmware was built with (see applyNavVisibility())
+    applyNavVisibility();
+
     attachSidebarScrollPersistence(navContainer);
 }
 
@@ -1053,6 +1053,16 @@ function appInit(pageName) {
  * Mode: "probe" - fetch the page URL to check if it exists (default)
  *       "condition" - evaluate a condition function
  */
+/*
+ * Optional per-page metadata of the sidebar entries: the prefix used when
+ * logging, the reason reported when the page is missing and extra work to
+ * do in that case.
+ *
+ * Which entries are actually shown is decided by the firmware - the page
+ * inventory reports itself through GET /ui/pages (see
+ * failsafe/pages.c) - so a page that is missing here is still shown or
+ * hidden correctly, only without the extra detail.
+ */
 const NAV_VISIBILITY_DEFS = {
     // Bootloader pages (selected by the failsafe layout / build mode)
     uboot: {
@@ -1114,17 +1124,41 @@ const NAV_VISIBILITY_DEFS = {
     },
 };
 
+/*
+ * Show or hide one sidebar entry, and report why it stays hidden.
+ *
+ * NAV_VISIBILITY_DEFS only carries the extra detail here (log prefix, the
+ * reason printed to the console, extra work to do when the entry does not
+ * exist); whether a page was built into this firmware is decided by the
+ * firmware itself - see applyNavVisibility().
+ */
+function setNavVisible(navId, visible) {
+    const def = NAV_VISIBILITY_DEFS[navId] || {};
+    const navLink = document.querySelector(`#sidebar [data-nav-id='${navId}']`);
+    if (!navLink) return;
+
+    navLink.style.display = visible ? "" : "none";
+
+    if (!visible) {
+        const reason = def.hiddenReason ? ` (${def.hiddenReason})` : "";
+        console.warn(`${def.logPrefix || navId} not available${reason}`);
+        if (def.onHidden) def.onHidden();
+    }
+}
+
 /**
  * Unified nav visibility update function.
  * Supports two modes:
  *   - "probe": fetch URL to check if page exists
  *   - "condition": evaluate a condition function
+ *
+ * Falls back to probing the page URL, which also covers firmware that does
+ * not answer GET /ui/pages (see applyNavVisibility()).
+ *
  * @param {string} navId - The data-nav-id value
  */
 function updateNavVisibility(navId) {
-    const def = NAV_VISIBILITY_DEFS[navId];
-    if (!def) return;
-
+    const def = NAV_VISIBILITY_DEFS[navId] || {};
     const navLink = document.querySelector(`#sidebar [data-nav-id='${navId}']`);
     if (!navLink) return;
 
@@ -1132,7 +1166,7 @@ function updateNavVisibility(navId) {
         // Condition-based visibility
         const show = def.condition();
         navLink.style.display = show ? "" : "none";
-        console.warn(`${def.logPrefix} nav visibility: ${show ? "shown" : "hidden"}`);
+        console.warn(`${def.logPrefix || navId} nav visibility: ${show ? "shown" : "hidden"}`);
         return;
     }
 
@@ -1164,30 +1198,51 @@ function updateNavVisibility(navId) {
     navLink.style.display = "none";
     APP_STATE[probeKey] = true;
 
-    const url = def.url || `/${navId}.html`;
+    const url = def.url || navLink.getAttribute("href") || `/${navId}.html`;
     fetch(`${url}?_probe=1`, { method: "GET", cache: "no-store" })
         .then((response) => {
             const exists = response?.ok === true;
             APP_STATE[resultKey] = exists;
-            navLink.style.display = exists ? "" : "none";
             try { sessionStorage.setItem(sessionKey, exists ? "1" : "0"); } catch {}
-            if (!exists) {
-                const reason = def.hiddenReason ? ` (${def.hiddenReason})` : "";
-                console.warn(`${def.logPrefix} not available${reason}`);
-                if (def.onHidden) def.onHidden();
-            }
+            setNavVisible(navId, exists);
         })
         .catch(() => {
             APP_STATE[resultKey] = false;
             try { sessionStorage.setItem(sessionKey, "0"); } catch {}
-            const reason = def.hiddenReason ? ` (${def.hiddenReason})` : "";
-            console.warn(`${def.logPrefix} not available${reason}`);
-            if (def.onHidden) def.onHidden();
+            setNavVisible(navId, false);
         });
 }
 
-function updateSettingsNavVisibility() {
-    updateNavVisibility("settings");
+/**
+ * Show exactly the sidebar entries this firmware was built with.
+ *
+ * GET /ui/pages (see failsafe/pages.c) lists the pages of the build, so the
+ * sidebar follows the firmware without a second list to keep in sync here.
+ * A firmware without that endpoint is handled by probing the optional
+ * entries, which is what this UI used to do for every page.
+ */
+async function applyNavVisibility() {
+    let pages = null;
+
+    try {
+        const response = await fetch("/ui/pages", { cache: "no-store" });
+        if (response.ok) {
+            const data = await response.json();
+            if (Array.isArray(data.pages)) pages = data.pages;
+        }
+    } catch { /* fall back to probing */ }
+
+    for (const navLink of document.querySelectorAll("#sidebar [data-nav-id]")) {
+        const navId = navLink.getAttribute("data-nav-id");
+        if (!navId) continue;
+
+        if (pages) {
+            setNavVisible(navId, pages.includes(navId));
+        } else if (navLink.style.display === "none") {
+            /* Unknown build: probe the entries that are optional */
+            updateNavVisibility(navId);
+        }
+    }
 }
 
 function ensureSidebarAccentFallback() {

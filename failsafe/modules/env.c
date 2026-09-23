@@ -355,8 +355,8 @@ void env_size_handler(enum httpd_uri_handler_status status,
 #ifdef CONFIG_WEBUI_FAILSAFE_ENV
 void env_register_handlers(struct httpd_instance *inst)
 {
-	httpd_register_uri_handler(inst, "/env.html", &html_handler, NULL);
-	httpd_register_uri_handler(inst, "/env_js.js", &js_handler, NULL);
+	/* The page and its script are registered by the page inventory
+	 * (failsafe/pages.c); this module only owns the endpoints. */
 	httpd_register_uri_handler(inst, "/env/list", &env_list_handler, NULL);
 	httpd_register_uri_handler(inst, "/env/set", &env_set_handler, NULL);
 	httpd_register_uri_handler(inst, "/env/unset", &env_unset_handler, NULL);
