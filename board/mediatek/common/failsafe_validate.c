@@ -37,6 +37,7 @@
 #include <failsafe/fip.h>
 #include <failsafe/image.h>
 #include <failsafe/cprint.h>
+#include <failsafe/error.h>
 
 #include "failsafe_validate.h"
 
@@ -110,8 +111,8 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 	u32 magic;
 
 	if (size < FAILSAFE_FIP_HEADER_SIZE) {
-		cprintln(ERROR, "Failsafe: 'bl2' image too small (%zu)", size);
-		return -EINVAL;
+		return failsafe_error(-EINVAL, "'bl2' image too small (%zu)",
+			size);
 	}
 
 	/* preloader.bin delivered as a FIP container wrapping the raw
@@ -130,18 +131,18 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 		   FAILSAFE_FIP_TOC_ENTRY_SIZE &&
 	    !memcmp((const u8 *)data + FAILSAFE_FIP_HEADER_SIZE,
 		    failsafe_fip_uuid_tb_fw, 16)) {
-		cprintln(ERROR, "Failsafe: 'bl2' image looks like a FIP with "
-			 "a bad header (BL2 ToC entry present, magic 0x%08x)",
-			 magic);
-		return -EINVAL;
+		return failsafe_error(-EINVAL,
+			"'bl2' image looks like a FIP with "
+			"a bad header (BL2 ToC entry present, magic 0x%08x)",
+			magic);
 	}
 
 	/* Bare preloader: must carry one of the known Mediatek storage
 	 * magic headers. */
 	if (!mtk_bl2_storage_name(data, size)) {
-		cprintln(ERROR, "Failsafe: 'bl2' image has no known preloader "
-			 "header (magic 0x%08x)", magic);
-		return -EINVAL;
+		return failsafe_error(-EINVAL,
+			"'bl2' image has no known preloader "
+			"header (magic 0x%08x)", magic);
 	}
 
 	return 0;
@@ -215,11 +216,9 @@ int failsafe_validate_image_content(const void *data, size_t size,
 		break;
 	}
 
-	if (ret) {
-		cprintln(ERROR, "Failsafe: '%s' image validation FAILED (%d)",
-			 name, ret);
-		return ret;
-	}
+	if (ret)
+		return failsafe_error(ret, "'%s' image validation FAILED",
+			name);
 
 	if (!checked)
 		cprintln(CAUTION, "Failsafe: '%s' image validation skipped "

@@ -53,6 +53,7 @@
 #include <failsafe/image.h>
 #include <failsafe/storage.h>
 #include <failsafe/cprint.h>
+#include <failsafe/error.h>
 
 #if IS_ENABLED(CONFIG_MMC)
 #include <failsafe/mmc.h>
@@ -183,11 +184,11 @@ static int mtk_bl2_capacity(size_t size)
 	case 0:
 		/* eMMC: the first MTK_EMMC_BL2_AREA_SIZE bytes of boot0. */
 		if (size > MTK_EMMC_BL2_AREA_SIZE) {
-			cprintln(ERROR, "Failsafe: preloader (%zu) exceeds the "
-				 "0x%zx byte boot area of the eMMC boot0 "
-				 "partition", size,
-				 (size_t)MTK_EMMC_BL2_AREA_SIZE);
-			return -EFBIG;
+			return failsafe_error(-EFBIG,
+				"preloader (%zu) exceeds the "
+				"0x%zx byte boot area of the eMMC boot0 "
+				"partition", size,
+				(size_t)MTK_EMMC_BL2_AREA_SIZE);
 		}
 
 		return 0;
@@ -196,9 +197,9 @@ static int mtk_bl2_capacity(size_t size)
 	}
 #endif
 
-	cprintln(ERROR, "Failsafe: no MTD partition '%s' and no MMC device "
-		 "to hold the preloader", FAILSAFE_STORAGE_BL2_TARGET);
-	return -ENODEV;
+	return failsafe_error(-ENODEV,
+		"no MTD partition '%s' and no MMC device "
+		"to hold the preloader", FAILSAFE_STORAGE_BL2_TARGET);
 }
 
 /*
@@ -222,10 +223,10 @@ static int mtk_write_bl2(const void *data, size_t size)
 
 #if IS_ENABLED(CONFIG_MMC)
 	if (!mmc) {
-		cprintln(ERROR, "Failsafe: no MTD partition '%s' and no MMC "
-			 "device to hold the preloader",
-			 FAILSAFE_STORAGE_BL2_TARGET);
-		return -ENODEV;
+		return failsafe_error(-ENODEV,
+			"no MTD partition '%s' and no MMC "
+			"device to hold the preloader",
+			FAILSAFE_STORAGE_BL2_TARGET);
 	}
 
 	if (failsafe_mmc_is_sd() == 1)
@@ -242,9 +243,8 @@ static int mtk_write_bl2(const void *data, size_t size)
 	mtk_setup_boot_options(mmc);
 	return 0;
 #else
-	cprintln(ERROR, "Failsafe: no MTD partition '%s' to hold the "
-		 "preloader", FAILSAFE_STORAGE_BL2_TARGET);
-	return -ENODEV;
+	return failsafe_error(-ENODEV, "no MTD partition '%s' to hold the "
+		"preloader", FAILSAFE_STORAGE_BL2_TARGET);
 #endif /* CONFIG_MMC */
 }
 
@@ -294,8 +294,7 @@ int failsafe_validate_image(const void *data, size_t size, failsafe_fw_t fw)
 	int ret;
 
 	if (!size) {
-		cprintln(ERROR, "Failsafe: empty image");
-		return -EINVAL;
+		return failsafe_error(-EINVAL, "empty image");
 	}
 
 	/* RAM boot (initramfs FIT or raw "go" image): no flash partition,
@@ -345,9 +344,8 @@ int failsafe_write_image(const void *data, size_t size, failsafe_fw_t fw)
 
 	/* RAM boot (initramfs FIT or raw "go" image): nothing to flash */
 	if (!target) {
-		cprintln(ERROR, "Failsafe: no flash target for firmware type %d",
-			 fw);
-		return -EINVAL;
+		return failsafe_error(-EINVAL,
+			"no flash target for firmware type %d", fw);
 	}
 
 	/*
