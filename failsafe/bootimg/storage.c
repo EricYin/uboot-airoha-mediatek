@@ -21,6 +21,10 @@
  *     stages, the partition table) is never rerouted to another backend:
  *     a missing one is an error, not a UBI volume to create.
  *
+ * A backend is only built when its storage type is enabled (see the
+ * Makefile), so every call into one is guarded with the same option here:
+ * an eMMC-only board links neither the MTD nor the UBI backend.
+ *
  * The bootloader stages are the platform's own business: where a preloader
  * or a FIP lives (an MTD partition offset, the boot0 hardware partition of
  * an eMMC, a fixed offset in the user area, a GPT partition) differs
@@ -85,8 +89,10 @@ static bool is_mmc_partition(const char *name)
 
 int failsafe_check_capacity(const char *target, u64 mtd_off, size_t size)
 {
+#if IS_ENABLED(CONFIG_MTD)
 	if (failsafe_mtd_exists(target))
 		return failsafe_mtd_capacity(target, mtd_off, size);
+#endif
 
 #if IS_ENABLED(CONFIG_MMC)
 	/* MMC only targets: the partition table image ("gpt"). */
@@ -129,7 +135,15 @@ int failsafe_check_capacity(const char *target, u64 mtd_off, size_t size)
 		return -ENODEV;
 	}
 
+#if IS_ENABLED(CONFIG_CMD_UBI)
 	return failsafe_ubi_capacity(target, size);
+#else
+	/* Neither an MTD partition, nor an MMC one, nor a UBI volume:
+	 * nothing in this build can hold the target.
+	 */
+	cprintln(ERROR, "Failsafe: storage target '%s' not found", target);
+	return -ENODEV;
+#endif
 }
 
 int failsafe_storage_write(const char *target, u64 mtd_off,
@@ -140,10 +154,16 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 	cprintln(NORMAL, "\n*** Failsafe upgrade: %zu (0x%zx) bytes -> "
 		 "'%s' ***\n", size, size, target);
 
+	/* Without MTD support a target can only be an MMC partition or a
+	 * UBI volume; the check is compiled out with the backend itself.
+	 */
+#if IS_ENABLED(CONFIG_MTD)
 	if (failsafe_mtd_exists(target)) {
 		/* ----- MTD partition ----- */
 		ret = failsafe_mtd_write(target, mtd_off, data, size);
-	} else if (is_mtd_only_target(target)) {
+	} else
+#endif /* CONFIG_MTD */
+	if (is_mtd_only_target(target)) {
 		/* A bootloader stage is always an MTD partition; falling
 		 * back to UBI here would create a bogus volume and hide the
 		 * real problem (missing partition / wrong device tree).
@@ -162,8 +182,14 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 		} else
 #endif /* CONFIG_MMC */
 		{
+#if IS_ENABLED(CONFIG_CMD_UBI)
 			/* ----- UBI volume ----- */
 			ret = failsafe_ubi_write(target, data, size);
+#else
+			cprintln(ERROR, "Failsafe: storage target '%s' not "
+				 "found", target);
+			ret = -ENODEV;
+#endif /* CONFIG_CMD_UBI */
 		}
 	}
 
@@ -234,9 +260,11 @@ int failsafe_storage_read(const char *target, u64 offset, void *buf,
 	if (!target || !buf || !max_len)
 		return -EINVAL;
 
+#if IS_ENABLED(CONFIG_MTD)
 	if (failsafe_mtd_exists(target))
 		return failsafe_mtd_read(target, offset, buf, max_len,
 					 read_len);
+#endif
 
 #if IS_ENABLED(CONFIG_MMC)
 	/* "fip" is the only UBI volume that also exists as an MMC partition.
@@ -247,5 +275,9 @@ int failsafe_storage_read(const char *target, u64 offset, void *buf,
 					      read_len);
 #endif /* CONFIG_MMC */
 
+#if IS_ENABLED(CONFIG_CMD_UBI)
 	return failsafe_ubi_read(target, offset, buf, max_len, read_len);
+#else
+	return -ENODEV;
+#endif
 }

@@ -14,7 +14,9 @@
  * FAILSAFE_STORAGE_STATIC_SIZE) live in UBI volumes next to the OpenWrt
  * overlay ("rootfs_data").
  *
- * Without CONFIG_CMD_UBI every entry point reports -ENODEV.
+ * The file is only built when CONFIG_CMD_UBI is enabled (see the Makefile)
+ * and its callers guard their use of it, so a board that does not store
+ * anything in UBI volumes carries none of this code.
  */
 
 #include <command.h>
@@ -222,39 +224,6 @@ int failsafe_ubi_read(const char *name, u64 off, void *buf, size_t max_len,
 		*read_len = len;
 
 	return 0;
-}
-
-#else /* !CONFIG_CMD_UBI */
-
-int failsafe_ubi_attach(void)
-{
-	return -ENODEV;
-}
-
-int failsafe_ubi_capacity(const char *name, size_t size)
-{
-	(void)name;
-	(void)size;
-	return -ENODEV;
-}
-
-int failsafe_ubi_write(const char *name, const void *data, size_t size)
-{
-	(void)name;
-	(void)data;
-	(void)size;
-	return -ENODEV;
-}
-
-int failsafe_ubi_read(const char *name, u64 off, void *buf, size_t max_len,
-		      size_t *read_len)
-{
-	(void)name;
-	(void)off;
-	(void)buf;
-	(void)max_len;
-	(void)read_len;
-	return -ENODEV;
 }
 
 #endif /* CONFIG_CMD_UBI */

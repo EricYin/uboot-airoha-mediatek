@@ -20,6 +20,7 @@
 #ifndef _FAILSAFE_STORAGE_H_
 #define _FAILSAFE_STORAGE_H_
 
+#include <linux/kconfig.h>
 #include <linux/types.h>
 
 /* UBI static volume holding a FIP, always created at a fixed size. */
@@ -174,7 +175,12 @@ int failsafe_storage_read(const char *target, u64 offset, void *buf,
 
 /* ------------------------------------------------------------------ */
 /*  Backend: raw MTD partitions (failsafe/bootimg/mtd.c)               */
+/*                                                                     */
+/*  Only built with CONFIG_MTD (see the Makefile): callers guard their */
+/*  use of these with it, so a board without MTD links none of it.     */
 /* ------------------------------------------------------------------ */
+
+#if IS_ENABLED(CONFIG_MTD)
 
 /** failsafe_mtd_exists() - is @name an MTD partition? */
 bool failsafe_mtd_exists(const char *name);
@@ -190,9 +196,16 @@ int failsafe_mtd_write(const char *name, u64 off, const void *data,
 int failsafe_mtd_read(const char *name, u64 off, void *buf, size_t max_len,
 		      size_t *read_len);
 
+#endif /* CONFIG_MTD */
+
 /* ------------------------------------------------------------------ */
 /*  Backend: UBI volumes (failsafe/bootimg/ubi.c)                      */
+/*                                                                     */
+/*  Only built with CONFIG_CMD_UBI (see the Makefile), same rule as    */
+/*  the MTD backend above.                                             */
 /* ------------------------------------------------------------------ */
+
+#if IS_ENABLED(CONFIG_CMD_UBI)
 
 /** failsafe_ubi_attach() - "ubi part ubi" (idempotent) */
 int failsafe_ubi_attach(void);
@@ -206,5 +219,7 @@ int failsafe_ubi_write(const char *name, const void *data, size_t size);
 /** failsafe_ubi_read() - read inside a UBI volume */
 int failsafe_ubi_read(const char *name, u64 off, void *buf, size_t max_len,
 		      size_t *read_len);
+
+#endif /* CONFIG_CMD_UBI */
 
 #endif /* _FAILSAFE_STORAGE_H_ */

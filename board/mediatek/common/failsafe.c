@@ -168,9 +168,11 @@ static void mtk_setup_boot_options(struct mmc *mmc)
  */
 static int mtk_bl2_capacity(size_t size)
 {
+#if IS_ENABLED(CONFIG_MTD)
 	if (failsafe_mtd_exists(FAILSAFE_STORAGE_BL2_TARGET))
 		return failsafe_mtd_capacity(FAILSAFE_STORAGE_BL2_TARGET, 0,
 					     size);
+#endif
 
 #if IS_ENABLED(CONFIG_MMC)
 	switch (failsafe_mmc_is_sd()) {
@@ -212,9 +214,11 @@ static int mtk_write_bl2(const void *data, size_t size)
 	int ret;
 #endif
 
+#if IS_ENABLED(CONFIG_MTD)
 	if (failsafe_mtd_exists(FAILSAFE_STORAGE_BL2_TARGET))
 		return failsafe_mtd_write(FAILSAFE_STORAGE_BL2_TARGET, 0, data,
 					  size);
+#endif
 
 #if IS_ENABLED(CONFIG_MMC)
 	if (!mmc) {
@@ -254,9 +258,11 @@ static int __maybe_unused mtk_read_bl2(void *buf, size_t max_len,
 	int is_sd;
 #endif
 
+#if IS_ENABLED(CONFIG_MTD)
 	if (failsafe_mtd_exists(FAILSAFE_STORAGE_BL2_TARGET))
 		return failsafe_mtd_read(FAILSAFE_STORAGE_BL2_TARGET, 0, buf,
 					 max_len, read_len);
+#endif
 
 #if IS_ENABLED(CONFIG_MMC)
 	is_sd = failsafe_mmc_is_sd();

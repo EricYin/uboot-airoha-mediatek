@@ -183,9 +183,11 @@ static const char *fw_to_target(failsafe_fw_t fw)
  */
 static int airoha_bl2_capacity(size_t size)
 {
+#if IS_ENABLED(CONFIG_MTD)
 	if (failsafe_mtd_exists(FAILSAFE_STORAGE_BL2_TARGET))
 		return failsafe_mtd_capacity(FAILSAFE_STORAGE_BL2_TARGET,
 					     FAILSAFE_BL2_WRITE_OFFSET, size);
+#endif
 
 #if IS_ENABLED(CONFIG_MMC)
 	if (failsafe_mmc_present())
@@ -210,6 +212,7 @@ static int airoha_write_bl2(const void *data, size_t size)
 {
 	int ret;
 
+#if IS_ENABLED(CONFIG_MTD)
 	if (failsafe_mtd_exists(FAILSAFE_STORAGE_BL2_TARGET)) {
 		ret = failsafe_mtd_capacity(FAILSAFE_STORAGE_BL2_TARGET,
 					    FAILSAFE_BL2_WRITE_OFFSET, size);
@@ -220,6 +223,7 @@ static int airoha_write_bl2(const void *data, size_t size)
 					  FAILSAFE_BL2_WRITE_OFFSET, data,
 					  size);
 	}
+#endif
 
 #if IS_ENABLED(CONFIG_MMC)
 	if (failsafe_mmc_present())
@@ -237,10 +241,12 @@ static int airoha_write_bl2(const void *data, size_t size)
 /* Read the flashed preloader back, from the same two locations. */
 static int airoha_read_bl2(void *buf, size_t max_len, size_t *read_len)
 {
+#if IS_ENABLED(CONFIG_MTD)
 	if (failsafe_mtd_exists(FAILSAFE_STORAGE_BL2_TARGET))
 		return failsafe_mtd_read(FAILSAFE_STORAGE_BL2_TARGET,
 					 FAILSAFE_BL2_WRITE_OFFSET, buf,
 					 max_len, read_len);
+#endif
 
 #if IS_ENABLED(CONFIG_MMC)
 	if (failsafe_mmc_present())

@@ -28,14 +28,19 @@
  * that has to survive them (a whole-chip restore, where losing a block
  * beats losing the dump) drives the loop itself, see simg_write_range().
  *
- * Without CONFIG_MTD every call reports -ENODEV.
+ * This is only built and called when CONFIG_MTD is enabled (see the
+ * Makefile and the guards in the callers): a board without MTD links none
+ * of it.
  */
 
 #ifndef _FAILSAFE_MTD_H_
 #define _FAILSAFE_MTD_H_
 
+#include <linux/kconfig.h>
 #include <linux/types.h>
 #include <linux/mtd/mtd.h>
+
+#if IS_ENABLED(CONFIG_MTD)
 
 /**
  * failsafe_mtd_read_range() - read a byte range of an MTD device
@@ -124,5 +129,7 @@ int failsafe_mtd_restore_range(struct mtd_info *mtd, u64 start,
  * survives.
  */
 int failsafe_mtd_erase_range(struct mtd_info *mtd, u64 start, u64 len);
+
+#endif /* CONFIG_MTD */
 
 #endif /* _FAILSAFE_MTD_H_ */

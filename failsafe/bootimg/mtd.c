@@ -23,9 +23,9 @@
  *      flash chip directly: the flash editor (modules/flash.c) and the
  *      whole-chip restore (modules/simg.c).
  *
- * Without CONFIG_MTD every entry point reports "not found" / -ENODEV, so
- * the dispatcher moves on to the next backend (an eMMC-only board does not
- * need MTD support at all).
+ * The file is only built when CONFIG_MTD is enabled (see the Makefile) and
+ * its callers guard their use of it, so an eMMC-only board carries no MTD
+ * code at all.
  */
 
 #include <command.h>
@@ -376,100 +376,6 @@ int failsafe_mtd_erase_range(struct mtd_info *mtd, u64 start, u64 len)
 out:
 	free(blkbuf);
 	return ret;
-}
-
-#else /* !CONFIG_MTD */
-
-bool failsafe_mtd_exists(const char *name)
-{
-	(void)name;
-	return false;
-}
-
-int failsafe_mtd_capacity(const char *name, u64 off, size_t size)
-{
-	(void)name;
-	(void)off;
-	(void)size;
-	return -ENODEV;
-}
-
-int failsafe_mtd_write(const char *name, u64 off, const void *data,
-		       size_t size)
-{
-	(void)name;
-	(void)off;
-	(void)data;
-	(void)size;
-	return -ENODEV;
-}
-
-int failsafe_mtd_read(const char *name, u64 off, void *buf, size_t max_len,
-		      size_t *read_len)
-{
-	(void)name;
-	(void)off;
-	(void)buf;
-	(void)max_len;
-	(void)read_len;
-	return -ENODEV;
-}
-
-int failsafe_mtd_read_range(struct mtd_info *mtd, u64 off, size_t len,
-			    u8 *buf, size_t *out_len)
-{
-	(void)mtd;
-	(void)off;
-	(void)len;
-	(void)buf;
-	(void)out_len;
-	return -ENODEV;
-}
-
-int failsafe_mtd_program_range(struct mtd_info *mtd, u64 off,
-			       const u8 *data, size_t len)
-{
-	(void)mtd;
-	(void)off;
-	(void)data;
-	(void)len;
-	return -ENODEV;
-}
-
-int failsafe_mtd_erase_blocks(struct mtd_info *mtd, u64 start, u64 len)
-{
-	(void)mtd;
-	(void)start;
-	(void)len;
-	return -ENODEV;
-}
-
-int failsafe_mtd_update_range(struct mtd_info *mtd, u64 start,
-			      const u8 *data, size_t len)
-{
-	(void)mtd;
-	(void)start;
-	(void)data;
-	(void)len;
-	return -ENODEV;
-}
-
-int failsafe_mtd_restore_range(struct mtd_info *mtd, u64 start,
-			       const u8 *data, size_t len)
-{
-	(void)mtd;
-	(void)start;
-	(void)data;
-	(void)len;
-	return -ENODEV;
-}
-
-int failsafe_mtd_erase_range(struct mtd_info *mtd, u64 start, u64 len)
-{
-	(void)mtd;
-	(void)start;
-	(void)len;
-	return -ENODEV;
 }
 
 #endif /* CONFIG_MTD */
