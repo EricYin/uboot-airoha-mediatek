@@ -306,6 +306,23 @@ int env_save(void);
  */
 int env_erase(void);
 
+#if defined(CONFIG_ENV_IS_IN_UBI)
+/**
+ * env_ubi_volumes_create() - create the UBI volumes the environment uses
+ *
+ * Creates the environment volumes, and the ones listed in
+ * CONFIG_ENV_UBI_EXTRA_VOLUMES, when they are missing - the same thing the
+ * UBI environment driver does on every boot with
+ * CONFIG_ENV_UBI_VOLUME_CREATE.  Needed by code that rebuilds the UBI
+ * device at run time (the failsafe UBI page) and therefore has to save an
+ * environment into a device that has no volumes yet.
+ *
+ * Return: 0 when an environment volume is usable, -ENODEV otherwise
+ */
+int env_ubi_volumes_create(void);
+#endif
+
+
 /**
  * env_select() - Select the environment storage
  *

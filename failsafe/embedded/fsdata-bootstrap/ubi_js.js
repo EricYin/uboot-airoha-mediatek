@@ -273,6 +273,57 @@
         });
     }
 
+    /*
+     * Throw the volume table away and build the device again: the FIP is
+     * read out on the device first, the partition is erased, a new empty
+     * UBI device is attached and the FIP is written back into its volume.
+     * Everything else (the system image, the overlay, ...) is gone.
+     */
+    function rebuildUbi() {
+        if (!confirm(t("ubi.confirm.rebuild", "Erase the whole UBI partition and rebuild the UBI device?"))) {
+            return;
+        }
+
+        var select = document.getElementById("mtd_select");
+        var formData = new FormData();
+        if (select && select.value) formData.append("mtd_name", select.value);
+
+        setStatus(t("ubi.status.rebuilding"));
+        ubiAjax({
+            url: "/ubi/rebuild",
+            data: formData,
+            /* Erasing a whole NAND partition takes a while. */
+            timeout: 600000,
+            done: function (resp) {
+                try {
+                    var data = JSON.parse(resp);
+                    if (data.ok) {
+                        var fip = data.fip_bytes ?
+                            bytesToHuman(data.fip_bytes) :
+                            t("ubi.rebuild.no_fip", "no FIP was present");
+
+                        /* The environment lives in the UBI device too, so
+                         * report what happened to it (and to the MAC
+                         * address the network stack needs). */
+                        if (data.env_restored) {
+                            fip += ", " + (data.ethaddr_generated ?
+                                t("ubi.rebuild.env_new", "ethaddr generated") :
+                                t("ubi.rebuild.env_kept", "ethaddr kept"));
+                        }
+
+                        setStatus(t("ubi.status.rebuilt", "UBI rebuilt.").replace("$1", fip));
+                        fetchUbiInfo();
+                        fetchMtdList();
+                    } else {
+                        setStatus(data.error || t("ubi.error.rebuild_failed"), true);
+                    }
+                } catch (e) {
+                    setStatus(t("ubi.error.parse"), true);
+                }
+            }
+        });
+    }
+
     function createVolume() {
         var nameInput = document.getElementById("vol_name");
         var sizeInput = document.getElementById("vol_size");
@@ -619,6 +670,11 @@
         var btnDetach = document.getElementById("btn_detach");
         if (btnDetach) {
             btnDetach.addEventListener("click", detachUbi);
+        }
+
+        var btnRebuild = document.getElementById("btn_rebuild");
+        if (btnRebuild) {
+            btnRebuild.addEventListener("click", rebuildUbi);
         }
 
         var btnCreate = document.getElementById("btn_create");

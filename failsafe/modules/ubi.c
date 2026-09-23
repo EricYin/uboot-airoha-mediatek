@@ -32,6 +32,12 @@
 #endif
 
 #include <failsafe/internal.h>
+#include <failsafe/storage.h>
+
+#include <env.h>
+#if IS_ENABLED(CONFIG_ENV_IS_IN_UBI)
+#include <net.h>
+#endif
 
 /* Max buffer size for JSON response */
 #define UBI_JSON_BUF_SZ		16384
@@ -294,6 +300,296 @@ void ubi_detach_handler(enum httpd_uri_handler_status status,
 	}
 
 	json_out = strdup("{\"ok\":true}");
+	failsafe_http_reply_json_alloc(response, 200,
+		json_out ? json_out : "{\"ok\":true}", json_out);
+}
+
+/**
+ * ubi_rebuild_handler - POST /ubi/rebuild
+ *
+ * Build the UBI device up from nothing:
+ *
+ *   0. read the FIP out of its "fip" volume, if there is one - it is the
+ *      only volume that cannot be recreated from anything else, and a
+ *      board without it does not boot (the split layout the board support
+ *      package uses keeps it there);
+ *   1. "ubi detach";
+ *   2. erase the whole MTD partition that holds UBI, the same thing as
+ *      "mtd erase <partition>": afterwards there is no volume table left
+ *      at all, which is what makes this work on a device whose table is
+ *      corrupt or whose volumes cannot be removed any more;
+ *   3. "ubi part <partition>", which formats a new, empty UBI device;
+ *   4. create the "fip" volume again - as the static volume of
+ *      FAILSAFE_STORAGE_STATIC_SIZE the firmware upgrade creates (see
+ *      <failsafe/storage.h>), so the rebuilt device is laid out exactly
+ *      like a freshly upgraded one - and write the saved image back into
+ *      it;
+ *   5. give the environment a home again when it lives in this UBI device
+ *      (ENV_IS_IN_UBI) and save the environment we are running with, so
+ *      the device does not come up with a factory empty one after the next
+ *      reset.  The MAC address the network stack depends on is part of it:
+ *      the one the device had is written back, a device that never had one
+ *      gets a random locally administered address.
+ *
+ * Every other volume (the system image "fit", the OpenWrt "rootfs_data"
+ * overlay, ...) is gone afterwards: that is the point of the operation,
+ * and the page warns about it before asking for confirmation.
+ *
+ * Form parameters:
+ *   mtd_name - MTD partition holding UBI (optional: the partition the
+ *              device is attached to right now, or "ubi")
+ *
+ * Returns JSON: {"ok":true,"mtd":"...","fip_bytes":N} or {"error":"..."}
+ */
+void ubi_rebuild_handler(enum httpd_uri_handler_status status,
+	struct httpd_request *request,
+	struct httpd_response *response)
+{
+	char mtd_name[UBI_MTD_NAME_MAX_LEN];
+	char *form_name = NULL;
+	char *json_out;
+	struct mtd_info *mtd;
+	struct erase_info ei;
+	void *fip = NULL;
+	size_t fip_size = 0;
+#if IS_ENABLED(CONFIG_ENV_IS_IN_UBI)
+	char ethaddr[18];
+	bool ethaddr_present = false;
+	bool ethaddr_generated = false;
+#endif
+	int ret;
+
+	failsafe_free_session(status, response);
+
+	if (status != HTTP_CB_NEW)
+		return;
+
+	if (!request || request->method != HTTP_POST) {
+		failsafe_http_reply_text(response, 405, "method");
+		return;
+	}
+
+	/* Which partition to erase: the form value when given, otherwise the
+	 * one the device is attached to, otherwise the conventional name.
+	 */
+	ret = failsafe_get_form_value(request, "mtd_name", &form_name,
+		UBI_MTD_NAME_MAX_LEN, true, true);
+	if (ret == 0 && form_name && form_name[0])
+		strlcpy(mtd_name, form_name, sizeof(mtd_name));
+	else if (ubi_devices[0] && ubi_devices[0]->mtd &&
+		 ubi_devices[0]->mtd->name)
+		strlcpy(mtd_name, ubi_devices[0]->mtd->name,
+			sizeof(mtd_name));
+	else
+		strlcpy(mtd_name, "ubi", sizeof(mtd_name));
+	free(form_name);
+
+	/* Step 0: keep the FIP. */
+	if (ubi_devices[0]) {
+		struct ubi_volume *vol =
+			ubi_find_volume(FAILSAFE_STORAGE_STATIC_TARGET);
+
+		if (vol && vol->used_bytes) {
+			fip_size = (size_t)vol->used_bytes;
+			fip = malloc(fip_size);
+			if (!fip) {
+				failsafe_http_reply_json(response, 500,
+							 "{\"error\":\"oom\"}");
+				return;
+			}
+
+			ret = ubi_volume_read(FAILSAFE_STORAGE_STATIC_TARGET,
+					      fip, 0, fip_size);
+			if (ret) {
+				free(fip);
+				json_out = malloc(160);
+				if (json_out)
+					snprintf(json_out, 160,
+						 "{\"error\":\"cannot read "
+						 "the '%s' volume (%d)\"}",
+						 FAILSAFE_STORAGE_STATIC_TARGET,
+						 ret);
+				failsafe_http_reply_json_alloc(response, 500,
+					json_out ? json_out : "{\"error\":"
+					"\"cannot read the fip volume\"}",
+					json_out);
+				return;
+			}
+		}
+	}
+
+#if IS_ENABLED(CONFIG_ENV_IS_IN_UBI)
+	/*
+	 * The environment lives in this UBI device as well, so the wipe takes
+	 * it with it - and with it the MAC address the network stack needs.
+	 * Keep it aside, but only when it is a usable address: a device can
+	 * carry a placeholder such as ff:ff:ff:ff:ff:ff - the factory address
+	 * of this family is kept in a UBI volume the rebuild recreates empty,
+	 * so a unit that lost it once has the placeholder from then on - and
+	 * writing that back only makes the Ethernet driver reject it.
+	 * Anything else is replaced by a generated address below.
+	 */
+	{
+		const char *val = env_get("ethaddr");
+
+		if (val) {
+			uchar mac[ARP_HLEN];
+
+			string_to_enetaddr(val, mac);
+			if (is_valid_ethaddr(mac)) {
+				snprintf(ethaddr, sizeof(ethaddr), "%pM", mac);
+				ethaddr_present = true;
+			}
+		}
+	}
+#endif
+
+	/* Step 1: detach the old device. */
+	ubi_detach();
+
+	/* Step 2: erase what it lived on, so no stale volume table is left
+	 * behind for the new device to pick up.
+	 */
+	mtd_probe_devices();
+	mtd = get_mtd_device_nm(mtd_name);
+	if (IS_ERR_OR_NULL(mtd)) {
+		free(fip);
+		json_out = malloc(160);
+		if (json_out)
+			snprintf(json_out, 160,
+				 "{\"error\":\"no MTD partition '%s'\"}",
+				 mtd_name);
+		failsafe_http_reply_json_alloc(response, 404,
+			json_out ? json_out : "{\"error\":\"no MTD partition\"}",
+			json_out);
+		return;
+	}
+
+	memset(&ei, 0, sizeof(ei));
+	ei.mtd = mtd;
+	ei.addr = 0;
+	ei.len = mtd->size;
+
+	ret = mtd_erase(mtd, &ei);
+	put_mtd_device(mtd);
+
+	if (ret) {
+		free(fip);
+		json_out = malloc(160);
+		if (json_out)
+			snprintf(json_out, 160,
+				 "{\"error\":\"erase '%s' failed (%d)\"}",
+				 mtd_name, ret);
+		failsafe_http_reply_json_alloc(response, 500,
+			json_out ? json_out : "{\"error\":\"erase failed\"}",
+			json_out);
+		return;
+	}
+
+	/* Step 3: format and attach a fresh, empty device. */
+	ret = ubi_part(mtd_name, NULL);
+	if (ret) {
+		free(fip);
+		json_out = malloc(160);
+		if (json_out)
+			snprintf(json_out, 160,
+				 "{\"error\":\"attach '%s' failed (%d)\"}",
+				 mtd_name, ret);
+		failsafe_http_reply_json_alloc(response, 500,
+			json_out ? json_out : "{\"error\":\"attach failed\"}",
+			json_out);
+		return;
+	}
+
+	/* Step 4: put the FIP back into the volume the upgrade path uses. */
+	if (fip) {
+		ret = ubi_create_vol(FAILSAFE_STORAGE_STATIC_TARGET,
+				     FAILSAFE_STORAGE_STATIC_SIZE, false,
+				     UBI_VOL_NUM_AUTO, false);
+		if (!ret)
+			ret = ubi_volume_write(FAILSAFE_STORAGE_STATIC_TARGET,
+					       fip, 0, fip_size);
+		free(fip);
+
+		if (ret) {
+			json_out = malloc(160);
+			if (json_out)
+				snprintf(json_out, 160,
+					 "{\"error\":\"cannot restore the "
+					 "'%s' volume (%d)\"}",
+					 FAILSAFE_STORAGE_STATIC_TARGET, ret);
+			failsafe_http_reply_json_alloc(response, 500,
+				json_out ? json_out : "{\"error\":"
+				"\"cannot restore the fip volume\"}",
+				json_out);
+			return;
+		}
+	}
+
+#if IS_ENABLED(CONFIG_ENV_IS_IN_UBI)
+	/*
+	 * Step 5: the environment volume is gone with the old volume table,
+	 * so put one back and save the environment this session is running
+	 * with into it - everything else would be lost on the next reset,
+	 * starting with the MAC address of the network interfaces.
+	 */
+	ret = env_ubi_volumes_create();
+	if (ret) {
+		json_out = malloc(160);
+		if (json_out)
+			snprintf(json_out, 160,
+				 "{\"error\":\"cannot create the environment "
+				 "volume (%d)\"}", ret);
+		failsafe_http_reply_json_alloc(response, 500,
+			json_out ? json_out : "{\"error\":"
+			"\"cannot create the environment volume\"}",
+			json_out);
+		return;
+	}
+
+	if (ethaddr_present) {
+		env_set("ethaddr", ethaddr);
+	} else {
+		/* Same address the network stack would fall back to, only
+		 * this one is written back and stays. */
+		uchar mac[ARP_HLEN];
+		char buf[18];
+
+		net_random_ethaddr(mac);
+		snprintf(buf, sizeof(buf), "%pM", mac);
+		env_set("ethaddr", buf);
+		ethaddr_generated = true;
+	}
+
+	ret = env_save();
+	if (ret) {
+		json_out = malloc(160);
+		if (json_out)
+			snprintf(json_out, 160,
+				 "{\"error\":\"cannot save the environment "
+				 "(%d)\"}", ret);
+		failsafe_http_reply_json_alloc(response, 500,
+			json_out ? json_out : "{\"error\":"
+			"\"cannot save the environment\"}",
+			json_out);
+		return;
+	}
+#endif /* CONFIG_ENV_IS_IN_UBI */
+
+	json_out = malloc(192);
+	if (json_out)
+#if IS_ENABLED(CONFIG_ENV_IS_IN_UBI)
+		snprintf(json_out, 192,
+			 "{\"ok\":true,\"mtd\":\"%s\",\"fip_bytes\":%zu,"
+			 "\"env_restored\":true,\"ethaddr_generated\":%s}",
+			 mtd_name, fip_size,
+			 ethaddr_generated ? "true" : "false");
+#else
+		snprintf(json_out, 192,
+			 "{\"ok\":true,\"mtd\":\"%s\",\"fip_bytes\":%zu,"
+			 "\"env_restored\":false}",
+			 mtd_name, fip_size);
+#endif
 	failsafe_http_reply_json_alloc(response, 200,
 		json_out ? json_out : "{\"ok\":true}", json_out);
 }
@@ -1113,6 +1409,7 @@ void ubi_register_handlers(struct httpd_instance *inst)
 	httpd_register_uri_handler(inst, "/ubi/volumes", &ubi_volumes_handler, NULL);
 	httpd_register_uri_handler(inst, "/ubi/attach", &ubi_attach_handler, NULL);
 	httpd_register_uri_handler(inst, "/ubi/detach", &ubi_detach_handler, NULL);
+	httpd_register_uri_handler(inst, "/ubi/rebuild", &ubi_rebuild_handler, NULL);
 	httpd_register_uri_handler(inst, "/ubi/create", &ubi_create_vol_handler, NULL);
 	httpd_register_uri_handler(inst, "/ubi/remove", &ubi_remove_vol_handler, NULL);
 	httpd_register_uri_handler(inst, "/ubi/rename", &ubi_rename_vol_handler, NULL);

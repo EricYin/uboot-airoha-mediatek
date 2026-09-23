@@ -227,6 +227,9 @@ void ubi_attach_handler(enum httpd_uri_handler_status status,
 void ubi_detach_handler(enum httpd_uri_handler_status status,
 	struct httpd_request *request,
 	struct httpd_response *response);
+void ubi_rebuild_handler(enum httpd_uri_handler_status status,
+	struct httpd_request *request,
+	struct httpd_response *response);
 void ubi_create_vol_handler(enum httpd_uri_handler_status status,
 	struct httpd_request *request,
 	struct httpd_response *response);
