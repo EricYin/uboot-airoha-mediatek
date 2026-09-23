@@ -804,8 +804,18 @@ function ensureSidebar() {
 
     applyI18n(sidebar);
 
-    // Show the pages this firmware was built with (see applyNavVisibility())
-    applyNavVisibility();
+    /*
+     * Reveal the pages this firmware was built with while the sidebar is
+     * built: the known list is applied inside this same task, before the
+     * browser paints, so nothing appears or disappears afterwards (see
+     * readKnownPages()).  applyNavVisibility() only refreshes a changed
+     * list.
+     */
+    const knownPages = readKnownPages();
+
+    if (knownPages) applyPageList(knownPages);
+
+    applyNavVisibility(knownPages);
 
     attachSidebarScrollPersistence(navContainer);
 }
@@ -1214,15 +1224,77 @@ function updateNavVisibility(navId) {
         });
 }
 
+/* ------------------------------------------------------------------ */
+/*  Sidebar entries of this build                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The entries that depend on the build (bl2, fip, gpt, ubi, ...) are created
+ * hidden and revealed from the page list below, and that reveal must not
+ * happen after the browser painted: doing it from an asynchronous answer is
+ * what made the sidebar flicker - the entries appeared one by one after a
+ * round trip, on every navigation.
+ *
+ * The list therefore has to be at hand while the sidebar is built, so it is
+ * remembered for the session (sessionStorage survives the navigations of a
+ * tab): ensureSidebar() applies it synchronously, and applyNavVisibility()
+ * only refreshes a list that changed (a firmware update, or the first visit
+ * in this tab).
+ */
+const PAGES_STORAGE_KEY = "failsafe_ui_pages";
+
+/* Page ids GET /ui/pages reported for this firmware, or null when they are
+ * not known yet. */
+function readKnownPages() {
+    try {
+        const raw = sessionStorage.getItem(PAGES_STORAGE_KEY);
+        if (!raw) return null;
+
+        const list = JSON.parse(raw);
+
+        return Array.isArray(list) ? list : null;
+    } catch {
+        return null;
+    }
+}
+
+function rememberPages(pages) {
+    try {
+        sessionStorage.setItem(PAGES_STORAGE_KEY, JSON.stringify(pages));
+    } catch { /* no sessionStorage: the list is fetched once per load */ }
+}
+
+/* Same ids in the same order? */
+function samePages(a, b) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length &&
+        a.every((id, index) => id === b[index]);
+}
+
+/* Show or hide every sidebar entry according to @pages, the page ids of this
+ * firmware. */
+function applyPageList(pages) {
+    for (const navLink of document.querySelectorAll("#sidebar [data-nav-id]")) {
+        const navId = navLink.getAttribute("data-nav-id");
+
+        if (navId) setNavVisible(navId, pages.includes(navId));
+    }
+}
+
 /**
- * Show exactly the sidebar entries this firmware was built with.
+ * Refresh the sidebar against the page list of the firmware.
  *
  * GET /ui/pages (see failsafe/pages.c) lists the pages of the build, so the
  * sidebar follows the firmware without a second list to keep in sync here.
- * A firmware without that endpoint is handled by probing the optional
+ * The list of a build that is already known was applied by ensureSidebar();
+ * this fetches it and re-applies it only when it differs, which is what
+ * keeps the entries from appearing one by one while navigating.
+ *
+ * Firmware without that endpoint is handled by probing the optional
  * entries, which is what this UI used to do for every page.
+ *
+ * @param {?string[]} knownPages - page list already applied, if any
  */
-async function applyNavVisibility() {
+async function applyNavVisibility(knownPages) {
     let pages = null;
 
     try {
@@ -1233,16 +1305,23 @@ async function applyNavVisibility() {
         }
     } catch { /* fall back to probing */ }
 
+    if (pages) {
+        if (!samePages(pages, knownPages)) {
+            rememberPages(pages);
+            applyPageList(pages);
+        }
+
+        return;
+    }
+
+    if (knownPages) return;
+
+    /* Unknown build: probe the entries that are hidden (the optional ones) */
     for (const navLink of document.querySelectorAll("#sidebar [data-nav-id]")) {
         const navId = navLink.getAttribute("data-nav-id");
-        if (!navId) continue;
 
-        if (pages) {
-            setNavVisible(navId, pages.includes(navId));
-        } else if (navLink.style.display === "none") {
-            /* Unknown build: probe the entries that are optional */
+        if (navId && navLink.style.display === "none")
             updateNavVisibility(navId);
-        }
     }
 }
 
