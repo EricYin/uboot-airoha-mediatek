@@ -37,6 +37,7 @@
 #ifdef CONFIG_MTD
 #include <mtd.h>
 #include <linux/mtd/mtd.h>
+#include <failsafe/mtd.h>
 #endif
 
 #include <failsafe/internal.h>
@@ -102,42 +103,6 @@ static struct mtd_info *simg_get_master(const char *name)
 	return NULL;
 }
 
-static int simg_erase_block(struct mtd_info *mtd, u64 off)
-{
-	struct erase_info ei;
-
-	memset(&ei, 0, sizeof(ei));
-	ei.mtd = mtd;
-	ei.addr = off;
-	ei.len = mtd->erasesize;
-
-	return mtd_erase(mtd, &ei);
-}
-
-/* Program @len bytes, one write unit (page) at a time. */
-static int simg_program_range(struct mtd_info *mtd, u64 off, const u8 *data,
-			      size_t len)
-{
-	size_t write_sz = mtd->writesize;
-	size_t done = 0;
-	int ret;
-
-	while (done < len) {
-		size_t step = min_t(size_t, write_sz, len - done);
-		size_t retlen = 0;
-
-		ret = mtd_write(mtd, off + done, step, &retlen, data + done);
-		if (ret)
-			return ret;
-		if (retlen != step)
-			return -EIO;
-
-		done += retlen;
-	}
-
-	return 0;
-}
-
 /*
  * simg_write_range() - erase and program [start, start + len) of @mtd
  * @mtd: target device (master)
@@ -153,6 +118,12 @@ static int simg_program_range(struct mtd_info *mtd, u64 off, const u8 *data,
  * is preserved with a read-modify-write cycle so that the bytes outside
  * the requested range survive.  Bad blocks are skipped and accounted in
  * @skipped.
+ *
+ * The erase / program / read primitives come from the shared range API
+ * (<failsafe/mtd.h>); what is specific to a whole-chip restore - and
+ * therefore stays here - is the bad block policy: a dump that is missing
+ * one block is still worth having, so a bad block is skipped and counted
+ * instead of failing the whole write.
  */
 static int simg_write_range(struct mtd_info *mtd, u64 start, const u8 *data,
 			    size_t len, size_t *written, size_t *skipped)
@@ -160,6 +131,7 @@ static int simg_write_range(struct mtd_info *mtd, u64 start, const u8 *data,
 	u64 erase_sz = mtd->erasesize;
 	u64 block_start, block_end, blk;
 	u64 done = 0, lost = 0;
+	const u8 *src;
 	u8 *blkbuf = NULL;
 	int ret = 0;
 
@@ -199,8 +171,9 @@ static int simg_write_range(struct mtd_info *mtd, u64 start, const u8 *data,
 				}
 			}
 
-			ret = mtd_read(mtd, blk, erase_sz, &readlen, blkbuf);
-			if (ret && ret != -EUCLEAN) {
+			ret = failsafe_mtd_read_range(mtd, blk, erase_sz,
+						      blkbuf, &readlen);
+			if (ret) {
 				cprintln(ERROR, "simg: read 0x%llx failed: %d",
 					 blk, ret);
 				goto out;
@@ -211,21 +184,22 @@ static int simg_write_range(struct mtd_info *mtd, u64 start, const u8 *data,
 			}
 		}
 
-		ret = simg_erase_block(mtd, blk);
+		ret = failsafe_mtd_erase_blocks(mtd, blk, erase_sz);
 		if (ret) {
 			cprintln(ERROR, "simg: erase 0x%llx failed: %d",
 				 blk, ret);
 			goto out;
 		}
 
+		src = data + (data_start - start);
+
 		if (full_block) {
-			ret = simg_program_range(mtd, blk,
-						 data + (data_start - start),
-						 copy_len);
+			ret = failsafe_mtd_program_range(mtd, blk, src,
+							 copy_len);
 		} else {
-			memcpy(blkbuf + (data_start - blk),
-			       data + (data_start - start), copy_len);
-			ret = simg_program_range(mtd, blk, blkbuf, erase_sz);
+			memcpy(blkbuf + (data_start - blk), src, copy_len);
+			ret = failsafe_mtd_program_range(mtd, blk, blkbuf,
+							 erase_sz);
 		}
 
 		if (ret) {

@@ -20,6 +20,13 @@
  *   - hex write                         POST /flash/write
  *   - restore a backup file             POST /flash/restore
  *   - erase a partition / range         POST /flash/erase
+ *
+ * The page picks a target itself (an MTD partition, an MMC partition or a
+ * whole MMC device) and then reads, erases and programs byte ranges of it:
+ * the MTD side of that is the shared range API in <failsafe/mtd.h>, the
+ * MMC side the helpers in <failsafe/mmc.h>.  The board-level storage
+ * targets (the ones the firmware upgrade writes to) go through
+ * failsafe_storage_*() instead.
  */
 
 #include <errno.h>
@@ -38,6 +45,7 @@
 #include <linux/mtd/nand.h>
 #include <linux/mtd/spi-nor.h>
 #include <linux/mtd/spinand.h>
+#include <failsafe/mtd.h>
 #endif
 
 #include <failsafe/mmc.h>
@@ -88,81 +96,10 @@ struct flash_target {
 };
 
 /* ------------------------------------------------------------------ */
-/*  MTD primitives                                                     */
+/*  MTD target helpers                                                 */
 /* ------------------------------------------------------------------ */
 
 #ifdef CONFIG_MTD
-/*
- * Read @len bytes at @off.  -EUCLEAN only reports corrected bit flips,
- * so the data is still good; every other error becomes -EIO.
- */
-static int flash_mtd_read(struct mtd_info *mtd, u64 off, size_t len,
-			  u8 *buf, size_t *out_len)
-{
-	size_t retlen = 0;
-	int ret;
-
-	ret = mtd_read(mtd, off, len, &retlen, buf);
-	if (ret && ret != -EUCLEAN)
-		return -EIO;
-
-	if (out_len)
-		*out_len = retlen;
-
-	return 0;
-}
-
-/*
- * Program @len bytes, one write unit (page) at a time.  The caller is
- * responsible for having erased the target blocks beforehand.
- */
-static int flash_mtd_program(struct mtd_info *mtd, u64 off, const u8 *data,
-			     size_t len)
-{
-	size_t write_sz = mtd->writesize ? mtd->writesize : 1;
-	size_t done = 0;
-
-	while (done < len) {
-		size_t step = min_t(size_t, write_sz, len - done);
-		size_t retlen = 0;
-		int ret;
-
-		ret = mtd_write(mtd, off + done, step, &retlen, data + done);
-		if (ret)
-			return ret;
-		if (retlen != step)
-			return -EIO;
-
-		done += retlen;
-	}
-
-	return 0;
-}
-
-/*
- * Erase every erase block touched by [start, start + len).  The range is
- * rounded outwards because the MTD erase API works on whole blocks.
- */
-static int flash_mtd_erase_blocks(struct mtd_info *mtd, u64 start, u64 len)
-{
-	u64 erase_sz = mtd->erasesize;
-	struct erase_info ei;
-	u64 block_start, block_end;
-
-	if (!erase_sz)
-		return -EINVAL;
-
-	block_start = start & ~(erase_sz - 1);
-	block_end = (start + len + erase_sz - 1) & ~(erase_sz - 1);
-
-	memset(&ei, 0, sizeof(ei));
-	ei.mtd = mtd;
-	ei.addr = block_start;
-	ei.len = block_end - block_start;
-
-	return mtd_erase(mtd, &ei);
-}
-
 /*
  * First master MTD device, i.e. the raw chip (partitions have ->parent
  * set).  Returns a referenced device the caller must put_mtd_device().
@@ -307,6 +244,18 @@ static const char *flash_mtd_chip_model(struct mtd_info *mtd, char *out,
 	}
 
 	return "";
+}
+#else /* !CONFIG_MTD */
+/*
+ * Without MTD support there is no MTD partition to find, so the "auto"
+ * storage selection only has the MMC branches left to try.  The stub is
+ * needed because flash_open_target() asks this before it knows which kind
+ * of storage the target is.
+ */
+static bool flash_mtd_part_exists(const char *name)
+{
+	(void)name;
+	return false;
 }
 #endif /* CONFIG_MTD */
 
@@ -552,155 +501,6 @@ static char *flash_hex_dump(const u8 *data, size_t len, size_t *out_len)
 	*out_len = strlen(out);
 	return out;
 }
-
-/* ------------------------------------------------------------------ */
-/*  MTD read / write / erase / restore primitives                      */
-/* ------------------------------------------------------------------ */
-
-#ifdef CONFIG_MTD
-/*
- * Update [start, start + len) without touching the surrounding bytes of
- * the first and last block: each block is read back, patched, erased and
- * programmed again (read-modify-write).
- */
-static int flash_mtd_update_range(struct mtd_info *mtd, u64 start,
-				  const u8 *data, size_t len)
-{
-	u64 block_start, block_end, blk;
-	size_t erase_sz;
-	u8 *blkbuf = NULL;
-	int ret = 0;
-
-	if (!mtd || !data || !len)
-		return -EINVAL;
-
-	erase_sz = mtd->erasesize;
-	if (!erase_sz)
-		return -EINVAL;
-
-	block_start = start & ~((u64)erase_sz - 1);
-	block_end = (start + len + erase_sz - 1) & ~((u64)erase_sz - 1);
-
-	blkbuf = malloc(erase_sz);
-	if (!blkbuf)
-		return -ENOMEM;
-
-	for (blk = block_start; blk < block_end; blk += erase_sz) {
-		size_t readsz = 0;
-		u64 data_start = max(start, blk);
-		u64 data_end = min(start + (u64)len, blk + (u64)erase_sz);
-		size_t copy_len = (size_t)(data_end - data_start);
-
-		ret = flash_mtd_read(mtd, blk, erase_sz, blkbuf, &readsz);
-		if (ret || readsz != erase_sz) {
-			ret = ret ? ret : -EIO;
-			goto out;
-		}
-
-		if (copy_len)
-			memcpy(blkbuf + (data_start - blk),
-			       data + (size_t)(data_start - start), copy_len);
-
-		ret = flash_mtd_erase_blocks(mtd, blk, erase_sz);
-		if (ret)
-			goto out;
-
-		ret = flash_mtd_program(mtd, blk, blkbuf, erase_sz);
-		if (ret)
-			goto out;
-	}
-
-out:
-	free(blkbuf);
-	return ret;
-}
-
-/*
- * Restore [start, start + len): the range is erased first (whole blocks),
- * then fully programmed from @data.
- */
-static int flash_mtd_restore_range(struct mtd_info *mtd, u64 start,
-				   const u8 *data, size_t len)
-{
-	int ret;
-
-	if (!mtd || !data || !len)
-		return -EINVAL;
-
-	ret = flash_mtd_erase_blocks(mtd, start, len);
-	if (ret)
-		return ret;
-
-	return flash_mtd_program(mtd, start, data, len);
-}
-
-/*
- * Erase [start, start + len).  Blocks fully covered by the request are
- * erased directly; the partially covered head / tail blocks are preserved
- * with a read-modify-write cycle so bytes outside the range survive.
- */
-static int flash_mtd_erase_range(struct mtd_info *mtd, u64 start, u64 len)
-{
-	u64 block_start, block_end, blk;
-	size_t erase_sz;
-	u8 *blkbuf = NULL;
-	int ret = 0;
-
-	if (!mtd || !len)
-		return -EINVAL;
-
-	erase_sz = mtd->erasesize;
-	if (!erase_sz)
-		return -EINVAL;
-
-	block_start = start & ~((u64)erase_sz - 1);
-	block_end = (start + len + erase_sz - 1) & ~((u64)erase_sz - 1);
-
-	for (blk = block_start; blk < block_end; blk += erase_sz) {
-		u64 data_start = max(start, blk);
-		u64 data_end = min(start + len, blk + (u64)erase_sz);
-		bool full_block = (data_start == blk) &&
-				  (data_end == blk + (u64)erase_sz);
-		size_t readsz = 0;
-
-		if (full_block) {
-			ret = flash_mtd_erase_blocks(mtd, blk, erase_sz);
-			if (ret)
-				goto out;
-			continue;
-		}
-
-		if (!blkbuf) {
-			blkbuf = malloc(erase_sz);
-			if (!blkbuf) {
-				ret = -ENOMEM;
-				goto out;
-			}
-		}
-
-		ret = flash_mtd_read(mtd, blk, erase_sz, blkbuf, &readsz);
-		if (ret || readsz != erase_sz) {
-			ret = ret ? ret : -EIO;
-			goto out;
-		}
-
-		memset(blkbuf + (size_t)(data_start - blk), 0xff,
-		       (size_t)(data_end - data_start));
-
-		ret = flash_mtd_erase_blocks(mtd, blk, erase_sz);
-		if (ret)
-			goto out;
-
-		ret = flash_mtd_program(mtd, blk, blkbuf, erase_sz);
-		if (ret)
-			goto out;
-	}
-
-out:
-	free(blkbuf);
-	return ret;
-}
-#endif /* CONFIG_MTD */
 
 /* ------------------------------------------------------------------ */
 /*  Backup filename parsing (used to auto-detect the restore target)   */
@@ -1305,9 +1105,10 @@ void flash_backup_handler(enum httpd_uri_handler_status status,
 				goto io_err;
 #endif
 			} else {
-				ret = flash_mtd_read(st->mtd,
-						     st->start + st->cur,
-						     to_read, st->buf, &got);
+				ret = failsafe_mtd_read_range(st->mtd,
+							      st->start + st->cur,
+							      to_read, st->buf,
+							      &got);
 				if (ret)
 					goto io_err;
 			}
@@ -1563,8 +1364,10 @@ void flash_handler(enum httpd_uri_handler_status status,
 #ifdef CONFIG_MTD
 				size_t readsz = 0;
 
-				ret = flash_mtd_read(tgt.mtd, read_start,
-						     read_len, buf, &readsz);
+				ret = failsafe_mtd_read_range(tgt.mtd,
+							      read_start,
+							      read_len, buf,
+							      &readsz);
 				if (ret || readsz != read_len) {
 					free(buf);
 					flash_close_target(&tgt);
@@ -1712,8 +1515,8 @@ void flash_handler(enum httpd_uri_handler_status status,
 			} else
 #endif
 			{
-				ret = flash_mtd_update_range(tgt.mtd, start,
-							     buf, len);
+				ret = failsafe_mtd_update_range(tgt.mtd, start,
+								buf, len);
 			}
 #else
 			ret = -ENODEV;
@@ -1839,8 +1642,9 @@ void flash_handler(enum httpd_uri_handler_status status,
 			} else
 #endif
 			{
-				ret = flash_mtd_restore_range(tgt.mtd, start,
-							      fw->data, len);
+				ret = failsafe_mtd_restore_range(tgt.mtd, start,
+								 fw->data,
+								 len);
 			}
 #else
 			ret = -ENODEV;
@@ -1915,7 +1719,7 @@ void flash_handler(enum httpd_uri_handler_status status,
 
 		if (tgt.src == FAILSAFE_SRC_MTD) {
 #ifdef CONFIG_MTD
-			ret = flash_mtd_erase_range(tgt.mtd, start, len);
+			ret = failsafe_mtd_erase_range(tgt.mtd, start, len);
 #else
 			ret = -ENODEV;
 #endif

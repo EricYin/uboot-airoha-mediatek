@@ -13,6 +13,16 @@
  * stages ("bl2", "chainloader", "u-boot"): those live in a raw MTD
  * partition and nowhere else.
  *
+ * The file has two layers:
+ *
+ *   1. the backend itself, working by partition name and writing a whole
+ *      image at a time (failsafe_mtd_exists() / _capacity() / _write() /
+ *      _read()), used by the storage dispatcher;
+ *   2. the fine-grained range access (failsafe_mtd_read_range() and
+ *      friends, see <failsafe/mtd.h>), used by the pages that manage a
+ *      flash chip directly: the flash editor (modules/flash.c) and the
+ *      whole-chip restore (modules/simg.c).
+ *
  * Without CONFIG_MTD every entry point reports "not found" / -ENODEV, so
  * the dispatcher moves on to the next backend (an eMMC-only board does not
  * need MTD support at all).
@@ -20,6 +30,7 @@
 
 #include <command.h>
 #include <errno.h>
+#include <malloc.h>
 #include <linux/string.h>
 #include <linux/kernel.h>
 #include <vsprintf.h>
@@ -27,6 +38,7 @@
 #include <linux/mtd/mtd.h>
 
 #include <failsafe/storage.h>
+#include <failsafe/mtd.h>
 #include <failsafe/cprint.h>
 
 #if IS_ENABLED(CONFIG_MTD)
@@ -151,6 +163,221 @@ int failsafe_mtd_read(const char *name, u64 off, void *buf, size_t max_len,
 	return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Fine-grained range access (see <failsafe/mtd.h>)                   */
+/* ------------------------------------------------------------------ */
+
+int failsafe_mtd_read_range(struct mtd_info *mtd, u64 off, size_t len,
+			    u8 *buf, size_t *out_len)
+{
+	size_t retlen = 0;
+	int ret;
+
+	if (!mtd || !buf || !len)
+		return -EINVAL;
+
+	ret = mtd_read(mtd, off, len, &retlen, buf);
+
+	/* -EUCLEAN only reports corrected bit flips: the data is good. */
+	if (ret && ret != -EUCLEAN)
+		return -EIO;
+
+	if (out_len)
+		*out_len = retlen;
+
+	return 0;
+}
+
+int failsafe_mtd_program_range(struct mtd_info *mtd, u64 off,
+			       const u8 *data, size_t len)
+{
+	size_t write_sz, done = 0;
+
+	if (!mtd || !data || !len)
+		return -EINVAL;
+
+	/* One write unit (page) per call; a device that reports none is
+	 * programmed in a single call.
+	 */
+	write_sz = mtd->writesize ? mtd->writesize : len;
+
+	while (done < len) {
+		size_t step = min_t(size_t, write_sz, len - done);
+		size_t retlen = 0;
+		int ret;
+
+		ret = mtd_write(mtd, off + done, step, &retlen, data + done);
+		if (ret)
+			return ret;
+		if (retlen != step)
+			return -EIO;
+
+		done += retlen;
+	}
+
+	return 0;
+}
+
+int failsafe_mtd_erase_blocks(struct mtd_info *mtd, u64 start, u64 len)
+{
+	u64 erase_sz, block_start, block_end;
+	struct erase_info ei;
+
+	if (!mtd || !len)
+		return -EINVAL;
+
+	erase_sz = mtd->erasesize;
+	if (!erase_sz)
+		return -EINVAL;
+
+	/* The MTD erase API works on whole blocks, so the range is rounded
+	 * outwards; blocks outside it are not touched.
+	 */
+	block_start = start & ~(erase_sz - 1);
+	block_end = (start + len + erase_sz - 1) & ~(erase_sz - 1);
+
+	memset(&ei, 0, sizeof(ei));
+	ei.mtd = mtd;
+	ei.addr = block_start;
+	ei.len = block_end - block_start;
+
+	return mtd_erase(mtd, &ei);
+}
+
+int failsafe_mtd_update_range(struct mtd_info *mtd, u64 start,
+			      const u8 *data, size_t len)
+{
+	u64 block_start, block_end, blk;
+	size_t erase_sz;
+	u8 *blkbuf;
+	int ret = 0;
+
+	if (!mtd || !data || !len)
+		return -EINVAL;
+
+	erase_sz = mtd->erasesize;
+	if (!erase_sz)
+		return -EINVAL;
+
+	block_start = start & ~((u64)erase_sz - 1);
+	block_end = (start + len + erase_sz - 1) & ~((u64)erase_sz - 1);
+
+	blkbuf = malloc(erase_sz);
+	if (!blkbuf)
+		return -ENOMEM;
+
+	for (blk = block_start; blk < block_end; blk += erase_sz) {
+		size_t readsz = 0;
+		u64 data_start = max(start, blk);
+		u64 data_end = min(start + (u64)len, blk + (u64)erase_sz);
+		size_t copy_len = (size_t)(data_end - data_start);
+
+		ret = failsafe_mtd_read_range(mtd, blk, erase_sz, blkbuf,
+					      &readsz);
+		if (ret || readsz != erase_sz) {
+			ret = ret ? ret : -EIO;
+			goto out;
+		}
+
+		if (copy_len)
+			memcpy(blkbuf + (data_start - blk),
+			       data + (size_t)(data_start - start), copy_len);
+
+		ret = failsafe_mtd_erase_blocks(mtd, blk, erase_sz);
+		if (ret)
+			goto out;
+
+		ret = failsafe_mtd_program_range(mtd, blk, blkbuf, erase_sz);
+		if (ret)
+			goto out;
+	}
+
+out:
+	free(blkbuf);
+	return ret;
+}
+
+int failsafe_mtd_restore_range(struct mtd_info *mtd, u64 start,
+			       const u8 *data, size_t len)
+{
+	int ret;
+
+	if (!mtd || !data || !len)
+		return -EINVAL;
+
+	ret = failsafe_mtd_erase_blocks(mtd, start, len);
+	if (ret)
+		return ret;
+
+	return failsafe_mtd_program_range(mtd, start, data, len);
+}
+
+int failsafe_mtd_erase_range(struct mtd_info *mtd, u64 start, u64 len)
+{
+	u64 block_start, block_end, blk;
+	size_t erase_sz;
+	u8 *blkbuf = NULL;
+	int ret = 0;
+
+	if (!mtd || !len)
+		return -EINVAL;
+
+	erase_sz = mtd->erasesize;
+	if (!erase_sz)
+		return -EINVAL;
+
+	block_start = start & ~((u64)erase_sz - 1);
+	block_end = (start + len + erase_sz - 1) & ~((u64)erase_sz - 1);
+
+	for (blk = block_start; blk < block_end; blk += erase_sz) {
+		u64 data_start = max(start, blk);
+		u64 data_end = min(start + len, blk + (u64)erase_sz);
+		bool full_block = (data_start == blk) &&
+				  (data_end == blk + (u64)erase_sz);
+		size_t readsz = 0;
+
+		if (full_block) {
+			ret = failsafe_mtd_erase_blocks(mtd, blk, erase_sz);
+			if (ret)
+				goto out;
+			continue;
+		}
+
+		/* Partially covered block: read it back, blank the
+		 * requested bytes and write the block out again.
+		 */
+		if (!blkbuf) {
+			blkbuf = malloc(erase_sz);
+			if (!blkbuf) {
+				ret = -ENOMEM;
+				goto out;
+			}
+		}
+
+		ret = failsafe_mtd_read_range(mtd, blk, erase_sz, blkbuf,
+					      &readsz);
+		if (ret || readsz != erase_sz) {
+			ret = ret ? ret : -EIO;
+			goto out;
+		}
+
+		memset(blkbuf + (size_t)(data_start - blk), 0xff,
+		       (size_t)(data_end - data_start));
+
+		ret = failsafe_mtd_erase_blocks(mtd, blk, erase_sz);
+		if (ret)
+			goto out;
+
+		ret = failsafe_mtd_program_range(mtd, blk, blkbuf, erase_sz);
+		if (ret)
+			goto out;
+	}
+
+out:
+	free(blkbuf);
+	return ret;
+}
+
 #else /* !CONFIG_MTD */
 
 bool failsafe_mtd_exists(const char *name)
@@ -185,6 +412,63 @@ int failsafe_mtd_read(const char *name, u64 off, void *buf, size_t max_len,
 	(void)buf;
 	(void)max_len;
 	(void)read_len;
+	return -ENODEV;
+}
+
+int failsafe_mtd_read_range(struct mtd_info *mtd, u64 off, size_t len,
+			    u8 *buf, size_t *out_len)
+{
+	(void)mtd;
+	(void)off;
+	(void)len;
+	(void)buf;
+	(void)out_len;
+	return -ENODEV;
+}
+
+int failsafe_mtd_program_range(struct mtd_info *mtd, u64 off,
+			       const u8 *data, size_t len)
+{
+	(void)mtd;
+	(void)off;
+	(void)data;
+	(void)len;
+	return -ENODEV;
+}
+
+int failsafe_mtd_erase_blocks(struct mtd_info *mtd, u64 start, u64 len)
+{
+	(void)mtd;
+	(void)start;
+	(void)len;
+	return -ENODEV;
+}
+
+int failsafe_mtd_update_range(struct mtd_info *mtd, u64 start,
+			      const u8 *data, size_t len)
+{
+	(void)mtd;
+	(void)start;
+	(void)data;
+	(void)len;
+	return -ENODEV;
+}
+
+int failsafe_mtd_restore_range(struct mtd_info *mtd, u64 start,
+			       const u8 *data, size_t len)
+{
+	(void)mtd;
+	(void)start;
+	(void)data;
+	(void)len;
+	return -ENODEV;
+}
+
+int failsafe_mtd_erase_range(struct mtd_info *mtd, u64 start, u64 len)
+{
+	(void)mtd;
+	(void)start;
+	(void)len;
 	return -ENODEV;
 }
 
