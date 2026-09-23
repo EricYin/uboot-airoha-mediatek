@@ -8,7 +8,8 @@
 #
 # Examples:
 #   SOC=mt7620 BOARD=rfb                ./mtmips.sh
-#   SOC=mt7621 BOARD=nmbm_rfb           ./mtmips.sh
+#   SOC=mt7621 BOARD=rfb                ./mtmips.sh
+#   SOC=mt7621 BOARD=nand_rfb           ./mtmips.sh
 #   SOC=mt7628 BOARD=rfb			    ./mtmips.sh
 #   SOC=mt7688 BOARD=linkit-smart  		./mtmips.sh
 #
@@ -53,11 +54,13 @@ Options:
   TOOLCHAIN=...   Cross-compiler prefix (auto-detected from ../openwrt*/toolchain-mipsel*)
   JOBS=<n>        Parallel make jobs (default: nproc)
   STAGING_DIR=... Staging directory (auto-detected from TOOLCHAIN)
+  STAGE_SRAM_SRC=...  Local path to mt7621_stage_sram.bin (mt7621 only;
+                      downloaded from upstream if unset and absent)
 
 Examples:
   SOC=mt7620 BOARD=rfb                ./mtmips.sh
-  SOC=mt7621 BOARD=nmbm_rfb           ./mtmips.sh
-  SOC=mt7621 BOARD=nand_ax_rfb        ./mtmips.sh
+  SOC=mt7621 BOARD=rfb                ./mtmips.sh
+  SOC=mt7621 BOARD=nand_rfb           ./mtmips.sh
   SOC=mt7628 BOARD=rfb                ./mtmips.sh
   SOC=mt7688 BOARD=linkit-smart		  ./mtmips.sh
 EOF
@@ -232,6 +235,77 @@ rm -f "$UBOOT_DIR/u-boot.bin" "$UBOOT_DIR/u-boot-with-spl.bin"
 cp -f "$UBOOT_DIR/configs/$UBOOT_CFG" "$UBOOT_DIR/.config"
 make -C "$UBOOT_DIR" olddefconfig
 make -C "$UBOOT_DIR" clean
+
+# ---------------------------------------------------------------------------
+# mt7621 DDR init blob (mt7621_stage_sram.bin)
+#
+# The MT7621 binman image embeds a DDR initialization binary blob
+# (arch/mips/dts/mt7621-u-boot.dtsi, type "blob-ext"). It must be present in
+# the build (source) directory before the final build step, matching the
+# documented flow:
+#   $ cp mt7621_stage_sram.bin ./build/mt7621_stage_sram.bin
+# ---------------------------------------------------------------------------
+if [ "$SOC" = "mt7621" ]; then
+	STAGE_SRAM="mt7621_stage_sram.bin"
+	STAGE_SRAM_NOPRINT="mt7621_stage_sram_noprint.bin"
+	BOARD_DIR="$UBOOT_DIR/board/mediatek/mt7621"
+	STAGE_SRAM_URL="https://raw.githubusercontent.com/mtk-openwrt/mt7621-lowlevel-preloader/master/mt7621_stage_sram.bin"
+	STAGE_SRAM_NOPRINT_URL="https://raw.githubusercontent.com/mtk-openwrt/mt7621-lowlevel-preloader/master/mt7621_stage_sram_noprint.bin"
+
+	# Local cache dir: prefer the in-repo board directory (already ships the
+	# blobs); fall back to the build dir when it is not writable.
+	if [ -d "$BOARD_DIR" ] && [ -w "$BOARD_DIR" ]; then
+		LOCAL_DIR="$BOARD_DIR"
+	else
+		LOCAL_DIR="$UBOOT_DIR"
+	fi
+
+	stage_sram_from_local() {
+		# $1 = source path -> copy into build dir as $STAGE_SRAM
+		cp -f "$1" "$UBOOT_DIR/$STAGE_SRAM" \
+			|| die "Failed to copy $1 to $UBOOT_DIR/$STAGE_SRAM"
+		echo "Stage SRAM blob copied from local: $1"
+	}
+
+	if [ -f "$UBOOT_DIR/$STAGE_SRAM" ]; then
+		echo "Stage SRAM blob already present: $UBOOT_DIR/$STAGE_SRAM"
+	elif [ -n "$STAGE_SRAM_SRC" ]; then
+		[ -f "$STAGE_SRAM_SRC" ] || die "STAGE_SRAM_SRC='$STAGE_SRAM_SRC' not found."
+		stage_sram_from_local "$STAGE_SRAM_SRC"
+	elif [ -f "$BOARD_DIR/$STAGE_SRAM" ]; then
+		stage_sram_from_local "$BOARD_DIR/$STAGE_SRAM"
+	elif [ -f "$BOARD_DIR/$STAGE_SRAM_NOPRINT" ]; then
+		stage_sram_from_local "$BOARD_DIR/$STAGE_SRAM_NOPRINT"
+	else
+		echo "mt7621 requires the DDR init blob $STAGE_SRAM for binman."
+		echo "No local copy found; attempting to download from upstream..."
+		stage_sram_download() {
+			# $1 = url, $2 = local filename to cache
+			if command -v wget >/dev/null 2>&1; then
+				wget -O "$LOCAL_DIR/$2" "$1"
+			elif command -v curl >/dev/null 2>&1; then
+				curl -L -o "$LOCAL_DIR/$2" "$1"
+			else
+				return 2
+			fi
+		}
+		DL_NAME=""
+		if stage_sram_download "$STAGE_SRAM_URL" "$STAGE_SRAM"; then
+			DL_NAME="$STAGE_SRAM"
+			echo "Stage SRAM blob downloaded to local: $LOCAL_DIR/$STAGE_SRAM"
+		elif stage_sram_download "$STAGE_SRAM_NOPRINT_URL" "$STAGE_SRAM_NOPRINT"; then
+			DL_NAME="$STAGE_SRAM_NOPRINT"
+			echo "Stage SRAM blob (noprint) downloaded to local: $LOCAL_DIR/$STAGE_SRAM_NOPRINT"
+		else
+			die "Download failed or no network tool. Place $STAGE_SRAM in $BOARD_DIR (or set STAGE_SRAM_SRC=<path>)."
+		fi
+		# Make the blob available in the build dir for binman.
+		stage_sram_from_local "$LOCAL_DIR/$DL_NAME"
+	fi
+	[ -f "$UBOOT_DIR/$STAGE_SRAM" ] \
+		|| die "$STAGE_SRAM not found in $UBOOT_DIR; required by binman for mt7621."
+fi
+
 make -C "$UBOOT_DIR" CROSS_COMPILE="${TOOLCHAIN}" STAGING_DIR="${STAGING_DIR}" -j "$JOBS" all
 
 # Determine output image: respect CONFIG_BUILD_TARGET (e.g. u-boot-with-spl.bin for SPL builds)
