@@ -373,7 +373,7 @@ end:
 	return ret;
 }
 
-#if IS_ENABLED(CONFIG_ARCH_AIROHA)
+#if IS_ENABLED(CONFIG_ARCH_AIROHA) || IS_ENABLED(CONFIG_ARCH_ECONET)
 /*
  * Discard the frames the controller has already queued.
  *
@@ -417,7 +417,7 @@ static void eth_rx_discard(struct udevice *dev)
 			ops->free_pkt(dev, packet, ret);
 	}
 }
-#endif /* CONFIG_ARCH_AIROHA */
+#endif /* CONFIG_ARCH_AIROHA || CONFIG_ARCH_ECONET */
 
 void eth_halt(void)
 {
@@ -437,9 +437,9 @@ void eth_halt(void)
 	if (!priv || !priv->running)
 		goto end;
 
-#if IS_ENABLED(CONFIG_ARCH_AIROHA)
+#if IS_ENABLED(CONFIG_ARCH_AIROHA) || IS_ENABLED(CONFIG_ARCH_ECONET)
 	eth_rx_discard(current);
-#endif
+#endif /* CONFIG_ARCH_AIROHA || CONFIG_ARCH_ECONET */
 
 	eth_get_ops(current)->stop(current);
 	priv->state = ETH_STATE_PASSIVE;
