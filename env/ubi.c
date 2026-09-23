@@ -212,6 +212,52 @@ static void env_ubi_extra_volume_create(void)
 	}
 }
 
+/*
+ * Create the environment volumes (and the extra ones) if they are missing.
+ *
+ * This is what env_ubi_load() does on every boot when
+ * CONFIG_ENV_UBI_VOLUME_CREATE is enabled.  It is exported because a device
+ * whose UBI device was rebuilt at run time - see the failsafe UBI page -
+ * has to give the environment a home again before anything can be saved
+ * into it: env_save() writes the volumes, it does not create them.
+ *
+ * With CONFIG_ENV_REDUNDANT both volumes are created, and neither call may
+ * be skipped when the other one succeeds: env_save() writes whichever copy
+ * gd->env_valid points at, and that is the redundant one while the primary
+ * copy is the valid one - a device whose second volume was never created
+ * therefore fails its first save with "Volume <redund> not found".
+ * env_ubi_load() makes the same two calls unconditionally.
+ *
+ * Note that the volumes are created here even when
+ * CONFIG_ENV_UBI_VOLUME_CREATE is off: that option decides whether the
+ * *boot* path may format a device that has no environment, while a caller
+ * that has just erased the UBI device knows the environment is gone and
+ * wants it back.
+ *
+ * Returns 0 when an environment volume is usable, -ENODEV otherwise.
+ */
+#if IS_ENABLED(CONFIG_ENV_UBI_VOLUME_CREATE)
+int env_ubi_volumes_create(void)
+{
+#ifdef CONFIG_ENV_REDUNDANT
+	int create1_fail, create2_fail;
+
+	create1_fail = env_ubi_volume_create(CONFIG_ENV_UBI_VOLUME);
+	create2_fail = env_ubi_volume_create(CONFIG_ENV_UBI_VOLUME_REDUND);
+
+	if (create1_fail && create2_fail)
+		return -ENODEV;
+#else
+	if (env_ubi_volume_create(CONFIG_ENV_UBI_VOLUME))
+		return -ENODEV;
+#endif
+
+	env_ubi_extra_volume_create();
+
+	return 0;
+}
+#endif /* CONFIG_ENV_UBI_VOLUME_CREATE */
+
 #ifdef CONFIG_ENV_REDUNDANT
 static int env_ubi_load(void)
 {
