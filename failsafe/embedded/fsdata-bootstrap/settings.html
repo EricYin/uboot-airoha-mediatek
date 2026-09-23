@@ -92,6 +92,31 @@
 						</section>
 
 						<section class="settings-section">
+							<h2 class="settings-heading" data-i18n="settings.section.validation">Image validation</h2>
+							<div class="form-row">
+								<div class="field">
+									<label for="set_failsafe_validate" data-i18n="settings.validation.enable">Structural validation (failsafe_validate):</label>
+									<select id="set_failsafe_validate" class="field-control" data-env="failsafe_validate" data-type="bool">
+										<option value="" data-i18n="settings.value.default">Default</option>
+										<option value="1" data-i18n="settings.value.on">On</option>
+										<option value="0" data-i18n="settings.value.off">Off</option>
+									</select>
+								</div>
+							</div>
+							<div class="form-row">
+								<div class="field">
+									<label for="set_failsafe_strict_model" data-i18n="settings.validation.strict_model">Strict board model check (failsafe_strict_model):</label>
+									<select id="set_failsafe_strict_model" class="field-control" data-env="failsafe_strict_model" data-type="bool">
+										<option value="" data-i18n="settings.value.default">Default</option>
+										<option value="1" data-i18n="settings.value.on">On</option>
+										<option value="0" data-i18n="settings.value.off">Off</option>
+									</select>
+								</div>
+							</div>
+							<p class="settings-help" data-i18n="settings.validation.help">Both checks are on by default and only apply to images uploaded through this page.</p>
+						</section>
+
+						<section class="settings-section">
 							<h2 class="settings-heading" data-i18n="settings.section.telnet">Telnet</h2>
 							<div class="form-row form-row-2">
 								<div class="field">
@@ -165,6 +190,7 @@
 							<li data-i18n="settings.warn.1">Changes are persisted to the U-Boot environment.</li>
 							<li data-i18n="settings.warn.2">Pick "Default" or clear a text field to remove that variable.</li>
 							<li data-i18n="settings.warn.3">Some changes (Telnet, DHCP) only take effect after a reboot or service restart.</li>
+							<li data-i18n="settings.warn.4">Turning image validation off makes the recovery accept images it would otherwise reject - keep both checks on unless you are debugging.</li>
 						</ul>
 					</div>
 				</div>
