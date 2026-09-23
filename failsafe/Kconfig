@@ -342,6 +342,29 @@ config WEBUI_FAILSAFE_NAND_RAW
 	  per page) and the dump length is only known to the flash module,
 	  so a 128 MiB flash produces a dump larger than the chip size.
 
+config WEBUI_FAILSAFE_FLASH_LAYOUT
+	bool "Enable flash layouts from the device tree"
+	default n
+	depends on WEBUI_FAILSAFE_FLASH
+	help
+	  Add the flash layouts the board describes in its device tree
+	  (a node with compatible = "failsafe-layout") to the flash
+	  management page: the editor can then work *in* a layout the
+	  device does not currently run - the one of the stock firmware or
+	  the one a replacement boot chain installs - instead of only in
+	  the partition table the device has now.
+
+	  A layout is a list of named raw flash ranges (<offset size>, a
+	  size of 0 meaning "to the end of the device").  Reading, writing,
+	  erasing and backing up stay inside the range of the partition
+	  that was picked, so the rest of the flash is never touched; a
+	  backup taken in a layout is written back into the same layout.
+
+	  The layouts apply to the master MTD chip when the board has one
+	  and to the MMC user area otherwise.  Boards without such a node
+	  simply have no layout to choose from, and when this option is off
+	  no layout code is linked in at all (the page hides the picker).
+
 config WEBUI_FAILSAFE_RPMB
 	bool "Read the eMMC RPMB partition from the flash page"
 	default y

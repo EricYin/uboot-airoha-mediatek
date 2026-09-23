@@ -50,6 +50,9 @@
 
 #include <failsafe/mmc.h>
 #include <failsafe/cprint.h>
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT)
+#include <failsafe/layout.h>
+#endif
 
 #ifdef CONFIG_PARTITIONS
 #include <part.h>
@@ -74,6 +77,10 @@ DECLARE_GLOBAL_DATA_PTR;
 /* JSON buffer for the device description. */
 #define FLASH_INFO_BUF_SZ	16384
 
+/* JSON buffer of GET /flash/layouts: the layouts of the board device tree,
+ * bounded by FAILSAFE_LAYOUT_MAX * FAILSAFE_LAYOUT_MAX_PARTS entries. */
+#define FLASH_LAYOUTS_BUF_SZ	(16 * 1024)
+
 /* ------------------------------------------------------------------ */
 /*  Storage target abstraction (MTD / MMC)                             */
 /* ------------------------------------------------------------------ */
@@ -94,6 +101,12 @@ DECLARE_GLOBAL_DATA_PTR;
  * Where the first byte of an MMC partition is depends on the partition
  * table, so @base carries it and the operations add it to their offset;
  * the hardware partitions and the RPMB are addressed from 0.
+ *
+ * A partition of a device-tree layout (see <failsafe/layout.h>) is the same
+ * idea applied to the raw device: @base is the offset the layout gives it,
+ * @size its length, and @layout the layout it belongs to, so a backup can
+ * say where it came from.  Layout targets live on the master MTD chip (that
+ * is where a NAND / NOR layout is) or on the MMC user area.
  */
 enum failsafe_storage_src {
 	FAILSAFE_SRC_MTD = 0,
@@ -104,6 +117,7 @@ enum failsafe_storage_src {
 
 struct flash_target {
 	enum failsafe_storage_src src;
+	const char *layout;	/* layout it was opened in, NULL otherwise */
 	u64 base;
 	u64 size;
 #ifdef CONFIG_MTD
@@ -313,13 +327,30 @@ static int parse_u64_len(const char *s, u64 *out)
 	return -EINVAL;
 }
 
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT)
+/* Defined after flash_close_target(): opens a partition of a device-tree
+ * layout, which is a range of the raw device (see <failsafe/layout.h>). */
+static int flash_open_layout_target(const char *layout_name,
+				    const char *part_name,
+				    struct flash_target *t);
+#endif
+
 static int flash_open_target(const char *storage_sel, const char *target_name,
-			     struct flash_target *t)
+			     const char *layout_name, struct flash_target *t)
 {
 	if (!storage_sel || !target_name || !t)
 		return -EINVAL;
 
 	memset(t, 0, sizeof(*t));
+
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT)
+	/* A layout target is named by the layout and by the partition label
+	 * inside it, not by a partition table entry. */
+	if (layout_name && *layout_name)
+		return flash_open_layout_target(layout_name, target_name, t);
+#else
+	(void)layout_name;
+#endif
 
 	if (!strcasecmp(storage_sel, "mtd") ||
 	    (!strcasecmp(storage_sel, "auto") &&
@@ -404,6 +435,96 @@ static void flash_close_target(struct flash_target *t)
 #endif
 }
 
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT)
+/*
+ * Open a partition of a device-tree layout (see <failsafe/layout.h>).
+ *
+ * A layout describes raw device offsets, so such a target is a range of the
+ * raw device rather than a partition of a partition table: the master MTD
+ * chip when the board has one - that is where a NAND / NOR layout lives -
+ * and the user area of an MMC device otherwise.  The offset of the partition
+ * goes into @t->base and its length into @t->size, which is what bounds every
+ * operation on it: editing a layout partition can never reach into its
+ * neighbours, and a partition whose layout says "size 0" ends where the
+ * device ends.
+ */
+static int flash_open_layout_target(const char *layout_name,
+				    const char *part_name,
+				    struct flash_target *t)
+{
+	const struct failsafe_layout_part *part = NULL;
+	const struct failsafe_layout *layout = NULL;
+	struct failsafe_layout *layouts;
+	bool have_mtd = false;
+	u64 capacity = 0;
+	int count, i, ret = -ENODEV;
+
+	layouts = malloc(FAILSAFE_LAYOUT_MAX * sizeof(*layouts));
+	if (!layouts)
+		return -ENOMEM;
+
+	count = failsafe_layout_parse(layouts, FAILSAFE_LAYOUT_MAX);
+	for (i = 0; i < count; i++) {
+		if (!strcmp(layouts[i].label, layout_name)) {
+			layout = &layouts[i];
+			break;
+		}
+	}
+
+	if (layout)
+		part = failsafe_layout_find_part(layout, part_name);
+
+	if (!part)
+		goto out;
+
+#if IS_ENABLED(CONFIG_MTD)
+	t->mtd = flash_mtd_master();
+	if (t->mtd) {
+		t->src = FAILSAFE_SRC_MTD;
+		capacity = t->mtd->size;
+		have_mtd = true;
+	}
+#endif
+
+	if (!have_mtd) {
+#if IS_ENABLED(CONFIG_MMC)
+		t->mmc = failsafe_mmc_get_dev();
+		if (!t->mmc)
+			goto out;
+
+		t->src = FAILSAFE_SRC_MMC;
+		t->hwpart = FAILSAFE_MMC_HWPART_USER;
+		capacity = t->mmc->capacity_user;
+#else
+		goto out;
+#endif
+	}
+
+	if (part->offset >= capacity)
+		goto out;
+
+	t->base = part->offset;
+	t->size = part->size ? part->size : capacity - part->offset;
+	if (t->size > capacity - t->base)
+		t->size = capacity - t->base;
+
+	/* The label points into the control device tree, which stays mapped,
+	 * so it outlives the array freed below - that is what lets a backup
+	 * file name say which layout it was taken from. */
+	t->layout = layout->label;
+
+	ret = 0;
+out:
+	free(layouts);
+
+	if (ret)
+		flash_close_target(t);
+
+	return ret;
+}
+#endif /* CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT */
+
+
 /* ------------------------------------------------------------------ */
 /*  Target operations                                                  */
 /* ------------------------------------------------------------------ */
@@ -429,7 +550,8 @@ static int flash_target_read(const struct flash_target *t, u64 off, void *buf,
 	switch (t->src) {
 	case FAILSAFE_SRC_MTD:
 #ifdef CONFIG_MTD
-		return failsafe_mtd_read_range(t->mtd, off, len, buf, read_len);
+		return failsafe_mtd_read_range(t->mtd, t->base + off, len,
+					      buf, read_len);
 #else
 		return -ENODEV;
 #endif
@@ -476,10 +598,12 @@ static int flash_target_write(const struct flash_target *t, u64 off,
 	case FAILSAFE_SRC_MTD:
 #ifdef CONFIG_MTD
 		if (erase_first)
-			return failsafe_mtd_restore_range(t->mtd, off, buf,
-							  len);
+			return failsafe_mtd_restore_range(t->mtd,
+							  t->base + off,
+							  buf, len);
 
-		return failsafe_mtd_update_range(t->mtd, off, buf, len);
+		return failsafe_mtd_update_range(t->mtd, t->base + off, buf,
+						 len);
 #else
 		return -ENODEV;
 #endif
@@ -514,7 +638,7 @@ static int flash_target_erase(const struct flash_target *t, u64 off, u64 len)
 	switch (t->src) {
 	case FAILSAFE_SRC_MTD:
 #ifdef CONFIG_MTD
-		return failsafe_mtd_erase_range(t->mtd, off, len);
+		return failsafe_mtd_erase_range(t->mtd, t->base + off, len);
 #else
 		return -ENODEV;
 #endif
@@ -545,15 +669,31 @@ static int flash_target_erase(const struct flash_target *t, u64 off, u64 len)
  */
 static int flash_parse_storage_target(struct httpd_request *request,
 				      char *storage_sel, size_t storage_sz,
-				      char *target_name, size_t target_sz)
+				      char *target_name, size_t target_sz,
+				      char *layout_name, size_t layout_sz)
 {
 	struct httpd_form_value *storage, *target;
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT)
+	struct httpd_form_value *layout;
+#endif
 
 	if (!request || !storage_sel || !target_name)
 		return -EINVAL;
 
+	if (layout_name && layout_sz)
+		layout_name[0] = '\0';
+
 	storage = httpd_request_find_value(request, "storage");
 	target = httpd_request_find_value(request, "target");
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT)
+	layout = httpd_request_find_value(request, "layout");
+
+	/* The layout a target belongs to is independent of the storage
+	 * selection: it names a partition scheme of the raw device instead of
+	 * a partition table entry (see <failsafe/layout.h>). */
+	if (layout && layout->data && layout_name)
+		strlcpy(layout_name, layout->data, layout_sz);
+#endif
 
 	if (storage && storage->data)
 		strlcpy(storage_sel, storage->data, storage_sz);
@@ -717,6 +857,7 @@ static const char *flash_find_last_before(const char *s, const char *needle,
 static int flash_parse_backup_filename(const char *filename,
 				       char *storage, size_t storage_sz,
 				       char *target, size_t target_sz,
+				       char *layout, size_t layout_sz,
 				       u64 *start, u64 *end)
 {
 	const char *range, *dash, *stype_mtd, *stype_mmc, *stype;
@@ -726,6 +867,9 @@ static int flash_parse_backup_filename(const char *filename,
 
 	if (!filename || !storage || !target || !start || !end)
 		return -EINVAL;
+
+	if (layout && layout_sz)
+		layout[0] = '\0';
 
 	range = strstr(filename, "_0x");
 	if (!range)
@@ -778,6 +922,23 @@ static int flash_parse_backup_filename(const char *filename,
 	tmp[seg_len] = '\0';
 
 	{
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT)
+		char *seat = strstr(tmp, "layout-");
+
+		/* A backup taken in a layout says which one, so a restore
+		 * puts it back into the same layout: its partitions are raw
+		 * device ranges, not partition table entries (see
+		 * flash_layouts_handler()). */
+		if (seat && (seat == tmp || seat[-1] == '_')) {
+			char *stop = strchr(seat + 7, '_');
+
+			if (stop && stop > seat + 7) {
+				*stop = '\0';
+				strlcpy(layout, seat + 7, layout_sz);
+			}
+		}
+#endif /* CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT */
+
 		char *last = strrchr(tmp, '_');
 		const char *name = last ? last + 1 : tmp;
 
@@ -789,6 +950,20 @@ static int flash_parse_backup_filename(const char *filename,
 	}
 
 	return 0;
+}
+
+/* "layout-<name>_" for the backup file name, or "" without a layout. */
+static const char *flash_layout_segment(const char *layout)
+{
+	static char segment[80];
+
+	segment[0] = '\0';
+	if (layout) {
+		snprintf(segment, sizeof(segment), "layout-%s_", layout);
+		failsafe_str_sanitize(segment);
+	}
+
+	return segment;
 }
 
 /* ------------------------------------------------------------------ */
@@ -828,6 +1003,15 @@ void flash_info_handler(enum httpd_uri_handler_status status,
 	}
 
 	len = buf_appendf(buf, left, len, "{");
+
+	/* Whether this build can edit flash in a device-tree layout (see
+	 * <failsafe/layout.h>): the page hides its layout picker when it
+	 * cannot, the way it does for the NAND raw fields below. */
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT)
+	len = buf_appendf(buf, left, len, "\"layout\":true,");
+#else
+	len = buf_appendf(buf, left, len, "\"layout\":false,");
+#endif
 
 	/* MMC info + partitions */
 	len = buf_appendf(buf, left, len, "\"mmc\":{");
@@ -1105,6 +1289,7 @@ void flash_backup_handler(enum httpd_uri_handler_status status,
 	struct flash_backup_session *st;
 	char target_name[64] = "";
 	char storage_sel[16] = "auto";
+	char layout_name[64] = "";
 	u64 off_start = 0, off_end = 0;
 	struct flash_target tgt;
 	int ret;
@@ -1135,7 +1320,9 @@ void flash_backup_handler(enum httpd_uri_handler_status status,
 		ret = flash_parse_storage_target(request, storage_sel,
 						 sizeof(storage_sel),
 						 target_name,
-						 sizeof(target_name));
+						 sizeof(target_name),
+						 layout_name,
+						 sizeof(layout_name));
 		if (ret || !mode || !mode->data)
 			goto bad;
 
@@ -1165,7 +1352,8 @@ void flash_backup_handler(enum httpd_uri_handler_status status,
 			goto oom;
 		}
 
-		ret = flash_open_target(storage_sel, target_name, &tgt);
+		ret = flash_open_target(storage_sel, target_name, layout_name,
+					     &tgt);
 		if (ret)
 			goto bad_target;
 
@@ -1251,9 +1439,10 @@ void flash_backup_handler(enum httpd_uri_handler_status status,
 			failsafe_str_sanitize(target_name);
 
 			snprintf(st->filename, sizeof(st->filename),
-				 "backup_%s_%s_%s%s_0x%llx-0x%llx.bin",
+				 "backup_%s_%s_%s%s%s_0x%llx-0x%llx.bin",
 				 stype,
 				 model[0] ? model : "device",
+				 flash_layout_segment(st->tgt.layout),
 				 target_name,
 				 st->raw ? "_oob" : "",
 				 (unsigned long long)st->start,
@@ -1397,6 +1586,7 @@ void flash_handler(enum httpd_uri_handler_status status,
 	char *json = NULL;
 	char storage_sel[16] = "auto";
 	char target_name[64] = "";
+	char layout_name[64] = "";
 	u64 start = 0, end = 0;
 	int ret;
 
@@ -1463,7 +1653,9 @@ void flash_handler(enum httpd_uri_handler_status status,
 		ret = flash_parse_storage_target(request, storage_sel,
 						 sizeof(storage_sel),
 						 target_name,
-						 sizeof(target_name));
+						 sizeof(target_name),
+						 layout_name,
+						 sizeof(layout_name));
 		if (ret)
 			goto bad_req;
 
@@ -1508,7 +1700,8 @@ void flash_handler(enum httpd_uri_handler_status status,
 			raw_mode = true;
 #endif
 
-		ret = flash_open_target(storage_sel, target_name, &tgt);
+		ret = flash_open_target(storage_sel, target_name, layout_name,
+					     &tgt);
 		if (ret)
 			goto bad_target;
 
@@ -1623,7 +1816,9 @@ void flash_handler(enum httpd_uri_handler_status status,
 		ret = flash_parse_storage_target(request, storage_sel,
 						 sizeof(storage_sel),
 						 target_name,
-						 sizeof(target_name));
+						 sizeof(target_name),
+						 layout_name,
+						 sizeof(layout_name));
 		if (ret)
 			goto bad_req;
 
@@ -1646,7 +1841,8 @@ void flash_handler(enum httpd_uri_handler_status status,
 		if (ret)
 			goto bad_req;
 
-		ret = flash_open_target(storage_sel, target_name, &tgt);
+		ret = flash_open_target(storage_sel, target_name, layout_name,
+					     &tgt);
 		if (ret) {
 			free(buf);
 			goto bad_target;
@@ -1715,6 +1911,7 @@ void flash_handler(enum httpd_uri_handler_status status,
 		struct flash_target tgt;
 		char storage_from_name[16] = "";
 		char target_from_name[64] = "";
+		char layout_name[64] = "";
 		u64 name_start = 0, name_end = 0;
 		size_t len = 0;
 #ifdef CONFIG_WEBUI_FAILSAFE_NAND_RAW
@@ -1732,6 +1929,7 @@ void flash_handler(enum httpd_uri_handler_status status,
 			flash_parse_backup_filename(fw->filename,
 				storage_from_name, sizeof(storage_from_name),
 				target_from_name, sizeof(target_from_name),
+				layout_name, sizeof(layout_name),
 				&name_start, &name_end) : -EINVAL;
 
 		if (!ret) {
@@ -1754,7 +1952,9 @@ void flash_handler(enum httpd_uri_handler_status status,
 			ret = flash_parse_storage_target(request, storage_sel,
 							 sizeof(storage_sel),
 							 target_name,
-							 sizeof(target_name));
+							 sizeof(target_name),
+							 layout_name,
+							 sizeof(layout_name));
 			if (ret)
 				goto bad_req;
 
@@ -1770,7 +1970,8 @@ void flash_handler(enum httpd_uri_handler_status status,
 		if (end <= start || (u64)len != (end - start))
 			goto bad_range;
 
-		ret = flash_open_target(storage_sel, target_name, &tgt);
+		ret = flash_open_target(storage_sel, target_name, layout_name,
+					     &tgt);
 		if (ret)
 			goto bad_target;
 
@@ -1843,11 +2044,14 @@ void flash_handler(enum httpd_uri_handler_status status,
 		ret = flash_parse_storage_target(request, storage_sel,
 						 sizeof(storage_sel),
 						 target_name,
-						 sizeof(target_name));
+						 sizeof(target_name),
+						 layout_name,
+						 sizeof(layout_name));
 		if (ret)
 			goto bad_req;
 
-		ret = flash_open_target(storage_sel, target_name, &tgt);
+		ret = flash_open_target(storage_sel, target_name, layout_name,
+					     &tgt);
 		if (ret)
 			goto bad_target;
 
@@ -1925,12 +2129,95 @@ io_err:
 /* ------------------------------------------------------------------ */
 
 #ifdef CONFIG_WEBUI_FAILSAFE_FLASH
+
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT)
+/* ------------------------------------------------------------------ */
+/*  GET /flash/layouts - flash layouts of the board device tree        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * flash_layouts_handler - GET /flash/layouts
+ *
+ * Lists the flash layouts the board describes in its device tree (see
+ * <failsafe/layout.h>), so that the editor can work in a layout the device
+ * does not currently run - which is how a device is moved from one layout to
+ * another:
+ *
+ *	{"ok":true,"layouts":[{"name":"stock","parts":[
+ *		{"name":"bootloader","offset":"0x0","size":"0x80000"}]}]}
+ *
+ * The offsets are raw device offsets; a size of 0 means "to the end of the
+ * device".  A target of such a layout is selected by sending the layout name
+ * in the "layout" field together with the partition label in "target" (see
+ * flash_parse_storage_target()).
+ */
+void flash_layouts_handler(enum httpd_uri_handler_status status,
+			   struct httpd_request *request,
+			   struct httpd_response *response)
+{
+	struct failsafe_layout *layouts;
+	char esc[80];
+	char *buf;
+	size_t size;
+	int count, i, j, len = 0;
+
+	if (status != HTTP_CB_NEW)
+		return;
+
+	layouts = malloc(FAILSAFE_LAYOUT_MAX * sizeof(*layouts));
+	buf = malloc(FLASH_LAYOUTS_BUF_SZ);
+	if (!layouts || !buf) {
+		free(layouts);
+		free(buf);
+		failsafe_http_reply_json(response, 500,
+					 "{\"ok\":false,\"error\":\"oom\"}\n");
+		return;
+	}
+
+	count = failsafe_layout_parse(layouts, FAILSAFE_LAYOUT_MAX);
+
+	size = FLASH_LAYOUTS_BUF_SZ;
+	len = buf_appendf(buf, size, len, "{\"ok\":true,\"layouts\":[");
+	for (i = 0; i < count; i++) {
+		json_escape(esc, sizeof(esc), layouts[i].label);
+		len = buf_appendf(buf, size, len,
+				  "%s{\"name\":\"%s\",\"parts\":[",
+				  i ? "," : "", esc);
+
+		for (j = 0; j < layouts[i].num_parts; j++) {
+			u64 off = layouts[i].parts[j].offset;
+			u64 psize = layouts[i].parts[j].size;
+
+			json_escape(esc, sizeof(esc),
+				    layouts[i].parts[j].label);
+			len = buf_appendf(buf, size, len,
+					  "%s{\"name\":\"%s\","
+					  "\"offset\":\"0x%llx\","
+					  "\"size\":\"0x%llx\"}",
+					  j ? "," : "", esc,
+					  (unsigned long long)off,
+					  (unsigned long long)psize);
+		}
+
+		len = buf_appendf(buf, size, len, "]}");
+	}
+	len = buf_appendf(buf, size, len, "]}\n");
+
+	free(layouts);
+	failsafe_http_reply_json_alloc(response, 200, buf, buf);
+}
+#endif /* CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT */
+
 void flash_register_handlers(struct httpd_instance *inst)
 {
 	/* The page and its script are registered by the page inventory
 	 * (failsafe/pages.c); this module only owns the endpoints. */
 	httpd_register_uri_handler(inst, "/flash/info", &flash_info_handler,
 				   NULL);
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT)
+	httpd_register_uri_handler(inst, "/flash/layouts",
+				   &flash_layouts_handler, NULL);
+#endif
 	httpd_register_uri_handler(inst, "/flash/backup", &flash_backup_handler,
 				   NULL);
 	httpd_register_uri_handler(inst, "/flash/read", &flash_handler, NULL);

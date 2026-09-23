@@ -258,6 +258,162 @@
         box.textContent = parts.join(" | ");
     }
 
+
+    /* ── Flash layouts of the device tree (optional feature) ──
+     *
+     * GET /flash/layouts lists the layouts the firmware was built with (see
+     * CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT and failsafe/modules/flash.c):
+     * picking one replaces the target list with the partitions of that
+     * layout, which are raw flash ranges instead of partition table entries.
+     * /flash/info says whether the feature is there at all, so the picker
+     * stays hidden on firmware without it.
+     */
+    function currentLayout() {
+        var select = $("flash_layout");
+        return select && select.value ? String(select.value) : "";
+    }
+
+    function currentLayoutParts() {
+        var layouts = (APP_STATE.flashlayouts && APP_STATE.flashlayouts.layouts) || [];
+        var name = currentLayout();
+        for (var i = 0; i < layouts.length; i++) {
+            if (layouts[i] && layouts[i].name === name) return layouts[i].parts || [];
+        }
+        return null;
+    }
+
+    /* Capacity of the raw device a layout is expressed in: the master MTD
+     * chip when the board has one, the MMC user area otherwise - the same
+     * choice the firmware makes (see flash_open_layout_target()). */
+    function deviceCapacity() {
+        var info = APP_STATE.flashinfo || {};
+        var mtd = info.mtd || {};
+        var mmc = info.mmc || {};
+        var master = null;
+
+        (mtd.parts || []).forEach(function (part) {
+            if (part && part.master && !master) master = part;
+        });
+        if (master && master.size) return Number(master.size);
+
+        return mmc.size ? Number(mmc.size) : 0;
+    }
+
+    function updateLayoutHint() {
+        var hint = $("flash_layout_hint");
+        var active = currentLayout();
+
+        if (!hint) return;
+        hint.style.display = active ? "" : "none";
+    }
+
+    /* Fill the picker with the layouts of the firmware, or keep it out of the
+     * way when there is nothing to choose from. */
+    function populateLayouts() {
+        var row = $("flash_layout_row");
+        var select = $("flash_layout");
+        var info = APP_STATE.flashinfo || {};
+        var layouts = (APP_STATE.flashlayouts && APP_STATE.flashlayouts.layouts) || [];
+        var keep = currentLayout();
+
+        if (!select || !row) return;
+
+        if (info.layout !== true || !layouts.length) {
+            row.style.display = "none";
+            select.options.length = 0;
+            updateLayoutHint();
+            return;
+        }
+
+        select.options.length = 0;
+
+        var current = document.createElement("option");
+        current.value = "";
+        current.textContent = t("flash.layout.current");
+        select.appendChild(current);
+
+        layouts.forEach(function (layout) {
+            if (!layout || !layout.name) return;
+            var option = document.createElement("option");
+            option.value = layout.name;
+            option.textContent = layout.name;
+            select.appendChild(option);
+        });
+
+        if (keep) select.value = keep;
+        if (!select.value) select.value = "";
+        row.style.display = "";
+        updateLayoutHint();
+    }
+
+    function bindLayoutPicker() {
+        var select = $("flash_layout");
+        if (!select || select.dataset.bound === "1") return;
+        select.dataset.bound = "1";
+        select.addEventListener("change", function () {
+            populateTargets();
+            updateLayoutHint();
+        });
+    }
+
+    /* The targets of the picked layout: raw flash ranges, so their size comes
+     * from the layout (a size of 0 meaning "to the end of the device"). */
+    function appendLayoutTargets(select, parts) {
+        var capacity = deviceCapacity();
+
+        parts.forEach(function (part) {
+            var offset, size, option;
+
+            if (!part || !part.name) return;
+            offset = parseUserLen(part.offset);
+            size = parseUserLen(part.size);
+            if (offset === null || size === null) return;
+            if (!size) size = capacity > offset ? capacity - offset : 0;
+
+            option = document.createElement("option");
+            option.value = part.name;
+            option.dataset.kind = "layout-part";
+            option.dataset.size = String(size);
+            option.dataset.offset = String(offset);
+            option.textContent = part.name + " @ " + toHex(offset) +
+                (size ? " (" + human(size) + ")" : "");
+            select.appendChild(option);
+        });
+    }
+
+    /* GET /flash/layouts, then (re)build the picker and the target list. */
+    function loadLayouts() {
+        var info = APP_STATE.flashinfo || {};
+        var done = function () {
+            populateLayouts();
+            bindLayoutPicker();
+            renderDeviceInfo();
+            populateTargets();
+        };
+
+        if (info.layout !== true) {
+            APP_STATE.flashlayouts = null;
+            done();
+            return;
+        }
+
+        ajax({
+            url: "/flash/layouts",
+            done: function (responseText) {
+                try {
+                    APP_STATE.flashlayouts = JSON.parse(responseText);
+                } catch (error) {
+                    APP_STATE.flashlayouts = null;
+                }
+                done();
+            },
+            fail: function () {
+                APP_STATE.flashlayouts = null;
+                done();
+            }
+        });
+    }
+
     function populateTargets() {
         var select = $("flash_target");
         if (!select) return;
@@ -271,6 +427,19 @@
         var hasMasterPartitions = mtd.type === 3 || mtd.type === 4 || mtd.type === 8;
 
         select.options.length = 0;
+
+        /* A device-tree layout replaces the partition table view. */
+        var layoutParts = currentLayoutParts();
+
+        if (layoutParts) {
+            appendLayoutTargets(select, layoutParts);
+            if (select.options.length > 1) select.selectedIndex = 1;
+            refreshTargetI18n();
+            autoFillRange();
+            updateModeUi();
+            updateLayoutHint();
+            return;
+        }
 
         var placeholder = document.createElement("option");
         placeholder.value = "";
@@ -377,8 +546,7 @@
                     return;
                 }
                 APP_STATE.flashinfo = parsed;
-                renderDeviceInfo();
-                populateTargets();
+                loadLayouts();
             },
             fail: function () {
                 setStatus(t("flash.error.parse"), true, false);
@@ -401,6 +569,7 @@
         formData.append("mode", mode);
         formData.append("storage", "auto");
         formData.append("target", target);
+        formData.append("layout", currentLayout());
         if (option && option.dataset && option.dataset.raw === "1")
             formData.append("raw", "1");
 
@@ -940,6 +1109,7 @@
                 formData.append("op", "read");
                 formData.append("storage", "auto");
                 formData.append("target", target);
+                formData.append("layout", currentLayout());
                 formData.append("start", toHex(range.start));
                 formData.append("end", toHex(range.end));
                 formData.append("chunk", String(chunkIndex));
@@ -1015,6 +1185,7 @@
                 formData.append("op", "write");
                 formData.append("storage", "auto");
                 formData.append("target", target);
+                formData.append("layout", currentLayout());
                 formData.append("start", toHex(readBase + chunk.start));
                 formData.append("data", parts.join(" "));
 
@@ -1079,6 +1250,7 @@
             formData.append("op", "erase");
             formData.append("storage", "auto");
             formData.append("target", target);
+            formData.append("layout", currentLayout());
             if (range) {
                 formData.append("start", toHex(range.start));
                 formData.append("end", toHex(range.end));
@@ -1118,6 +1290,7 @@
             formData.append("backup", blob, "restore_chunk.bin");
             var target = currentTargetValue();
             if (target) formData.append("target", target);
+            formData.append("layout", currentLayout());
             formData.append("start", toHex(rangeStart + chunkOffset));
             formData.append("end", toHex(rangeStart + chunkEnd));
             formData.append("storage", "auto");

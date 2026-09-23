@@ -271,6 +271,15 @@ void flash_info_handler(enum httpd_uri_handler_status status,
 void flash_backup_handler(enum httpd_uri_handler_status status,
 	struct httpd_request *request,
 	struct httpd_response *response);
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT)
+/**
+ * flash_layouts_handler - GET /flash/layouts: the flash layouts of the
+ * board device tree (see <failsafe/layout.h>), for the flash editor.
+ */
+void flash_layouts_handler(enum httpd_uri_handler_status status,
+	struct httpd_request *request,
+	struct httpd_response *response);
+#endif
 void flash_handler(enum httpd_uri_handler_status status,
 	struct httpd_request *request,
 	struct httpd_response *response);

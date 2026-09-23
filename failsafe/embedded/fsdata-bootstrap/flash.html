@@ -38,6 +38,14 @@
 
 						<section class="settings-section">
 							<h2 class="settings-heading" data-i18n="flash.action.title">Actions</h2>
+							<div class="form-row" id="flash_layout_row" style="display: none;">
+								<div class="field">
+									<label for="flash_layout" data-i18n="flash.label.layout">Flash layout:</label>
+									<select id="flash_layout" class="field-control"></select>
+								</div>
+							</div>
+							<p id="flash_layout_hint" class="flash-hint" style="display: none;"
+								data-i18n="flash.layout.hint">Layout partitions are raw flash ranges: reading, writing and erasing stay inside the picked partition.</p>
 							<div class="form-row form-row-2">
 								<div class="field">
 									<label for="flash_mode" data-i18n="flash.label.mode">Operation mode:</label>
