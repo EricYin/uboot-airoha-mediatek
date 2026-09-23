@@ -44,6 +44,10 @@ obj-y += fail.o
 FILE_fail.o := .min/fail.html$(WEBUI_FAILSAFE_ZSUF)
 FSPATH_fail.o := fail.html
 
+obj-$(CONFIG_WEBUI_FAILSAFE_GPT) += gpt.o
+FILE_gpt.o := .min/gpt.html$(WEBUI_FAILSAFE_ZSUF)
+FSPATH_gpt.o := gpt.html
+
 obj-y += flashing.o
 FILE_flashing.o := .min/flashing.html$(WEBUI_FAILSAFE_ZSUF)
 FSPATH_flashing.o := flashing.html

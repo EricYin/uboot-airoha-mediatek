@@ -265,7 +265,7 @@ int failsafe_validate_image_content(const void *data, size_t size,
 	/* Per-type structural validation.  Each validator is gated by its
 	 * own Kconfig toggle (board/airoha/Kconfig, "Failsafe image
 	 * validation").  The generic storage capacity checks are done by
-	 * failsafe_validate_image() in failsafe.c, always enabled.
+	 * failsafe_validate_image() in failsafe_core.c, always enabled.
 	 */
 	switch (fw) {
 	case FW_TYPE_UBOOT:

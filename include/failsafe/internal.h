@@ -20,7 +20,7 @@
 #include <failsafe/helpers.h>
 
 /* ------------------------------------------------------------------ */
-/*  Core weak functions (defined in failsafe.c, used by modules)       */
+/*  Core weak functions (defined in failsafe_core.c, used by modules)  */
 /* ------------------------------------------------------------------ */
 
 int failsafe_validate_image(const void *data, size_t size,
@@ -113,7 +113,7 @@ int boot_from_mem(ulong data_load_addr);
 void failsafe_notify_network_cmd_done(void);
 
 /* ------------------------------------------------------------------ */
-/*  Handler declarations (used by failsafe.c for URI registration)     */
+/*  Handler declarations (used by failsafe_core.c for the URI table)   */
 /* ------------------------------------------------------------------ */
 
 /* ---- core handlers (failsafe_core.c) ---- */

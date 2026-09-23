@@ -94,6 +94,16 @@ int failsafe_image_validate_legacy(const void *data, size_t size,
 	return 0;
 }
 
+int failsafe_image_validate_firmware(const void *data, size_t size,
+				     const char *what)
+{
+	if (failsafe_image_validate_fit(data, size, what))
+		return -EINVAL;
+
+	/* Opt-in strict board-model gate (env 'failsafe_strict_model'). */
+	return failsafe_firmware_check_model(data, size, what);
+}
+
 #if CONFIG_IS_ENABLED(FIT)
 /*
  * Strict model validation (opt-in, env 'failsafe_strict_model' == "1").

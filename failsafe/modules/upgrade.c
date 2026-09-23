@@ -9,21 +9,22 @@
  *
  * Failsafe Web UI - firmware upload / flash / RAM boot
  *
- * Airoha adaptation: this module was extracted from the original
- * monolithic failsafe.c (renamed to upgrade.c when the failsafe
- * framework was modularised).  Only the upgrade core is kept here:
+ * The always built core module (extracted from the original monolithic
+ * failsafe.c when the framework was modularised).  Only the upgrade core
+ * is kept here:
  *
  *   - upload_handler(): receive an uploaded image, derive its target
  *     type from the multipart form field name, validate it through the
  *     board-level failsafe_validate_image() hook and report
  *     "size MD5" to the Web UI.
  *
- *   - result_handler(): commit the staged image to the selected MTD
- *     partition / UBI volume through failsafe_write_image(), or hand it
- *     to the RAM-boot path for an uploaded image (booted by
- *     boot_from_mem() from failsafe_core.c: FIT / legacy images via
- *     bootm, other raw binaries via the "go" command), and report
- *     success / failed.
+ *   - result_handler(): commit the staged image through
+ *     failsafe_write_image() - which picks the storage target for the
+ *     firmware type (an MTD partition, a UBI volume or an MMC partition,
+ *     see failsafe/bootimg/) - or hand an uploaded image to the RAM-boot
+ *     path (booted by boot_from_mem() from failsafe_core.c: FIT / legacy
+ *     images via bootm, other raw binaries via the "go" command), and
+ *     report success / failed.
  *
  * The shared state (upload_data_id / upload_data / upload_size /
  * upgrade_success / auto_action_pending / fw_type) is referenced by
@@ -338,6 +339,22 @@ void upload_handler(enum httpd_uri_handler_status status,
 	 * the image.
 	 */
 	failsafe_led_set_phase(FAILSAFE_LED_UPGRADE);
+
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_GPT)
+	/*
+	 * MMC partition table (GPT).  The uploaded image is the primary
+	 * table area (protective MBR + GPT header + entry array); the
+	 * header is adjusted to the device size and the secondary table is
+	 * generated on the device (see failsafe_mmc_write_gpt()).
+	 */
+	fw = httpd_request_find_value(request, "gpt");
+	if (fw) {
+		fw_type = FW_TYPE_GPT;
+		if (failsafe_validate_image(fw->data, fw->size, fw_type))
+			goto fail;
+		goto done;
+	}
+#endif
 
 	fw = httpd_request_find_value(request, "fip");
 	if (fw) {

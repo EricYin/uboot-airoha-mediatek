@@ -1,0 +1,69 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>GPT update</title>
+	<script src="/theme.js"></script>
+	<link rel="stylesheet" href="/style.css">
+	<script src="/i18n.js"></script>
+	<script src="/main.js"></script>
+</head>
+
+<body onload="appInit('gpt')" data-page="gpt">
+	<div class="app">
+		<aside id="sidebar" class="sidebar"></aside>
+		<div class="main">
+			<div id="m">
+				<div class="card-head">
+					<div id="upload_hero" class="upload-hero" aria-hidden="true">
+						<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+							<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+							<line x1="3" y1="9" x2="21" y2="9"></line>
+							<line x1="3" y1="15" x2="21" y2="15"></line>
+							<line x1="9" y1="3" x2="9" y2="21"></line>
+							<line x1="15" y1="3" x2="15" y2="21"></line>
+						</svg>
+					</div>
+					<h1 data-i18n="gpt.title">GPT UPDATE</h1>
+					<p id="hint" data-i18n-html="gpt.hint">
+						You are going to update <strong>GPT (Partition Table)</strong> on the device.<br>
+						Please, choose file from your local hard drive and click <strong>Upload</strong> button.
+					</p>
+				</div>
+				<div class="card-main">
+					<form id="form">
+						<input id="file" type="file" name="gpt">
+						<input type="button" value="Upload" data-i18n-attr="value:common.upload"
+							onclick="upload('gpt')">
+					</form>
+					<div class="bar" id="bar" style="display: none; --percent: 0;"></div>
+					<span class="bar-text" id="bar_text"></span>
+					<div id="filename" style="display: none;">File: xxxx</div>
+					<div id="size" style="display: none;">Size: xxxx</div>
+					<div id="md5" style="display: none;">MD5: xxxx</div>
+					<div id="upgrade" style="display: none;">
+						<p data-i18n="gpt.upgrade_hint">If all information above is correct, click "Update".</p>
+						<button class="button" data-i18n="common.update"
+							onclick="location = '/flashing.html'">Update</button>
+					</div>
+				</div>
+				<div class="card-foot">
+					<div class="i w">
+						<strong data-i18n="common.warnings">WARNINGS</strong>
+						<ul>
+							<li data-i18n="gpt.warn.1">do not power off the device during update</li>
+							<li data-i18n="gpt.warn.2">if everything goes well, you can reboot the device manually</li>
+							<li data-i18n="gpt.warn.3">you can upload whatever you want, so be sure that you choose proper GPT for your device</li>
+							<li data-i18n="gpt.warn.4">updating GPT is a dangerous operation and may damage your device!</li>
+						</ul>
+					</div>
+				</div>
+			</div>
+			<div id="version"></div>
+		</div>
+	</div>
+</body>
+
+</html>

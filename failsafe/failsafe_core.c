@@ -302,6 +302,9 @@ int start_web_failsafe(void)
 #ifdef CONFIG_WEBUI_FAILSAFE_I18N
 	httpd_register_uri_handler(inst, "/i18n.js", &js_handler, NULL);
 #endif
+#ifdef CONFIG_WEBUI_FAILSAFE_GPT
+	httpd_register_uri_handler(inst, "/gpt.html", &html_handler, NULL);
+#endif
 #ifdef CONFIG_WEBUI_FAILSAFE_LAYOUT_UBOOT
 	httpd_register_uri_handler(inst, "/uboot.html", &html_handler, NULL);
 #endif

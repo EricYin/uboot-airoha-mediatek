@@ -89,7 +89,9 @@ config WEBUI_FAILSAFE_LAYOUT_UBOOT
 	bool "U-Boot layout (u-boot MTD partition)"
 	help
 	  512 KiB boot image layout:
-	    - System firmware upgrade  (UBI FIT volume "fit")
+	    - System firmware upgrade  (one FIT image: the "fit" UBI volume,
+	                                or a "fit" / "firmware" /
+	                                "production" partition on MMC)
 	    - U-Boot upgrade           (u-boot MTD partition)
 	    - Initramfs RAM boot
 
@@ -99,23 +101,49 @@ config WEBUI_FAILSAFE_LAYOUT_FIP
 	bool "FIP layout (bl2 + fip partitions)"
 	help
 	  Split FIP layout:
-	    - System firmware upgrade  (UBI FIT volume "fit")
-	    - Preloader upgrade        (bl2 MTD partition)
-	    - FIP upgrade              (UBI volume "fip")
+	    - System firmware upgrade  (one FIT image: the "fit" UBI volume,
+	                                or a "fit" / "firmware" /
+	                                "production" partition on MMC)
+	    - Preloader upgrade        (bl2: MTD partition, or the layout the
+	                                SoC bootrom expects on eMMC / SD)
+	    - FIP upgrade              (UBI volume "fip", or the "fip" MMC
+	                                partition the ATF loads)
 	    - Initramfs RAM boot
 
 config WEBUI_FAILSAFE_LAYOUT_CHAINLOADER
 	bool "Chainloader layout (bl2 + chainloader partitions)"
 	help
 	  Chainloader failsafe:
-	    - System firmware upgrade  (UBI FIT volume "fit")
-	    - Preloader upgrade        (bl2 MTD partition)
+	    - System firmware upgrade  (one FIT image, as above)
+	    - Preloader upgrade        (bl2: MTD partition, or the SoC
+	                                specific eMMC / SD location)
 	    - Chainloader upgrade      (chainloader MTD partition)
 	    - Initramfs RAM boot
 
 endif # ARM
 
 endchoice
+
+if MMC && PARTITIONS
+
+config WEBUI_FAILSAFE_GPT
+	bool "Enable MMC partition table (GPT) update"
+	default y
+	help
+	  Add the "gpt" page: the partition table of the MMC device can be
+	  replaced from the Web UI.
+
+	  The uploaded image is the primary table area of a GPT disk (the
+	  protective MBR, the GPT header and the partition entry array, 34
+	  sectors = 17408 bytes).  Both are verified before they are
+	  written, the header is adjusted to the real device size and the
+	  backup table is generated at the end of the device, so a table
+	  dump taken from another unit of the same size class can be
+	  installed.
+
+	  WARNING: a wrong partition table makes the device unbootable.
+
+endif # MMC && PARTITIONS
 
 choice
 	prompt "Failsafe Web UI style"

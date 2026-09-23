@@ -772,6 +772,9 @@ function ensureSidebar() {
     advancedTitle.setAttribute("data-i18n", "nav.advanced");
     advancedTitle.textContent = t("nav.advanced");
     advancedSection.appendChild(advancedTitle);
+    const gptLink = createNavLink("/gpt.html", "nav.gpt", "gpt");
+    gptLink.style.display = "none";
+    advancedSection.appendChild(gptLink);
     const ubiLink = createNavLink("/ubi.html", "nav.ubi", "ubi");
     ubiLink.style.display = "none";
     advancedSection.appendChild(ubiLink);
@@ -1103,6 +1106,11 @@ const NAV_VISIBILITY_DEFS = {
         url: "/simg.html",
         logPrefix: "SIMG",
         hiddenReason: "feature not enabled in build config",
+    },
+    gpt: {
+        url: "/gpt.html",
+        logPrefix: "GPT",
+        hiddenReason: "feature not enabled or no MMC device",
     },
 };
 
@@ -1475,6 +1483,14 @@ function upload(formFieldName) {
      * so reject oversized images before uploading. */
     if (formFieldName === "fip" && selectedFile.size > 0x100000) {
         alert(t("fip.err.too_big"));
+        return;
+    }
+
+    /* The GPT image is the primary table area only (34 sectors =
+     * 17408 bytes, see FAILSAFE_STORAGE_GPT_MAX_SIZE); the backend
+     * rejects anything larger, so catch it before the upload. */
+    if (formFieldName === "gpt" && selectedFile.size > 17408) {
+        alert(t("gpt.err.too_big"));
         return;
     }
 

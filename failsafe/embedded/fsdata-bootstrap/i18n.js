@@ -18,6 +18,7 @@ const I18N = {
         "nav.bl2": "BL2 update",
         "nav.chainloader": "Chainloader update",
         "nav.fip": "FIP update",
+        "nav.gpt": "GPT update",
         "nav.initramfs": "Boot from memory",
         "nav.system": "System",
         "nav.env": "Environment",
@@ -432,7 +433,15 @@ const I18N = {
         "flash.warn.2": "always double-check target and range",
         "flash.warn.3": "do not power off the device during backup, write, restore or erase",
         "flash.warn.4": "erasing a target destroys its content, including bootloaders",
-        "flash.warn.5": "large reads / backups may be slow and can exhaust device memory"
+        "flash.warn.5": "large reads / backups may be slow and can exhaust device memory",
+        "gpt.title": "GPT UPDATE",
+        "gpt.hint": "You are going to update <strong>GPT (Partition Table)</strong> on the device.<br>Please, choose file from your local hard drive and click <strong>Upload</strong> button.",
+        "gpt.upgrade_hint": "If all information above is correct, click \"Update\".",
+        "gpt.err.too_big": "The GPT image must not exceed 17408 bytes (34 sectors).",
+        "gpt.warn.1": "do not power off the device during update",
+        "gpt.warn.2": "if everything goes well, you can reboot the device manually",
+        "gpt.warn.3": "you can upload whatever you want, so be sure that you choose proper GPT for your device",
+        "gpt.warn.4": "updating GPT is a dangerous operation and may damage your device!"
     },
     "zh-cn": {
         "app.name": "恢复模式 WEBUI",
@@ -443,6 +452,7 @@ const I18N = {
         "nav.bl2": "更新 BL2",
         "nav.chainloader": "更新 Chainloader",
         "nav.fip": "更新 FIP",
+        "nav.gpt": "更新 GPT",
         "nav.initramfs": "内存启动",
         "nav.system": "系统",
         "nav.env": "环境管理",
@@ -857,7 +867,15 @@ const I18N = {
         "flash.warn.2": "请务必再次确认目标与范围",
         "flash.warn.3": "备份、写入、还原或擦除过程中请勿断电",
         "flash.warn.4": "擦除目标会破坏其内容，包括引导程序",
-        "flash.warn.5": "大范围读取 / 备份可能很慢并耗尽设备内存"
+        "flash.warn.5": "大范围读取 / 备份可能很慢并耗尽设备内存",
+        "gpt.title": "GPT 分区表更新",
+        "gpt.hint": "你将要在设备上更新 <strong>GPT（分区表）</strong>。<br>请选择本地文件并点击 <strong>上传</strong> 按钮。",
+        "gpt.upgrade_hint": "如果以上信息确认无误，请点击“更新”。",
+        "gpt.err.too_big": "GPT 镜像不能超过 17408 字节（34 个扇区）。",
+        "gpt.warn.1": "刷写过程中请勿断电",
+        "gpt.warn.2": "如果一切顺利，可手动重启设备",
+        "gpt.warn.3": "你可以上传任意文件，请确保选择了与你的设备匹配的 GPT",
+        "gpt.warn.4": "更新 GPT 有风险，可能导致设备损坏！"
     },
     "ru": {
         "app.name": "Режим восстановления WEBUI",
@@ -868,6 +886,7 @@ const I18N = {
         "nav.bl2": "Обновление BL2",
         "nav.chainloader": "Обновление Chainloader",
         "nav.fip": "Обновление FIP",
+        "nav.gpt": "Обновление GPT",
         "nav.initramfs": "Запуск из памяти",
         "nav.system": "Система",
         "nav.env": "Переменные среды",
@@ -1282,6 +1301,14 @@ const I18N = {
         "flash.warn.2": "всегда проверяйте цель и диапазон",
         "flash.warn.3": "не выключайте устройство во время копирования, записи, восстановления или стирания",
         "flash.warn.4": "стирание цели уничтожит её содержимое, включая загрузчики",
-        "flash.warn.5": "большие чтения / копии могут быть медленными и исчерпать память устройства"
+        "flash.warn.5": "большие чтения / копии могут быть медленными и исчерпать память устройства",
+        "gpt.title": "ОБНОВЛЕНИЕ GPT",
+        "gpt.hint": "Вы собираетесь обновить <strong>GPT (таблица разделов)</strong> на устройстве.<br>Выберите файл на вашем компьютере и нажмите кнопку <strong>Загрузить</strong>.",
+        "gpt.upgrade_hint": "Если вся информация выше верна, нажмите «Обновить».",
+        "gpt.err.too_big": "Образ GPT не должен превышать 17408 байт (34 сектора).",
+        "gpt.warn.1": "не выключайте устройство во время обновления",
+        "gpt.warn.2": "если всё прошло успешно, вы можете перезагрузить устройство вручную",
+        "gpt.warn.3": "вы можете загрузить любой файл, поэтому убедитесь, что выбрали подходящую таблицу GPT для вашего устройства",
+        "gpt.warn.4": "обновление GPT — опасная операция и может вывести устройство из строя!"
     }
 };

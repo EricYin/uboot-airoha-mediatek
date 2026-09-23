@@ -10,6 +10,7 @@ typedef enum {
 	FW_TYPE_UBOOT,
 	FW_TYPE_FW,
 	FW_TYPE_INITRD,
+	FW_TYPE_GPT,
 } failsafe_fw_t;
 
 /*
@@ -31,6 +32,8 @@ static inline const char *failsafe_fw_type_name(failsafe_fw_t fw)
 		return "firmware";
 	case FW_TYPE_INITRD:
 		return "initramfs";
+	case FW_TYPE_GPT:
+		return "gpt";
 	default:
 		return "unknown";
 	}

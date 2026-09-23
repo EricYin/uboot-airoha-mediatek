@@ -7,10 +7,20 @@
  * This file is part of the project bl-mt798x-dhcpd
  * You may not use, copy, modify or distribute this file except in compliance with the license agreement.
  *
- * Generic MMC helpers for the failsafe flash module.
+ * MMC storage backend and its inline helpers.
  *
- * These helpers therefore only use the standard U-Boot MMC / block / partition API,
- * so the flash page can offer MMC targets on any board that enables CONFIG_MMC.
+ * Two layers live behind this header, both built on the standard U-Boot
+ * MMC / block / partition API only, so they work on any board that enables
+ * CONFIG_MMC:
+ *
+ *   - the inline helpers (device lookup, partition lookup, block aligned
+ *     read / write / erase) used by the backends and by the flash page;
+ *   - the interface of the MMC backend, failsafe/bootimg/mmc.c:
+ *     partitions by GPT / MBR name, raw regions of a hardware partition
+ *     (user area / boot0 / boot1) and the partition table itself.
+ *
+ * Whether a partition or region belongs to the preloader, the FIP or the
+ * system image is decided by the board code (board/*/common/failsafe.c).
  *
  * The vendor string beautifier (failsafe_mmc_vendor_pretty) is declared
  * in <failsafe/helpers.h> and implemented in failsafe/modules/helpers.c.
@@ -33,7 +43,7 @@
 #define FAILSAFE_MMC_DEV_NUM	0
 #endif
 
-#if CONFIG_IS_ENABLED(MMC)
+#if IS_ENABLED(CONFIG_MMC)
 
 #include <mmc.h>
 #include <part.h>
@@ -146,9 +156,12 @@ static inline int failsafe_mmc_read(struct mmc *mmc, u64 offset, void *buf,
  * @buf:    source buffer
  * @len:    number of bytes to write
  *
- * Blocks only partially covered by the request are read back first, so
- * the bytes outside the requested range are preserved (the same
- * read-modify-write behaviour as the MTD path).
+ * The request is written in up to three parts: the unaligned head and
+ * tail are merged into their block with a read-modify-write, so the bytes
+ * outside the requested range are preserved (the same read-modify-write
+ * behaviour as the MTD path), while the whole blocks in between go to the
+ * block layer in one call.  A multi-MiB firmware image would otherwise
+ * need one blk_dwrite() per block.
  *
  * Returns 0 on success, a negative errno otherwise.
  */
@@ -156,7 +169,9 @@ static inline int failsafe_mmc_write(struct mmc *mmc, u64 offset,
 				     const void *buf, size_t len)
 {
 	struct blk_desc *bd = failsafe_mmc_blk_desc(mmc);
-	u64 blksz, pos, start, end;
+	size_t head_len, bulk_len, tail_len;
+	u64 blksz, pos;
+	lbaint_t blk;
 	u8 *blkbuf;
 	int ret = 0;
 
@@ -164,34 +179,69 @@ static inline int failsafe_mmc_write(struct mmc *mmc, u64 offset,
 		return -EINVAL;
 
 	blksz = bd->blksz;
-	start = offset & ~(blksz - 1);
-	end = (offset + len + blksz - 1) & ~(blksz - 1);
+
+	head_len = offset & (blksz - 1) ?
+		   (size_t)(blksz - (offset & (blksz - 1))) : 0;
+	if (head_len > len)
+		head_len = len;
+
+	bulk_len = (len - head_len) / blksz * blksz;
+	tail_len = len - head_len - bulk_len;
 
 	blkbuf = malloc(blksz);
 	if (!blkbuf)
 		return -ENOMEM;
 
-	for (pos = start; pos < end; pos += blksz) {
-		u64 data_start = max(offset, pos);
-		u64 data_end = min(offset + len, pos + blksz);
-		size_t copy_len = (size_t)(data_end - data_start);
-
-		if (copy_len != blksz) {
-			if (blk_dread(bd, pos / blksz, 1, blkbuf) != 1) {
-				ret = -EIO;
-				break;
-			}
+	/* Unaligned head: preserve the bytes in front of the request. */
+	if (head_len) {
+		blk = offset / blksz;
+		if (blk_dread(bd, blk, 1, blkbuf) != 1) {
+			ret = -EIO;
+			goto out;
 		}
 
-		memcpy(blkbuf + (data_start - pos),
-		       (const u8 *)buf + (data_start - offset), copy_len);
+		memcpy(blkbuf + (offset - (u64)blk * blksz), buf, head_len);
 
-		if (blk_dwrite(bd, pos / blksz, 1, blkbuf) != 1) {
+		if (blk_dwrite(bd, blk, 1, blkbuf) != 1) {
 			ret = -EIO;
-			break;
+			goto out;
 		}
 	}
 
+	/* Whole blocks: a single call for the bulk of the image. */
+	if (bulk_len) {
+		blk = (offset + head_len) / blksz;
+		if (blk_dwrite(bd, blk, bulk_len / blksz,
+			       (const u8 *)buf + head_len) != bulk_len / blksz) {
+			ret = -EIO;
+			goto out;
+		}
+	}
+
+	/* Unaligned tail: preserve the bytes behind the request.  The
+	 * offset is block aligned here (head_len rounds it up, bulk_len is
+	 * a multiple of the block size), so the tail sits at the start of
+	 * its block.
+	 */
+	if (tail_len) {
+		pos = offset + head_len + bulk_len;
+		blk = pos / blksz;
+
+		if (blk_dread(bd, blk, 1, blkbuf) != 1) {
+			ret = -EIO;
+			goto out;
+		}
+
+		memcpy(blkbuf, (const u8 *)buf + head_len + bulk_len,
+		       tail_len);
+
+		if (blk_dwrite(bd, blk, 1, blkbuf) != 1) {
+			ret = -EIO;
+			goto out;
+		}
+	}
+
+out:
 	free(blkbuf);
 	return ret;
 }
@@ -227,5 +277,129 @@ static inline int failsafe_mmc_erase(struct mmc *mmc, u64 offset, size_t len)
 	return blk_derase(bd, start / blksz, blocks) == blocks ? 0 : -EIO;
 }
 
-#endif /* CONFIG_IS_ENABLED(MMC) */
+/* ------------------------------------------------------------------ */
+/*  MMC partitions and the partition table (failsafe/bootimg/mmc.c)    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * failsafe_mmc_part_size() - size of an MMC partition
+ * @name: partition name (GPT / MBR label)
+ * @size: receives the partition size in bytes (may be NULL)
+ *
+ * Returns 0 on success, -ENODEV when the partition does not exist.
+ */
+int failsafe_mmc_part_size(const char *name, u64 *size);
+
+/**
+ * failsafe_mmc_write_part() - write an image to the start of a partition
+ * @name: partition name
+ * @data: image contents
+ * @size: image size in bytes
+ *
+ * The image must fit inside the partition; the bytes behind it keep
+ * their content.  Returns 0 on success, a negative errno otherwise.
+ */
+int failsafe_mmc_write_part(const char *name, const void *data, size_t size);
+
+/**
+ * failsafe_mmc_read_part() - read inside a partition
+ * @name: partition name
+ * @offset: byte offset inside the partition
+ * @buf: destination buffer
+ * @max_len: capacity of @buf
+ * @read_len: receives the number of bytes read (may be NULL)
+ *
+ * At most @max_len bytes are read, clamped to the partition size.
+ * Returns 0 on success, a negative errno otherwise.
+ */
+int failsafe_mmc_read_part(const char *name, u64 offset, void *buf,
+			   size_t max_len, size_t *read_len);
+
+/**
+ * failsafe_mmc_erase_part() - erase a range inside a partition
+ * @name: partition name
+ * @offset: byte offset inside the partition
+ * @size: number of bytes to erase (0 = to the end of the partition)
+ *
+ * Returns 0 on success, a negative errno otherwise.
+ */
+int failsafe_mmc_erase_part(const char *name, u64 offset, u64 size);
+
+/**
+ * failsafe_mmc_write_gpt() - install a GPT (partition table) on the MMC
+ * @data: primary partition table image (MBR + GPT header + entries)
+ * @size: image size in bytes (at most FAILSAFE_STORAGE_GPT_MAX_SIZE)
+ *
+ * The GPT header is adjusted to the real device size (alternate_lba,
+ * last_usable_lba and the header CRC are recomputed), the primary table
+ * is written to LBA 0 and the secondary table is generated at the end of
+ * the device.  Returns 0 on success, a negative errno otherwise.
+ */
+int failsafe_mmc_write_gpt(const void *data, size_t size);
+
+#if IS_ENABLED(CONFIG_MMC)
+/*
+ * Hardware partitions of an MMC device: the user data area (SD cards only
+ * have this one) and the two boot partitions of an eMMC.  Which one holds
+ * what - e.g. the preloader, a FIP - is decided by the platform, not here:
+ * the MediaTek tree puts the preloader into boot0, the Airoha one keeps it
+ * at a fixed offset in the user area.
+ */
+#define FAILSAFE_MMC_HWPART_USER	0
+#define FAILSAFE_MMC_HWPART_BOOT0	1
+#define FAILSAFE_MMC_HWPART_BOOT1	2
+
+/**
+ * failsafe_mmc_is_sd() - SD card or eMMC?
+ *
+ * Returns 1 for an SD card (no hardware partitions, no boot options),
+ * 0 for an eMMC and -ENODEV when there is no MMC device.
+ */
+int failsafe_mmc_is_sd(void);
+
+/**
+ * failsafe_mmc_region_capacity() - capacity check of a raw region
+ * @hwpart: hardware partition (FAILSAFE_MMC_HWPART_*)
+ * @off:    byte offset inside the hardware partition
+ * @size:   number of bytes that have to fit
+ *
+ * The region must be inside the device; an area reserved for a specific
+ * purpose (the 1 MiB preloader area of boot0, ...) is the platform's own
+ * policy and is checked there.
+ *
+ * Returns 0 when it fits, -ENODEV / -ENOTSUPP / -EFBIG otherwise.
+ */
+int failsafe_mmc_region_capacity(int hwpart, u64 off, size_t size);
+
+/**
+ * failsafe_mmc_write_region() - write a raw region of a hardware partition
+ * @hwpart: hardware partition (FAILSAFE_MMC_HWPART_*)
+ * @off:    byte offset inside the hardware partition
+ * @data:   image contents
+ * @size:   image size in bytes
+ *
+ * Nothing is erased first (an eMMC overwrites in place) and no partition
+ * table is needed, so this is what platform code uses for the preloader
+ * area and for a FIP that lives outside a GPT partition.
+ *
+ * Returns 0 on success, -ENOTSUPP when the hardware partition does not
+ * exist on this device (an SD card has none), a negative errno otherwise.
+ */
+int failsafe_mmc_write_region(int hwpart, u64 off, const void *data,
+			      size_t size);
+
+/**
+ * failsafe_mmc_read_region() - read a raw region of a hardware partition
+ * @hwpart: hardware partition (FAILSAFE_MMC_HWPART_*)
+ * @off:    byte offset inside the hardware partition
+ * @buf:    destination buffer
+ * @max_len: capacity of @buf
+ * @read_len: receives the number of bytes read (may be NULL)
+ */
+int failsafe_mmc_read_region(int hwpart, u64 off, void *buf, size_t max_len,
+			     size_t *read_len);
+
+#endif /* CONFIG_MMC */
+
+#endif /* IS_ENABLED(CONFIG_MMC) */
 #endif /* _FAILSAFE_MMC_H_ */
