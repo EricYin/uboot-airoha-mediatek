@@ -48,6 +48,7 @@
 #include <failsafe/fip.h>
 #include <failsafe/image.h>
 #include <failsafe/cprint.h>
+#include <failsafe/error.h>
 
 #include "failsafe_validate.h"
 
@@ -144,10 +145,9 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 	u32 magic;
 
 	if (size < AIROHA_FAILSAFE_BL2_MIN_SIZE) {
-		cprintln(ERROR, "Failsafe: 'bl2' image too small "
-			 "(%zu < 0x%zx)", size,
-			 (size_t)AIROHA_FAILSAFE_BL2_MIN_SIZE);
-		return -EINVAL;
+		return failsafe_error(-EINVAL, "'bl2' image too small "
+			"(%zu < 0x%zx)", size,
+			(size_t)AIROHA_FAILSAFE_BL2_MIN_SIZE);
 	}
 
 	/* preloader.bin: FIP container wrapping the raw preloader
@@ -167,10 +167,10 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 		   FAILSAFE_FIP_TOC_ENTRY_SIZE &&
 	    !memcmp((const u8 *)data + FAILSAFE_FIP_HEADER_SIZE,
 		    failsafe_fip_uuid_tb_fw, 16)) {
-		cprintln(ERROR, "Failsafe: 'bl2' image looks like a FIP with "
-			 "a bad header (BL2 ToC entry present, magic 0x%08x)",
-			 magic);
-		return -EINVAL;
+		return failsafe_error(-EINVAL,
+			"'bl2' image looks like a FIP with "
+			"a bad header (BL2 ToC entry present, magic 0x%08x)",
+			magic);
 	}
 
 	{
@@ -187,9 +187,8 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 				if (s1[i] != 0x00 && s1[i] != 0xFF)
 					nz++;
 			if (nz < AIROHA_FAILSAFE_BL2_OPT_HDR_OFF / 8) {
-				cprintln(ERROR, "Failsafe: 'bl2' stage-1 "
-					 "(BL21) region blank");
-				return -EINVAL;
+				return failsafe_error(-EINVAL, "'bl2' stage-1 "
+					"(BL21) region blank");
 			}
 
 			/* Airoha stores the raw CRC accumulator without the
@@ -197,10 +196,9 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 			 * it back out for comparison. */
 			calc = crc32(0, data, size - 4) ^ 0xFFFFFFFF;
 			if (calc != stored) {
-				cprintln(ERROR, "Failsafe: 'bl2' CRC32 "
-					 "mismatch (stored 0x%08x, calc "
-					 "0x%08x)", stored, calc);
-				return -EINVAL;
+				return failsafe_error(-EINVAL, "'bl2' CRC32 "
+					"mismatch (stored 0x%08x, calc "
+					"0x%08x)", stored, calc);
 			}
 		}
 		/* Struct layout (EN7523 family): no opt header / trailing
@@ -303,11 +301,9 @@ int failsafe_validate_image_content(const void *data, size_t size,
 		break;
 	}
 
-	if (ret) {
-		cprintln(ERROR, "Failsafe: '%s' image validation FAILED (%d)",
-			 name, ret);
-		return ret;
-	}
+	if (ret)
+		return failsafe_error(ret, "'%s' image validation FAILED",
+			name);
 
 	if (!checked)
 		cprintln(CAUTION, "Failsafe: '%s' image validation skipped "

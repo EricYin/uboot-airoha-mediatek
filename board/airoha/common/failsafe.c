@@ -61,6 +61,7 @@
 #include <failsafe/image.h>
 #include <failsafe/storage.h>
 #include <failsafe/cprint.h>
+#include <failsafe/error.h>
 
 #if IS_ENABLED(CONFIG_MMC)
 #include <failsafe/mmc.h>
@@ -196,9 +197,9 @@ static int airoha_bl2_capacity(size_t size)
 						    size);
 #endif
 
-	cprintln(ERROR, "Failsafe: no MTD partition '%s' and no MMC device "
-		 "to hold the preloader", FAILSAFE_STORAGE_BL2_TARGET);
-	return -ENODEV;
+	return failsafe_error(-ENODEV,
+		"no MTD partition '%s' and no MMC device "
+		"to hold the preloader", FAILSAFE_STORAGE_BL2_TARGET);
 }
 
 /*
@@ -232,9 +233,9 @@ static int airoha_write_bl2(const void *data, size_t size)
 						 data, size);
 #endif
 
-	cprintln(ERROR, "Failsafe: no MTD partition '%s' and no MMC device "
-		 "to hold the preloader", FAILSAFE_STORAGE_BL2_TARGET);
-	return -ENODEV;
+	return failsafe_error(-ENODEV,
+		"no MTD partition '%s' and no MMC device "
+		"to hold the preloader", FAILSAFE_STORAGE_BL2_TARGET);
 }
 
 #ifndef CONFIG_AIROHA_BUILD_LEGACY
@@ -275,8 +276,7 @@ int failsafe_validate_image(const void *data, size_t size, failsafe_fw_t fw)
 	int ret;
 
 	if (!size) {
-		cprintln(ERROR, "Failsafe: empty image");
-		return -EINVAL;
+		return failsafe_error(-EINVAL, "empty image");
 	}
 
 	/* RAM boot (initramfs FIT or raw "go" image): no flash partition,
@@ -327,9 +327,8 @@ int failsafe_write_image(const void *data, size_t size, failsafe_fw_t fw)
 
 	/* RAM boot (initramfs FIT or raw "go" image): nothing to flash */
 	if (!target) {
-		cprintln(ERROR, "Failsafe: no flash target for firmware type %d",
-			 fw);
-		return -EINVAL;
+		return failsafe_error(-EINVAL,
+			"no flash target for firmware type %d", fw);
 	}
 
 	/*
