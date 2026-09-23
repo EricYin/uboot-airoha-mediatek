@@ -198,6 +198,26 @@ config WEBUI_FAILSAFE_I18N_RU
 	help
 	  Embed the ru dictionary (about 5 KiB of compressed data).
 
+config WEBUI_FAILSAFE_I18N_TRIM
+	bool "Drop the strings of pages that are not built"
+	default y
+	help
+	  Remove the dictionary entries belonging to the pages this firmware
+	  does not contain - a page counts as built when its own option
+	  (CONFIG_WEBUI_FAILSAFE_UBI, ..._FLASH, CONFIG_WEBUI_FAILSAFE_GPT,
+	  the layout options, ...) is enabled.
+
+	  The bootstrap UI ships one dictionary for every page it can show,
+	  and roughly a third of it belongs to the pages a given build leaves
+	  out, so this is where most of the i18n asset can be saved.
+
+	  A key is kept whenever an embedded asset still mentions it, which
+	  covers the shared code (main.js talks about the GPT upload even
+	  without the GPT page) and keys that are assembled at run time (the
+	  document title, built from the page id).  The build log reports the
+	  namespaces that were dropped; turn this off if a translation ever
+	  goes missing.
+
 endif # WEBUI_FAILSAFE_I18N
 
 choice

@@ -56,6 +56,10 @@ WEBUI_FAILSAFE_I18N_LANGS := $(strip \
 	$(if $(CONFIG_WEBUI_FAILSAFE_I18N_ZH_CN),zh zh-cn) \
 	$(if $(CONFIG_WEBUI_FAILSAFE_I18N_RU),ru))
 
+# Unlike the bootstrap UI, this one has no per-page assets to prune against:
+# its dictionary is small and already written for the pages it has (dropping
+# what its assets do not mention would save about 1 KiB), so only the
+# language filter runs here.
 quiet_cmd_i18n_filter = I18N    $@
 cmd_i18n_filter = mkdir -p $(dir $@) && node $(WEBUI_FAILSAFE_I18N_FILTER_SCRIPT) --langs="$(WEBUI_FAILSAFE_I18N_LANGS)" $< $@
 

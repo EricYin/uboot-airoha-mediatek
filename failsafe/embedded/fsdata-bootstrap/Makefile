@@ -147,8 +147,41 @@ WEBUI_FAILSAFE_I18N_LANGS := $(strip \
 	$(if $(CONFIG_WEBUI_FAILSAFE_I18N_ZH_CN),zh zh-cn) \
 	$(if $(CONFIG_WEBUI_FAILSAFE_I18N_RU),ru))
 
+# Namespaces of the pages that are not built.  The list mirrors the
+# obj-$(CONFIG_...) gating of the assets above: a page that is left out
+# contributes no strings, which is where most of the dictionary comes from.
+# Keys an embedded asset still references are kept anyway (see the filter
+# script), so this only has to name the namespaces, not individual keys.
+WEBUI_FAILSAFE_I18N_DROP_NS := $(strip \
+	$(if $(CONFIG_WEBUI_FAILSAFE_CONSOLE),,console) \
+	$(if $(CONFIG_WEBUI_FAILSAFE_ENV),,env settings) \
+	$(if $(CONFIG_WEBUI_FAILSAFE_UBI),,ubi) \
+	$(if $(CONFIG_WEBUI_FAILSAFE_SIMG),,simg) \
+	$(if $(CONFIG_WEBUI_FAILSAFE_FLASH),,flash) \
+	$(if $(CONFIG_WEBUI_FAILSAFE_GPT),,gpt) \
+	$(if $(CONFIG_WEBUI_FAILSAFE_LAYOUT_UBOOT),,uboot) \
+	$(if $(CONFIG_WEBUI_FAILSAFE_LAYOUT_CHAINLOADER),,chainloader))
+
+# The assets that end up in this build - their source files, taken from the
+# FSPATH of every object listed above.  What they mention is what keeps a
+# translation alive.
+#
+# The dictionary itself is left out: every key is a literal in it, so
+# scanning i18n.js would make the whole dictionary look referenced and the
+# filter would never drop anything.
+WEBUI_FAILSAFE_I18N_ASSETS := $(foreach o,$(filter-out i18n.o,$(obj-y)),\
+	$(if $(FSPATH_$(o)),$(src)/$(FSPATH_$(o))))
+
+ifeq ($(CONFIG_WEBUI_FAILSAFE_I18N_TRIM),y)
+WEBUI_FAILSAFE_I18N_TRIM_ARGS := \
+	--drop-ns="$(WEBUI_FAILSAFE_I18N_DROP_NS)" \
+	--assets="$(WEBUI_FAILSAFE_I18N_ASSETS)"
+else
+WEBUI_FAILSAFE_I18N_TRIM_ARGS :=
+endif
+
 quiet_cmd_i18n_filter = I18N    $@
-cmd_i18n_filter = mkdir -p $(dir $@) && node $(WEBUI_FAILSAFE_I18N_FILTER_SCRIPT) --langs="$(WEBUI_FAILSAFE_I18N_LANGS)" $< $@
+cmd_i18n_filter = mkdir -p $(dir $@) && node $(WEBUI_FAILSAFE_I18N_FILTER_SCRIPT) --langs="$(WEBUI_FAILSAFE_I18N_LANGS)" $(WEBUI_FAILSAFE_I18N_TRIM_ARGS) $< $@
 
 quiet_cmd_minify_css = CLEANCSS $@
 cmd_minify_css = mkdir -p $(dir $@) && node $(WEBUI_FAILSAFE_CSS_MINIFY_SCRIPT) $< $@
@@ -183,7 +216,9 @@ $(obj)/.min/i18n.js: $(obj)/.i18n/i18n.js $(WEBUI_FAILSAFE_JS_MINIFY_SCRIPT) FOR
 	$(call cmd,force_checksrc)
 	$(call if_changed,minify_js)
 
-$(obj)/.i18n/%.js: $(src)/%.js $(WEBUI_FAILSAFE_I18N_FILTER_SCRIPT) FORCE
+# The assets are prerequisites as well ($< stays the dictionary): adding or
+# removing a key reference in a page changes what the filter has to keep.
+$(obj)/.i18n/%.js: $(src)/%.js $(WEBUI_FAILSAFE_I18N_FILTER_SCRIPT) $(WEBUI_FAILSAFE_I18N_ASSETS) FORCE
 	$(call if_changed,i18n_filter)
 
 # Step 1: Minify source files
