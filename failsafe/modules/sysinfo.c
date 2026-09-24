@@ -38,6 +38,18 @@
 #define FAILSAFE_SOC_NAME_ENABLED	1
 #endif
 
+/*
+ * The ATF (BL2 / BL31) version banners come from Trusted Firmware-A, which
+ * only exists on ARM.  Other architectures have no such boot stage, so the
+ * Web UI must not offer the read-out there: /sysinfo reports the capability
+ * and renderSysInfo() in main.js leaves the version row out unless it is
+ * there.  The manual /atfversion endpoint itself stays on every
+ * architecture.
+ */
+#if defined(CONFIG_ARM) || defined(CONFIG_ARM64)
+#define FAILSAFE_ATF_INFO_ENABLED	1
+#endif
+
 #ifdef CONFIG_ARCH_AIROHA
 #include <linux/err.h>
 #include <soc/airoha/pkgids.h>
@@ -174,6 +186,12 @@ static int sysinfo_json_append_board(char *buf, int len, int left)
 	len = buf_appendf(buf, left, len,
 		"\"build_variant\":\"%s\"",
 		esc_build_variant);
+
+#ifdef FAILSAFE_ATF_INFO_ENABLED
+	len = buf_appendf(buf, left, len, ",\"atf\":true");
+#else
+	len = buf_appendf(buf, left, len, ",\"atf\":false");
+#endif
 
 	return len;
 }

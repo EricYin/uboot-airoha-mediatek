@@ -1335,6 +1335,9 @@ function ensureSidebarAccentFallback() {
 /*
  * ATF (BL2 / BL31) version row of the "More info" block.
  *
+ * ARM only: ATF is Trusted Firmware-A, so /sysinfo reports the capability
+ * and non-ARM devices never call this - the row is simply not there.
+ *
  * Reading the banners back from flash costs a storage read (and, for
  * BL31, a decompression) on the device, so nothing is fetched until the
  * user presses the button.  The answer is kept in APP_STATE so that
@@ -1451,8 +1454,9 @@ function renderSysInfo() {
         extra.appendChild(compatLine);
     }
 
-    /* On-demand ATF (BL2 / BL31) row - never fetched automatically. */
-    renderSysInfoAtf(extra);
+    /* On-demand ATF (BL2 / BL31) row - never fetched automatically, and
+     * only offered on ARM, where the device reports the capability. */
+    if (sysinfoData.atf) renderSysInfoAtf(extra);
 
     if (extra.childNodes.length) {
         details.appendChild(extra);
