@@ -113,7 +113,13 @@ static const char *sysinfo_soc_name(char *out, size_t out_sz)
 		return "";
 	out[0] = '\0';
 
-#if defined(CONFIG_TARGET_MT7981)
+#if defined(CONFIG_TARGET_MT7622)
+	name = "mt7622";
+#elif defined(CONFIG_TARGET_MT7623)
+	name = "mt7623";
+#elif defined(CONFIG_TARGET_MT7629)
+	name = "mt7629";
+#elif defined(CONFIG_TARGET_MT7981)
 	name = "mt7981";
 #elif defined(CONFIG_TARGET_MT7986)
 	name = "mt7986";
