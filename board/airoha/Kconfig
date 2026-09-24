@@ -2,6 +2,240 @@ if ARCH_AIROHA
 
 menu "Airoha specific configurations"
 
+menuconfig BUILD_AIROHA
+	bool "Build Airoha bootloader images"
+	default y
+	help
+	  Enable this to build Airoha bootloader images (modern FIP, legacy
+	  512 KiB, chainloader) for Airoha SoCs.  This is enabled by default
+	  for Airoha boards.
+
+if BUILD_AIROHA
+
+choice
+    prompt "Boot image format"
+	default AIROHA_BUILD_LEGACY
+	help
+	  Select how the bootloader binaries are packaged.  Both options are
+	  FIP based and differ only in the FIP layout:
+
+	    - modern: the split FIP layout (BL2 and BL31+U-Boot as separate
+	      images), used by the current SDK and OpenWrt releases,
+	    - legacy: the self-contained 512 KiB image, used on the older
+	      platforms.
+
+	config AIROHA_BUILD_MODERN
+		bool "Build modern split FIP images (BL2 / BL31+U-Boot)"
+		help
+		Build the split FIP layout for platforms whose BootROM loads a
+		FIP on its own: bl31-uboot.fip (BL31 + U-Boot).
+
+	config AIROHA_BUILD_LEGACY
+		bool "Build legacy 512 KiB boot image"
+		help
+		Build the self-contained 512 KiB boot image: a 2 KiB prefix
+		(BL1 or zeros) followed at 0x800 by one internal FIP holding
+		BL2 + LZMA-compressed BL31 + LZMA-compressed U-Boot.
+
+	config AIROHA_BUILD_CHAINLOADER
+		bool "Build Chainloader FIT and slot images"
+		help
+		Build the chainloader images for AN7581-family boards.  The
+		chainloader lets a board boot a secondary U-Boot from the
+		chainloader flash partition.
+
+		Two build methods are available (select the method below):
+
+		- OpenWrt-style chainload FIT (default): a plain FIT whose kernel
+			is the LZMA-compressed u-boot.bin.lzma (fallback: uncompressed
+			u-boot.bin) together with u-boot.dtb, generated with
+			tools/mkits.sh + mkimage, exactly like the OpenWrt
+			Build/an7581-chainloader step.  Output:
+			<board>-chainload-uboot.itb
+
+		- Shim-based chainloader: the legacy Airoha method.  The prebuilt
+			shim, the per-board control DTS and the FIT template live in
+			tools/build_airoha/chainloader/<soc>_<board>/, packed by
+			tools/airoha_pack_chainloader_shim.sh.  Outputs:
+			<board>-chainloader-prefix-shim.uImage,
+			<board>-chainloader-control.dtb,
+			<board>-chainloader.itb, <board>-chainloader-slot.bin
+
+endchoice
+
+choice
+	prompt "Prebuilt BL blob source"
+	default AIROHA_BLOBS_OPENSOURCE if AIROHA_BUILD_MODERN
+	default AIROHA_BLOBS_LEGACY
+	help
+	  Select the directory under tools/build_airoha/ the prebuilt
+	  bootloader binaries (BL1/BL2/BL31, certificates) are taken from.
+
+	  Only the subdirectory differs; the per-board variant name
+	  (default <soc>_default) is still selected by
+	  CONFIG_AIROHA_FIP_BLOBS_DIR.
+
+	config AIROHA_BLOBS_LEGACY
+		bool "SDK blobs (tools/build_airoha/legacy)"
+		help
+		  Use the vendor SDK blobs from legacy/<variant>.  These
+		  directories additionally carry bl1.bin, key_area.bin and
+		  certificates.bin, so they are the only ones that can build a
+		  legacy image with BL1 or a bootext.ram with certificates.
+		  This is the default for the legacy build.
+
+	config AIROHA_BLOBS_OPENSOURCE
+		bool "Open-source blobs (tools/build_airoha/opensource)"
+		help
+		  Use the open-source blobs from opensource/<variant>.
+
+endchoice
+
+config AIROHA_PRELOADER
+	bool "Build preloader.bin (standalone BL2 FIP image)"
+	depends on AIROHA_BUILD_MODERN || AIROHA_BUILD_LEGACY
+	default y
+	help
+	  Build preloader.bin, a standalone FIP that contains only BL2.
+	  Both boot image layouts produce the very same artifact, so it is
+	  managed by this single switch:
+
+	    - legacy (with or without BL1): created with --align 1024, so
+	      BL2 starts at 0xC00 - exactly where it sits inside the 512 KiB
+	      container (2 KiB prefix + FIP @0x800),
+	    - modern split layout (AN7581/AN7583): plain container;
+	      preloader.bin is the BL2 half of the boot chain and lives in
+	      the 'bl2' MTD partition.
+
+	  In the legacy layout the 512 KiB image already embeds BL2 in its
+	  internal FIP, so this image is not needed to boot: it is a BL2-only
+	  FIP in the same packaging as bootext.ram and can be used the same
+	  way (it can't be installed in the bl2 MTD partition, just like
+	  bootext.ram - only the packaging method differs).
+
+if AIROHA_BUILD_LEGACY
+
+config AIROHA_LEGACY_BL1
+	bool "Include BL1 in the legacy boot image"
+	default y if TARGET_EN7523
+	help
+	  Prepend the prebuilt BL1 image to the internal FIP:
+
+	      0x00000  BL1 (2 KiB region, always reserved)
+	      0x00800  internal FIP (BL2 + BL31.lzma + U-Boot.lzma)
+	      0x80000  end of the 512 KiB container
+
+	  With BL1 the output is bl1-bl2-bl31-uboot.bin.
+
+config AIROHA_BOOTEXT_RAM
+	bool "Build bootext.ram recovery FIP image"
+	default n
+	help
+	  Build the bootext.ram FIP recovery image used by BL2 for XMODEM
+	  firmware update ("Press x to update firmware").  The image is a
+	  minimal FIP containing only BL2 and optionally the trusted-boot
+	  firmware certificate, packed by tools/airoha_pack_bootext.py.
+
+if AIROHA_BOOTEXT_RAM
+
+config AIROHA_BOOTEXT_EMBED_CERTS
+	bool "Embed TF-A certificates into bootext.ram"
+	default n
+	help
+	  Whether to pack TF-A trusted-boot certificates (extracted from
+	  certificates.bin) into the bootext.ram recovery FIP image.
+
+	  When enabled, one or more certificates are appended to BL2 so
+	  BootROM can verify the chain of trust during XMODEM recovery.
+	  When disabled, bootext.ram contains only BL2 — useful for
+	  boards that do not enforce secure boot.
+
+config AIROHA_BOOTEXT_CERT_COUNT
+	int "Number of certificates packed into bootext.ram"
+	depends on AIROHA_BOOTEXT_EMBED_CERTS
+	default 1 if TARGET_EN7523
+	default 6
+	help
+	  Number of TF-A certificates to include in the bootext.ram
+	  recovery FIP image.  SoCs with a full TF-A certificate chain
+	  (AN7563, AN7581, AN7583) use 6 certs; all others use a single
+	  Trusted Boot FW Certificate.
+
+	  When set to 1, only the first certificate (cert_01.der) is
+	  packed.  When greater than 1, all extracted certificates are
+	  included.  The --expected parameter passed to the extraction
+	  tool equals this value.
+
+endif # AIROHA_BOOTEXT_RAM
+
+endif # AIROHA_BUILD_LEGACY
+
+config AIROHA_FIP_BLOBS_DIR
+	string "Override prebuilt binaries directory"
+	depends on AIROHA_BUILD_MODERN || AIROHA_BUILD_LEGACY
+	help
+	  Override the per-SoC subdirectory under tools/build_airoha/ where
+	  prebuilt BL1/BL2/BL31 binaries are located.  By default the
+	  Makefile uses <soc>_default.
+
+	  Set this to a custom directory name when a specific board requires
+	  its own dedicated binary images that differ from the generic SoC
+	  binaries.
+
+if AIROHA_BUILD_CHAINLOADER
+
+choice
+	prompt "Chainloader image method"
+	default AIROHA_CHAINLOADER_METHOD_OPENWRT
+
+config AIROHA_CHAINLOADER_METHOD_OPENWRT
+	bool "OpenWrt-style chainload FIT (u-boot.bin.lzma + u-boot.dtb)"
+	help
+	  Build the chainloader the same way the OpenWrt build system does:
+	  a FIT whose kernel is the LZMA-compressed u-boot.bin.lzma (or the
+	  uncompressed u-boot.bin) plus the board u-boot.dtb, created with
+	  tools/airoha_pack_chainloader_openwrt.sh (mkits.sh + mkimage).
+	  Load/entry 0x80200000, FDT at
+	  0x82000000.  This is the default method.
+
+config AIROHA_CHAINLOADER_METHOD_SHIM
+	bool "Shim-based chainloader (shim.bin + control.dts + payload)"
+	help
+	  Legacy Airoha-style chainloader: prefix shim + control DTB +
+	  embedded U-Boot payload, packed by tools/airoha_pack_chainloader_shim.sh.
+	  Requires the per-board sources (shim.bin, control.dts and
+	  chainloader.its) in the chainloader sources directory.
+
+endchoice
+
+config AIROHA_CHAINLOADER_DIR
+	string "Chainloader board directory"
+	depends on AIROHA_CHAINLOADER_METHOD_SHIM
+	help
+	  Per-board subdirectory under tools/build_airoha/chainloader/
+	  for the board being built.  Only used by the shim-based
+	  chainloader method.
+
+	  This directory must contain shim.bin, control.dts and
+	  chainloader.its.  The OpenWrt-style method needs no shim
+	  sources; it only requires CONFIG_AIROHA_CHAINLOADER_BOARD.
+
+config AIROHA_CHAINLOADER_BOARD
+	string "Chainloader board name (OpenWrt method)"
+	depends on AIROHA_CHAINLOADER_METHOD_OPENWRT
+	help
+	  Board name used by the OpenWrt-style chainload FIT method for
+	  the output filename (<board>-chainload-uboot.itb).  This
+	  method packs u-boot.bin.lzma (fallback u-boot.bin) plus
+	  u-boot.dtb into a plain FIT via mkits.sh + mkimage and does
+	  not use any shim sources, so only the board name is needed.
+
+endif # AIROHA_BUILD_CHAINLOADER
+
+endif # BUILD_AIROHA
+
+endmenu # Airoha Failsafe Web recovery
+
 config AIROHA_DEFAULT_FIT_BOOT_CONF
 	string "Default boot configuration of FIT image"
 	default ""

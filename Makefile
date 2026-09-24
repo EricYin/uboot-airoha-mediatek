@@ -2053,6 +2053,83 @@ quiet_cmd_endian_swap = SWAP    $@
 u-boot-swap.bin: u-boot.bin FORCE
 	$(call if_changed,endian_swap)
 
+# Airoha-specific build targets
+ifeq ($(CONFIG_ARCH_AIROHA),y)
+
+# Airoha boot image build (modern split FIP / legacy 512 KiB image)
+ifeq ($(CONFIG_AIROHA_BUILD_MODERN),y)
+# Modern split FIP build (AN7581 / AN7583)
+PHONY += airoha_fip bl31-uboot.fip
+airoha_fip: u-boot.bin
+	@echo "  [AIROHA] Building modern FIP images (tools/build_airoha)..."
+	$(MAKE) -C $(srctree)/tools/build_airoha
+
+# Artifact names match OpenWrt (preloader.bin, bl31-uboot.fip); the old
+# 'bl2.fip'/'u-boot.fip' spellings are kept as aliases for compatibility.
+bl31-uboot.fip: airoha_fip
+bl2.fip: airoha_fip
+u-boot.fip: airoha_fip
+
+all: bl31-uboot.fip
+
+else ifeq ($(CONFIG_AIROHA_BUILD_LEGACY),y)
+# Legacy 512 KiB build.  With BL1 the artifact is bl1-bl2-bl31-uboot.bin;
+# without it the same FIP is written behind a 2 KiB zero prefix and the
+# artifact is bl2-bl31-uboot.bin (e.g. AN7563).
+PHONY += airoha_fip
+airoha_fip: u-boot.bin
+	@echo "  [AIROHA] Building legacy boot image (tools/build_airoha)..."
+	$(MAKE) -C $(srctree)/tools/build_airoha
+
+ifeq ($(CONFIG_AIROHA_LEGACY_BL1),y)
+PHONY += bl1-bl2-bl31-uboot.bin
+bl1-bl2-bl31-uboot.bin: airoha_fip
+all: bl1-bl2-bl31-uboot.bin
+else
+PHONY += bl2-bl31-uboot.bin
+bl2-bl31-uboot.bin: airoha_fip
+all: bl2-bl31-uboot.bin
+endif
+
+else  # !CONFIG_AIROHA_BUILD_MODERN && !CONFIG_AIROHA_BUILD_LEGACY
+
+# Non-FIP Airoha build: produce LZMA-compressed u-boot.bin.lzma
+# Prefer the LZMA SDK encoder (lzma -c) over xz so the output carries the
+# real uncompressed size in the header (same rule as tools/build_airoha's
+# LZMA_E), keeping it decompressible by the Airoha BL2.
+quiet_cmd_airoha_lzma = LZMA    $@
+      cmd_airoha_lzma = (lzma -c $< || xz --format=lzma --stdout $<) > $@
+
+u-boot.bin.lzma: u-boot.bin
+	$(call if_changed,airoha_lzma)
+
+all: u-boot.bin.lzma
+
+endif  # CONFIG_AIROHA_BUILD_MODERN
+
+# Standalone BL2 FIP (preloader.bin): the modern and the legacy layouts
+# produce the same artifact, so it is handled by a single switch
+# (CONFIG_AIROHA_PRELOADER) instead of one option per layout.  airoha_fip is
+# defined by both branches above, and CONFIG_AIROHA_PRELOADER depends on
+# AIROHA_BUILD_MODERN || AIROHA_BUILD_LEGACY, so one of them is always in effect.
+ifeq ($(CONFIG_AIROHA_PRELOADER),y)
+PHONY += preloader.bin
+preloader.bin: airoha_fip
+all: preloader.bin
+endif
+
+# Airoha chainloader image build (independent of the boot image layout)
+ifeq ($(CONFIG_AIROHA_BUILD_CHAINLOADER),y)
+PHONY += airoha_chainloader
+airoha_chainloader: u-boot.bin
+	@echo "  [AIROHA] Building chainloader images (tools/build_airoha)..."
+	$(MAKE) -C $(srctree)/tools/build_airoha
+
+all: airoha_chainloader
+endif
+
+endif  # CONFIG_ARCH_AIROHA
+
 ARCH_POSTLINK := $(wildcard $(srctree)/arch/$(ARCH)/Makefile.postlink)
 
 # Generate linker list symbols references to force compiler to not optimize
@@ -2543,6 +2620,7 @@ CHANGELOG:
 #                Leave enough to build external modules
 # make mrproper  Delete the current configuration, and all generated files
 # make distclean Remove editor backup files, patch leftover files and the like
+# make cleanall  Remove everything, including the source tree (if it is a git checkout)
 
 # Directories & files removed with 'make clean'
 CLEAN_FILES  += $(MODVERDIR) \
@@ -2561,7 +2639,10 @@ CLEAN_FILES += include/autoconf.mk* include/bmp_logo.h include/bmp_logo_data.h \
 	       idbloader-spi.img lib/efi_loader/helloworld_efi.S *.itb \
 	       Test* capsule*.*.efi-capsule capsule*.map mkimage.imx-boot.spl \
 	       mkimage.imx-boot.u-boot mkimage-out.imx-boot.spl mkimage-out.imx-boot.u-boot \
-	       imx9image* m33-oei-ddrfw* tifalcon.bin
+	       imx9image* m33-oei-ddrfw* tifalcon.bin \
+		   bl2.bin preloader.bin bl31-uboot.fip bl31.bin.lzma bootext.ram _legacy.fip key_area.bin \
+		   bl1-bl2-bl31-uboot.bin bl2-bl31-uboot.bin \
+		   certificates.bin *-chainloader.bin *-chainloader-prefix-shim.uImage *-chainloader-slot.bin
 
 # Directories & files removed with 'make mrproper'
 MRPROPER_FILES  += include/config include/generated spl tpl vpl \
@@ -2634,6 +2715,12 @@ clean: $(clean-dirs)
 		-o -name '*.efi' -o -name '*.gcno' -o -name '*.so' \
 		-o -name '*.*.symversions' \) -type f -print | xargs rm -f
 
+# cleanall
+#
+PHONY += cleanall
+cleanall: distclean
+	rm -rf output/
+	rm -rf _preload_fip.fip _legacy.fip preload_u-boot.bin bl1-bl2-bl31-uboot.bin
 
 # See doc/develop/python_cq.rst
 PHONY += pylint pylint_err

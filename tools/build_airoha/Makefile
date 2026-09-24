@@ -1,0 +1,337 @@
+# SPDX-License-Identifier: GPL-2.0+
+#
+# Airoha FIP image builder
+#
+# This Makefile bundles BL2/BL31 prebuilt binaries (located in per-SoC
+# subdirectories) together with the just-built u-boot.bin into FIP
+# (Firmware Image Package) images using fiptool.
+#
+# Kconfig-driven behaviour:
+#   CONFIG_AIROHA_BUILD_MODERN    — split FIP build (AN7581/AN7583)
+#   CONFIG_AIROHA_BUILD_LEGACY    — self-contained 512 KiB boot image (all
+#                                   Airoha platforms; see airoha_pack_boot.sh)
+#   CONFIG_AIROHA_LEGACY_BL1      — prepend BL1 (bl1-bl2-bl31-uboot.bin) or
+#                                   not (bl2-bl31-uboot.bin); default y on
+#                                   EN7523
+#   CONFIG_AIROHA_BLOBS_LEGACY / _OPENSOURCE — blob source directory
+#                                   (legacy/ or opensource/ under this
+#                                   directory; defaults to opensource for the
+#                                   modern build, legacy for the legacy one)
+#   CONFIG_AIROHA_BUILD_CHAINLOADER     — chainloader build (AN7581)
+#   CONFIG_AIROHA_CHAINLOADER_METHOD_*  — build method: OPENWRT (default,
+#                                         mkits.sh style) or SHIM (legacy
+#                                         airoha_pack_chainloader.sh)
+#   CONFIG_AIROHA_CHAINLOADER_DIR       — chainloader board selection
+#
+# Output files (placed in U-Boot top-level directory), named to match the
+# OpenWrt artifacts:
+#   bl31-uboot.fip   — main FIP image (modern/split layout only: BL31+U-Boot)
+#   preloader.bin    — BL2 FIP image (CONFIG_AIROHA_PRELOADER; built for both
+#                      layouts)
+#   bl1-bl2-bl31-uboot.bin — 512 KiB boot image with BL1: BL1 + internal
+#                      FIP @0x800 (LEGACY + AIROHA_LEGACY_BL1)
+#   bl2-bl31-uboot.bin — the same 512 KiB boot image without BL1: 2 KiB zero
+#                      prefix + internal FIP @0x800 (LEGACY without BL1)
+# Both padded images report their real footprint (size + % of the 512 KiB
+# container) via tools/airoha_pack_boot.sh.
+#   <board>-chainload-uboot.itb — OpenWrt-style chainload FIT (OPENWRT method)
+#   <board>-chainloader.itb      — chainloader FIT image (SHIM method)
+#   <board>-chainloader-slot.bin — chainloader slot image (SHIM method)
+
+-include ../../include/config/auto.conf
+-include ../../include/autoconf.mk
+
+HOSTCC      ?= cc
+SOC          := $(subst ",,$(CONFIG_SYS_SOC))
+
+# Prebuilt blobs live under tools/build_airoha/{legacy,opensource}/<variant>_default/.
+# The variant defaults to the SoC (e.g. en7523 -> legacy/en7523_default) and can
+# be overridden per board via CONFIG_AIROHA_FIP_BLOBS_DIR (e.g. set it to
+# "en7562_fiberhome_sr1041f_default").  Strip quotes first so "" (empty string
+# in Kconfig) is treated as unset.
+_FIP_BLOBS_DIR_RAW := $(subst ",,$(CONFIG_AIROHA_FIP_BLOBS_DIR))
+ifneq ($(_FIP_BLOBS_DIR_RAW),)
+  SOC_VARIANT := $(_FIP_BLOBS_DIR_RAW)
+else
+  SOC_VARIANT := $(SOC)_default
+endif
+
+# Pick the blob directory: opensource/<variant> when
+# CONFIG_AIROHA_BLOBS_OPENSOURCE is selected, otherwise the SDK path
+# legacy/<variant>.  The Kconfig choice defaults to opensource for the modern
+# build and to legacy for the legacy build, and can be flipped per board
+# (e.g. AN7563 builds its 512 KiB image from the open-source blobs).
+ifeq ($(CONFIG_AIROHA_BLOBS_OPENSOURCE),y)
+  BLOBS_BASE := opensource
+else
+  BLOBS_BASE := legacy
+endif
+BLOBS_DIR := $(BLOBS_BASE)/$(SOC_VARIANT)
+FIPTOOL      := ../fiptool
+UBOOT_BIN    := ../../u-boot.bin
+OUT_DIR      := ../..
+PACK_SH      := ../airoha_pack_boot.sh
+
+BL1_BIN      := $(BLOBS_DIR)/bl1.bin
+BL2_BIN      := $(BLOBS_DIR)/bl2.bin
+BL31_LZMA    := $(BLOBS_DIR)/bl31.lzma
+CERT_BIN     := $(BLOBS_DIR)/certificates.bin
+KEY_AREA_BIN := $(BLOBS_DIR)/key_area.bin
+
+BL2_FIP      := $(OUT_DIR)/preloader.bin
+FIP_IMAGE    := $(OUT_DIR)/bl31-uboot.fip
+LEGACY_IMAGE := $(OUT_DIR)/bl2-bl31-uboot.bin
+_LEGACY_FIP  := $(OUT_DIR)/_legacy.fip
+
+BOOTEXT_PY    := ../airoha_pack_bootext.py
+BOOTEXT_IMAGE := $(OUT_DIR)/bootext.ram
+CERT_EXTRACT_PY := ../airoha_extract_certificates.py
+BOOTEXT_CERT_CNT := $(subst ",,$(CONFIG_AIROHA_BOOTEXT_CERT_COUNT))
+
+BUILD_LEGACY := $(CONFIG_AIROHA_BUILD_LEGACY)
+LEGACY_BL1   := $(CONFIG_AIROHA_LEGACY_BL1)
+
+# ---- LZMA tool detection ------------------------------------------------
+# Prefer the older lzma (LZMA SDK) encoder over xz.
+LZMA_E := $(shell \
+	if command -v lzma >/dev/null 2>&1; then echo "lzma -c"; \
+	elif command -v xz >/dev/null 2>&1; then echo "xz --format=lzma --stdout"; fi \
+)
+
+# ---- BL31 / U-Boot path setup -------------------------------------------
+# BL31 is always pre-compressed (bl31.lzma); u-boot.bin is always
+# LZMA-compressed to u-boot.bin.lzma before packing.
+UBOOT_OUT := $(UBOOT_BIN).lzma
+UBOOT_TC_ARG := --uboot-lzma $(UBOOT_OUT)
+
+# ---------------------------------------------------------------------------
+# ATF metadata printout tools
+# ---------------------------------------------------------------------------
+_PRELOADER_INFO_PY := ../airoha_info_preloader.py
+_BL31_INFO_PY      := ../airoha_info_bl31.py
+
+.PHONY: _print_bl_info
+_print_bl_info: $(BL2_BIN)
+	@if [ -f "$(_PRELOADER_INFO_PY)" ] && [ -f "$(BL2_BIN)" ]; then \
+		echo ""; \
+		python3 "$(_PRELOADER_INFO_PY)" "$(BL2_BIN)" --summary 2>/dev/null; \
+	fi
+	@if [ -f "$(_BL31_INFO_PY)" ] && [ -f "$(BL31_LZMA)" ]; then \
+		echo ""; \
+		python3 "$(_BL31_INFO_PY)" "$(BL31_LZMA)" --summary 2>/dev/null; \
+	fi
+	@echo ""
+
+# ---------------------------------------------------------------------------
+# Build rules
+# ---------------------------------------------------------------------------
+
+.DEFAULT_GOAL := all
+
+# Build fiptool from sources
+$(FIPTOOL):
+	@echo "  [FIP]    Building fiptool (host compiler)..."
+	$(MAKE) -C ../fiptool_src CC=$(HOSTCC) ARCH_AIROHA=$(CONFIG_ARCH_AIROHA)
+
+# ----- LZMA compression targets -------------------------------------------
+# u-boot.bin is built by the main U-Boot Makefile, not by us.
+$(UBOOT_BIN).lzma:
+	@test -f $(UBOOT_BIN) || { echo "ERROR: $(UBOOT_BIN) not found (build u-boot.bin first)"; exit 1; }
+	@echo "  [LZMA]   Compressing u-boot.bin -> u-boot.bin.lzma..."
+	$(LZMA_E) $(UBOOT_BIN) > $@
+	@python3 -c "import struct,os; p='$@'; s='$(UBOOT_BIN)'; d=open(p,'rb').read(); n=struct.pack('<Q',os.path.getsize(s)); open(p,'wb').write(d[:5]+n+d[13:]) if d[5:13]!=b'\xff'*8 and d[5:13]!=n else None"
+
+# ----- preloader.bin (standalone BL2 FIP) ------------------------------------
+# Built for both boot image layouts (modern/split and legacy/512 KiB) and
+# controlled by the single CONFIG_AIROHA_PRELOADER switch:
+#   - legacy (with or without BL1): --align 1024, so BL2 starts at 0xC00,
+#     exactly where it sits inside the 512 KiB container (2 KiB prefix +
+#     FIP @0x800),
+#   - modern/split: plain container, BL2 lives in the 'bl2' MTD partition.
+ifeq ($(CONFIG_AIROHA_PRELOADER),y)
+all: $(FIPTOOL)
+all: $(BL2_FIP)
+
+# The 512 KiB legacy layout places the internal FIP at 0x800 and its first
+# payload at 0xC00, so the standalone BL2 FIP uses the same 1024-byte
+# alignment there (both with and without BL1).
+ifeq ($(BUILD_LEGACY),y)
+PRELOADER_ALIGN     := --align 1024
+PRELOADER_ALIGN_MSG := , 1024-byte aligned
+endif
+
+$(BL2_FIP): $(BL2_BIN) $(FIPTOOL)
+	@echo "  [FIP]    Creating preloader.bin (BL2-only$(PRELOADER_ALIGN_MSG))..."
+	$(FIPTOOL) create $(strip $(PRELOADER_ALIGN)) --tb-fw $(BL2_BIN) $@
+endif
+
+ifeq ($(CONFIG_AIROHA_BUILD_MODERN),y)
+
+# ----- bl31-uboot.fip (split layout: BL31 + U-Boot) ---------------------------
+all: $(FIP_IMAGE)
+$(FIP_IMAGE): $(BL31_LZMA) $(UBOOT_OUT) $(FIPTOOL) _print_bl_info
+	@echo "  [FIP]    Creating bl31-uboot.fip (split layout: BL31+U-Boot)..."
+	$(FIPTOOL) create --soc-fw $(BL31_LZMA) --nt-fw $(UBOOT_OUT) $@
+
+endif  # CONFIG_AIROHA_BUILD_MODERN
+
+# ----- shared internal FIP (BL2 + LZMA BL31 + LZMA U-Boot, 1024-aligned) -------
+# The two 512 KiB flavours differ only in the 2 KiB prefix (real BL1 header vs
+# zero prefix); the internal FIP is identical.  tools/airoha_pack_boot.sh adds
+# the prefix and pads the image to 512 KiB.
+$(_LEGACY_FIP): $(BL2_BIN) $(BL31_LZMA) $(UBOOT_OUT) $(FIPTOOL) _print_bl_info
+	@echo "  [FIP]    Creating internal shared FIP (BL2+BL31+U-Boot, 1024-byte aligned)..."
+	$(FIPTOOL) create --align 1024 \
+		--tb-fw $(BL2_BIN) \
+		--soc-fw $(BL31_LZMA) \
+		--nt-fw $(UBOOT_OUT) $@
+
+# ----- 512 KiB boot image (airoha_pack_boot.sh: prefix + shared FIP) -------
+# Both flavours use the very same internal FIP; only the 2 KiB prefix differs:
+#   AIROHA_LEGACY_BL1=y -> BL1 + FIP          -> bl1-bl2-bl31-uboot.bin
+#   AIROHA_LEGACY_BL1=n -> 2 KiB zeros + FIP  -> bl2-bl31-uboot.bin
+# (the latter is used by AN7563).
+ifeq ($(BUILD_LEGACY),y)
+
+ifeq ($(LEGACY_BL1),y)
+LEGACY_IMAGE := $(OUT_DIR)/bl1-bl2-bl31-uboot.bin
+all: $(LEGACY_IMAGE)
+$(LEGACY_IMAGE): $(BL1_BIN) $(_LEGACY_FIP) $(PACK_SH)
+	@echo "  [LEGACY] Packing bl1-bl2-bl31-uboot.bin (BL1 + FIP, 512 KiB)..."
+	bash $(PACK_SH) --bl1 $(BL1_BIN) --fip $(_LEGACY_FIP) -o $@
+else
+LEGACY_IMAGE := $(OUT_DIR)/bl2-bl31-uboot.bin
+all: $(LEGACY_IMAGE)
+$(LEGACY_IMAGE): $(_LEGACY_FIP) $(PACK_SH)
+	@echo "  [LEGACY] Packing bl2-bl31-uboot.bin (2 KiB zero prefix + FIP, 512 KiB)..."
+	bash $(PACK_SH) --fip $(_LEGACY_FIP) -o $@
+endif
+
+endif  # BUILD_LEGACY
+
+# ----- bootext.ram (airoha_pack_bootext.py) -------------------------------
+ifeq ($(CONFIG_AIROHA_BOOTEXT_RAM),y)
+all: $(BOOTEXT_IMAGE)
+
+ifeq ($(CONFIG_AIROHA_BOOTEXT_EMBED_CERTS),y)
+_BOOTEXT_CERT_TMP := $(BLOBS_DIR)/.bootext_cert_tmp
+
+$(_BOOTEXT_CERT_TMP): $(CERT_BIN)
+	@mkdir -p $@
+	@echo "  [CERT]   Extracting $(BOOTEXT_CERT_CNT) TF-A certificate(s) from certificates.bin..."
+	python3 $(CERT_EXTRACT_PY) $(CERT_BIN) -o $@ --expected $(BOOTEXT_CERT_CNT)
+
+$(BOOTEXT_IMAGE): $(BL2_BIN) $(_BOOTEXT_CERT_TMP)
+	@echo "  [BOOTEXT] Packing bootext.ram (BL2 + $(BOOTEXT_CERT_CNT) embedded TF-A cert(s), no CRC)..."
+	@if [ "$(BOOTEXT_CERT_CNT)" = "1" ]; then \
+		python3 $(BOOTEXT_PY) pack $(BL2_BIN) \
+			--cert $(_BOOTEXT_CERT_TMP)/cert_01.der --no-crc -o $@; \
+	else \
+		CERTS=""; \
+		for f in $$(ls $(_BOOTEXT_CERT_TMP)/*.der 2>/dev/null); do \
+			CERTS="$$CERTS --cert $$f"; \
+		done; \
+		python3 $(BOOTEXT_PY) pack $(BL2_BIN) $$CERTS --no-crc -o $@; \
+	fi
+	@rm -rf $(_BOOTEXT_CERT_TMP)
+else
+$(BOOTEXT_IMAGE): $(BL2_BIN)
+	@echo "  [BOOTEXT] Packing bootext.ram (bare BL2, no embedded certificates)..."
+	python3 $(BOOTEXT_PY) pack $(BL2_BIN) -o $@
+endif
+endif
+
+# ----- chainloader ----------------------------------------------------------
+# Two build methods (selectable via Kconfig):
+#   AIROHA_CHAINLOADER_METHOD_OPENWRT (default) — OpenWrt-style chainload FIT:
+#     FIT with u-boot.bin.lzma (or u-boot.bin) + u-boot.dtb, generated via
+#     tools/airoha_pack_chainloader_openwrt.sh (mkits.sh + mkimage).
+#     Output: <board>-chainload-uboot.itb.
+#   AIROHA_CHAINLOADER_METHOD_SHIM — legacy shim packer
+#     (tools/airoha_pack_chainloader_shim.sh): prefix shim + control DTB + FIT.
+#     Outputs: <board>-chainloader-slot.bin + <board>-chainloader.itb.
+
+ifeq ($(CONFIG_AIROHA_BUILD_CHAINLOADER),y)
+CHAINLOADER_SOC := $(SOC)
+
+ifeq ($(CONFIG_AIROHA_CHAINLOADER_METHOD_SHIM),y)
+# Shim method: requires the per-board sources dir, selected via
+# CONFIG_AIROHA_CHAINLOADER_DIR (same pattern as CONFIG_AIROHA_FIP_BLOBS_DIR).
+# Strip quotes first so "" (empty string in Kconfig) is treated as unset.
+_CHAINLOADER_DIR_RAW := $(subst ",,$(CONFIG_AIROHA_CHAINLOADER_DIR))
+ifneq ($(_CHAINLOADER_DIR_RAW),)
+CHAINLOADER_SRC_DIR := chainloader/$(_CHAINLOADER_DIR_RAW)
+CHAINLOADER_BOARD   := $(lastword $(subst _, ,$(_CHAINLOADER_DIR_RAW)))
+else
+$(error AIROHA_CHAINLOADER_METHOD_SHIM is enabled but CONFIG_AIROHA_CHAINLOADER_DIR \
+	is not set; set it to the per-board chainloader directory, \
+	e.g. CONFIG_AIROHA_CHAINLOADER_DIR="<soc>_<board>")
+endif
+
+CHAINLOADER_FIT  := $(OUT_DIR)/$(CHAINLOADER_BOARD)-chainloader.itb
+CHAINLOADER_SLOT := $(OUT_DIR)/$(CHAINLOADER_BOARD)-chainloader-slot.bin
+
+CHAINLOADER_SCRIPT := ../airoha_pack_chainloader_shim.sh
+all: $(CHAINLOADER_SLOT)
+
+$(CHAINLOADER_SLOT): $(UBOOT_BIN) $(CHAINLOADER_SCRIPT) \
+		$(CHAINLOADER_SRC_DIR)/shim.bin \
+		$(CHAINLOADER_SRC_DIR)/control.dts \
+		$(CHAINLOADER_SRC_DIR)/chainloader.its
+	@echo "  [CHAINLOADER] Packing $(CHAINLOADER_BOARD) chainloader (shim method: prefix shim + control DTB + FIT)..."
+	bash $(CHAINLOADER_SCRIPT) \
+		--soc $(CHAINLOADER_SOC) --board $(CHAINLOADER_BOARD) \
+		--payload $(UBOOT_BIN) --output-dir $(OUT_DIR) \
+		--mkimage ../../tools/mkimage --dtc ../../scripts/dtc/dtc
+
+$(CHAINLOADER_FIT): $(CHAINLOADER_SLOT)
+
+else
+# OpenWrt-style chainload FIT (default method,
+# tools/airoha_pack_chainloader_openwrt.sh):
+#   kernel = u-boot.bin.lzma (COMP=lzma, fallback u-boot.bin COMP=none)
+#   fdt    = u-boot.dtb
+#   load/entry 0x80200000, fdt load 0x82000000  (mirrors OpenWrt
+#   Build/an7581-chainloader: mkits.sh + mkimage, no shim prefix).
+# No shim sources directory is needed: the board name comes from
+# CONFIG_AIROHA_CHAINLOADER_BOARD.
+_CHAINLOADER_BOARD_RAW := $(subst ",,$(CONFIG_AIROHA_CHAINLOADER_BOARD))
+ifneq ($(_CHAINLOADER_BOARD_RAW),)
+CHAINLOADER_BOARD := $(_CHAINLOADER_BOARD_RAW)
+else
+$(error AIROHA_CHAINLOADER_METHOD_OPENWRT is enabled but \
+	CONFIG_AIROHA_CHAINLOADER_BOARD is not set; set it to the board name.")
+endif
+
+CHAINLOADER_ITB    := $(OUT_DIR)/$(CHAINLOADER_BOARD)-chainload-uboot.itb
+CHAINLOADER_SCRIPT := ../airoha_pack_chainloader_openwrt.sh
+MKITS_SH           := ../mkits.sh
+MKIMAGE_BIN        := ../../tools/mkimage
+UBOOT_DTB          := $(OUT_DIR)/u-boot.dtb
+
+all: $(CHAINLOADER_ITB)
+
+$(CHAINLOADER_ITB): $(UBOOT_BIN) $(UBOOT_OUT) $(UBOOT_DTB) $(CHAINLOADER_SCRIPT) $(MKITS_SH) $(MKIMAGE_BIN)
+	@echo "  [CHAINLOADER] Packing $(CHAINLOADER_BOARD) chainloader (OpenWrt method: mkits.sh + mkimage)..."
+	bash $(CHAINLOADER_SCRIPT) \
+		--soc $(CHAINLOADER_SOC) --board $(CHAINLOADER_BOARD) \
+		--payload $(UBOOT_BIN) --payload-lzma $(UBOOT_OUT) \
+		--dtb $(UBOOT_DTB) --output-dir $(OUT_DIR) \
+		--mkimage ../../tools/mkimage --mkits ../mkits.sh
+
+endif  # OPENWRT vs SHIM method
+endif  # CONFIG_AIROHA_BUILD_CHAINLOADER
+
+# ---------------------------------------------------------------------------
+clean:
+	rm -f $(BL2_FIP) $(FIP_IMAGE) $(LEGACY_IMAGE) $(_LEGACY_FIP) $(BOOTEXT_IMAGE) $(UBOOT_BIN).lzma \
+		$(OUT_DIR)/bl1-bl2-bl31-uboot.bin \
+		$(OUT_DIR)/bl2-bl31-uboot.bin \
+		$(OUT_DIR)/*-chainload-uboot.itb \
+		$(OUT_DIR)/*-chainloader.itb \
+		$(OUT_DIR)/*-chainloader-slot.bin \
+		$(OUT_DIR)/*-chainloader-prefix-shim.uImage \
+		$(OUT_DIR)/*-chainloader-control.dtb
+	rm -rf $(OUT_DIR)/.chainload-fit-*
+
+.PHONY: all clean
