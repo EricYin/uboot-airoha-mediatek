@@ -34,7 +34,8 @@
  * registers) and MediaTek (derived from the CONFIG_TARGET_MT798x build
  * target, no runtime detection needed).
  */
-#if defined(CONFIG_ARCH_AIROHA) || defined(CONFIG_ARCH_MEDIATEK)
+#if defined(CONFIG_ARCH_AIROHA) || defined(CONFIG_ARCH_MEDIATEK) || \
+	defined(CONFIG_ARCH_MTMIPS)
 #define FAILSAFE_SOC_NAME_ENABLED	1
 #endif
 
@@ -129,6 +130,37 @@ static const char *sysinfo_soc_name(char *out, size_t out_sz)
 	return out;
 }
 #endif /* CONFIG_ARCH_MEDIATEK */
+
+#ifdef CONFIG_ARCH_MTMIPS
+/*
+ * mtmips SoCs (MT7620 / MT7621 / MT7628 / MT7688) are identified at build
+ * time: the model follows the selected SOC_MT762x (mt7620 / mt7621 /
+ * mt7628), there are no runtime registers to consult.  Fall back to the
+ * build time CONFIG_SYS_SOC when none of the SOC_MT762x knobs is set.
+ */
+static const char *sysinfo_soc_name(char *out, size_t out_sz)
+{
+	const char *name = CONFIG_SYS_SOC;
+
+	if (!out || !out_sz)
+		return "";
+	out[0] = '\0';
+
+#if defined(CONFIG_SOC_MT7620)
+	name = "mt7620";
+#elif defined(CONFIG_SOC_MT7621)
+	name = "mt7621";
+#elif defined(CONFIG_SOC_MT7628)
+	name = "mt7628";
+#endif
+
+	if (!name || !name[0])
+		return "";
+
+	snprintf(out, out_sz, "%s", name);
+	return out;
+}
+#endif /* CONFIG_ARCH_MTMIPS */
 
 static int sysinfo_json_append_board(char *buf, int len, int left)
 {
