@@ -590,20 +590,28 @@ static int flash_target_read(const struct flash_target *t, u64 off, void *buf,
  * is programmed: a whole backup covering the range erases it first, while
  * the hex editor patches it block by block and leaves the rest alone.  An
  * MMC device overwrites in place, so both are the same write there.
+ *
+ * @skipped (may be NULL) receives the number of bytes that were not written
+ * because they fall into a bad block; a device that cannot have any (an MMC
+ * partition) always reports 0.
  */
 static int flash_target_write(const struct flash_target *t, u64 off,
-			      const void *buf, size_t len, bool erase_first)
+			      const void *buf, size_t len, bool erase_first,
+			      size_t *skipped)
 {
+	if (skipped)
+		*skipped = 0;
+
 	switch (t->src) {
 	case FAILSAFE_SRC_MTD:
 #ifdef CONFIG_MTD
 		if (erase_first)
 			return failsafe_mtd_restore_range(t->mtd,
 							  t->base + off,
-							  buf, len);
+							  buf, len, skipped);
 
 		return failsafe_mtd_update_range(t->mtd, t->base + off, buf,
-						 len);
+						 len, skipped);
 #else
 		return -ENODEV;
 #endif
@@ -632,13 +640,21 @@ static int flash_target_write(const struct flash_target *t, u64 off,
 	return -EINVAL;
 }
 
-/* Erase [off, off + len) of @t. */
-static int flash_target_erase(const struct flash_target *t, u64 off, u64 len)
+/*
+ * Erase [off, off + len) of @t.  @skipped_blocks (may be NULL) receives the
+ * number of bad blocks that were not erased.
+ */
+static int flash_target_erase(const struct flash_target *t, u64 off, u64 len,
+			      u32 *skipped_blocks)
 {
+	if (skipped_blocks)
+		*skipped_blocks = 0;
+
 	switch (t->src) {
 	case FAILSAFE_SRC_MTD:
 #ifdef CONFIG_MTD
-		return failsafe_mtd_erase_range(t->mtd, t->base + off, len);
+		return failsafe_mtd_erase_range(t->mtd, t->base + off, len,
+						skipped_blocks);
 #else
 		return -ENODEV;
 #endif
@@ -1809,6 +1825,7 @@ void flash_handler(enum httpd_uri_handler_status status,
 		struct flash_target tgt;
 		u8 *buf = NULL;
 		size_t len = 0;
+		size_t skipped = 0;
 #ifdef CONFIG_WEBUI_FAILSAFE_NAND_RAW
 		bool raw_mode = false;
 #endif
@@ -1859,6 +1876,7 @@ void flash_handler(enum httpd_uri_handler_status status,
 #ifdef CONFIG_WEBUI_FAILSAFE_NAND_RAW
 			if (raw_mode && nand_raw_is_nand(tgt.mtd)) {
 				size_t rps = nand_raw_page_size(tgt.mtd);
+				size_t req_len = len;
 				u64 first_page, pages;
 
 				if (!rps) {
@@ -1877,19 +1895,24 @@ void flash_handler(enum httpd_uri_handler_status status,
 							tgt.mtd, first_page,
 							pages, buf, len, &wr);
 						len = wr;
+
+						/* The raw writer skips bad
+						 * blocks as well. */
+						skipped = req_len - wr;
 					}
 				}
 			} else
 #endif
 			{
 				ret = flash_target_write(&tgt, start, buf, len,
-							 false);
+							 false, &skipped);
 			}
 #else
 			ret = -ENODEV;
 #endif
 		} else {
-			ret = flash_target_write(&tgt, start, buf, len, false);
+			ret = flash_target_write(&tgt, start, buf, len, false,
+						 &skipped);
 		}
 
 		flash_close_target(&tgt);
@@ -1898,10 +1921,12 @@ void flash_handler(enum httpd_uri_handler_status status,
 		if (ret)
 			goto io_err;
 
-		json = malloc(96);
+		json = malloc(128);
 		if (!json)
 			goto oom;
-		snprintf(json, 96, "{\"ok\":true,\"written\":%zu}\n", len);
+		snprintf(json, 128,
+			 "{\"ok\":true,\"written\":%zu,\"skipped\":%zu}\n",
+			 len, skipped);
 		failsafe_http_reply_json_alloc(response, 200, json, json);
 		return;
 	}
@@ -1914,6 +1939,7 @@ void flash_handler(enum httpd_uri_handler_status status,
 		char layout_name[64] = "";
 		u64 name_start = 0, name_end = 0;
 		size_t len = 0;
+		size_t skipped = 0;
 #ifdef CONFIG_WEBUI_FAILSAFE_NAND_RAW
 		bool raw_restore = false;
 #endif
@@ -1985,6 +2011,7 @@ void flash_handler(enum httpd_uri_handler_status status,
 #ifdef CONFIG_WEBUI_FAILSAFE_NAND_RAW
 			if (raw_restore && nand_raw_is_nand(tgt.mtd)) {
 				size_t rps = nand_raw_page_size(tgt.mtd);
+				size_t req_len = len;
 				u64 first_page, pages;
 
 				if (!rps) {
@@ -2004,20 +2031,24 @@ void flash_handler(enum httpd_uri_handler_status status,
 							pages, fw->data, len,
 							&wr);
 						len = wr;
+
+						/* The raw writer skips bad
+						 * blocks as well. */
+						skipped = req_len - wr;
 					}
 				}
 			} else
 #endif
 			{
 				ret = flash_target_write(&tgt, start, fw->data,
-							 len, true);
+							 len, true, &skipped);
 			}
 #else
 			ret = -ENODEV;
 #endif
 		} else {
 			ret = flash_target_write(&tgt, start, fw->data, len,
-						 true);
+						 true, &skipped);
 		}
 
 		flash_close_target(&tgt);
@@ -2025,13 +2056,13 @@ void flash_handler(enum httpd_uri_handler_status status,
 		if (ret)
 			goto io_err;
 
-		json = malloc(160);
+		json = malloc(192);
 		if (!json)
 			goto oom;
-		snprintf(json, 160,
-			 "{\"ok\":true,\"restored\":%zu,"
+		snprintf(json, 192,
+			 "{\"ok\":true,\"restored\":%zu,\"skipped\":%zu,"
 			 "\"alert\":\"Backup restore completed.\"}\n",
-			 len);
+			 len, skipped);
 		failsafe_http_reply_json_alloc(response, 200, json, json);
 		return;
 	}
@@ -2039,6 +2070,7 @@ void flash_handler(enum httpd_uri_handler_status status,
 	if (!strcmp(op, "erase")) {
 		struct httpd_form_value *startv, *endv;
 		struct flash_target tgt;
+		u32 skipped_blocks = 0;
 		u64 len;
 
 		ret = flash_parse_storage_target(request, storage_sel,
@@ -2082,22 +2114,23 @@ void flash_handler(enum httpd_uri_handler_status status,
 
 		len = end - start;
 
-		ret = flash_target_erase(&tgt, start, len);
+		ret = flash_target_erase(&tgt, start, len, &skipped_blocks);
 
 		flash_close_target(&tgt);
 
 		if (ret)
 			goto io_err;
 
-		json = malloc(160);
+		json = malloc(192);
 		if (!json)
 			goto oom;
-		snprintf(json, 160,
+		snprintf(json, 192,
 			 "{\"ok\":true,\"erased\":%llu,\"start\":\"0x%llx\","
-			 "\"end\":\"0x%llx\"}\n",
+			 "\"end\":\"0x%llx\",\"skipped_blocks\":%u}\n",
 			 (unsigned long long)len,
 			 (unsigned long long)start,
-			 (unsigned long long)end);
+			 (unsigned long long)end,
+			 skipped_blocks);
 		failsafe_http_reply_json_alloc(response, 200, json, json);
 		return;
 	}

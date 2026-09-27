@@ -36,6 +36,7 @@
     var readBase = 0;                         /* absolute address of the read range */
     var totalPages = 0;
     var restoreAlert = "";
+    var restoreSkipped = 0;                   /* bytes lost to bad blocks */
 
     /* ── Small helpers ── */
     function $(id) {
@@ -1172,6 +1173,7 @@
 
         try {
             var written = 0;
+            var skipped = 0;
             for (var index = 0; index < chunks.length; index++) {
                 var chunk = chunks[index];
                 setStatus(t("flash.status.writing") + " (" + (index + 1) + "/" +
@@ -1208,12 +1210,17 @@
                     return;
                 }
                 written += chunk.count;
+                if (payload.skipped) skipped += payload.skipped;
             }
 
             hexModified = new Set();
             renderHexGrid();
             renderHexViews();
-            setStatus(t("flash.status.done") + " " + human(written), false, false);
+
+            var done = t("flash.status.done") + " " + human(written);
+            if (skipped > 0)
+                done += " " + t("flash.status.skipped").replace("$1", human(skipped));
+            setStatus(done, false, false);
         } catch (error) {
             setStatus(t("flash.status.error") + " " + errText(error), true, false);
         }
@@ -1276,7 +1283,10 @@
                 return;
             }
 
-            setStatus(t("flash.status.done"), false, false);
+            var done = t("flash.status.done");
+            if (payload.skipped_blocks)
+                done += " " + t("flash.status.bad_blocks").replace("$1", payload.skipped_blocks);
+            setStatus(done, false, false);
         } catch (error) {
             setStatus(t("flash.status.error") + " " + errText(error), true, false);
         }
@@ -1333,7 +1343,7 @@
                 }
 
                 if (payload.alert) restoreAlert = payload.alert;
-                resolve();
+                resolve(payload);
             };
 
             xhr.open("POST", "/flash/restore");
@@ -1374,18 +1384,24 @@
             }
 
             restoreAlert = "";
+            restoreSkipped = 0;
             setProgress("flash_restore_bar", 0);
             setStatus(t("flash.status.uploading"), false, true);
 
             var offset = 0;
             while (offset < totalSize) {
                 var next = Math.min(offset + FLASH_RESTORE_CHUNK, totalSize);
-                await sendRestoreChunk(file.slice(offset, next), offset, next, totalSize, range.start);
+                var chunk = await sendRestoreChunk(file.slice(offset, next), offset, next, totalSize, range.start);
+                if (chunk && chunk.skipped) restoreSkipped += chunk.skipped;
                 offset = next;
             }
 
+            var note = restoreAlert || t("flash.status.done");
+            if (restoreSkipped > 0)
+                note += " " + t("flash.status.skipped").replace("$1", human(restoreSkipped));
+
             setProgress("flash_restore_bar", 100);
-            setStatus(t("flash.status.restored").replace("$1", restoreAlert || t("flash.status.done")), false, false);
+            setStatus(t("flash.status.restored").replace("$1", note), false, false);
         } catch (error) {
             setStatus(t("flash.status.error") + " " + errText(error), true, false);
         }
