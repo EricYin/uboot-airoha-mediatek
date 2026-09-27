@@ -216,8 +216,7 @@ int failsafe_mtd_program_range(struct mtd_info *mtd, u64 off,
 
 int failsafe_mtd_erase_blocks(struct mtd_info *mtd, u64 start, u64 len)
 {
-	u64 erase_sz, block_start, block_end;
-	struct erase_info ei;
+	u64 erase_sz, block_start, block_end, blk;
 
 	if (!mtd || !len)
 		return -EINVAL;
@@ -232,19 +231,44 @@ int failsafe_mtd_erase_blocks(struct mtd_info *mtd, u64 start, u64 len)
 	block_start = start & ~(erase_sz - 1);
 	block_end = (start + len + erase_sz - 1) & ~(erase_sz - 1);
 
-	memset(&ei, 0, sizeof(ei));
-	ei.mtd = mtd;
-	ei.addr = block_start;
-	ei.len = block_end - block_start;
+	/* One block per call, the bad ones skipped, which is what
+	 * "mtd erase" does and the only thing that can work: a NAND driver
+	 * walks a range erase internally and stops at the first bad block
+	 * with -EIO - and it does so silently, its only message being a
+	 * debug one - so asking for a whole partition in one call fails on
+	 * every device that has a single bad block.
+	 */
+	for (blk = block_start; blk < block_end; blk += erase_sz) {
+		struct erase_info ei;
+		int bad, ret;
 
-	return mtd_erase(mtd, &ei);
+		bad = mtd_block_isbad(mtd, blk);
+		if (bad < 0)
+			return bad;
+
+		/* Nothing to erase in a block the driver refuses to erase:
+		 * its content is already unreadable. */
+		if (bad)
+			continue;
+
+		memset(&ei, 0, sizeof(ei));
+		ei.mtd = mtd;
+		ei.addr = blk;
+		ei.len = erase_sz;
+
+		ret = mtd_erase(mtd, &ei);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
 }
 
 int failsafe_mtd_update_range(struct mtd_info *mtd, u64 start,
-			      const u8 *data, size_t len)
+			      const u8 *data, size_t len, size_t *skipped)
 {
 	u64 block_start, block_end, blk;
-	size_t erase_sz;
+	size_t erase_sz, lost = 0;
 	u8 *blkbuf;
 	int ret = 0;
 
@@ -267,6 +291,22 @@ int failsafe_mtd_update_range(struct mtd_info *mtd, u64 start,
 		u64 data_start = max(start, blk);
 		u64 data_end = min(start + (u64)len, blk + (u64)erase_sz);
 		size_t copy_len = (size_t)(data_end - data_start);
+		int bad;
+
+		/* A bad block can neither be read back nor written, so the
+		 * bytes of @data that fall into it are lost - the rest of the
+		 * update still happens instead of failing the whole write.
+		 */
+		bad = mtd_block_isbad(mtd, blk);
+		if (bad < 0) {
+			ret = bad;
+			goto out;
+		}
+
+		if (bad) {
+			lost += copy_len;
+			continue;
+		}
 
 		ret = failsafe_mtd_read_range(mtd, blk, erase_sz, blkbuf,
 					      &readsz);
@@ -290,28 +330,78 @@ int failsafe_mtd_update_range(struct mtd_info *mtd, u64 start,
 
 out:
 	free(blkbuf);
+
+	if (skipped)
+		*skipped = lost;
+
 	return ret;
 }
 
 int failsafe_mtd_restore_range(struct mtd_info *mtd, u64 start,
-			       const u8 *data, size_t len)
+			       const u8 *data, size_t len, size_t *skipped)
 {
-	int ret;
+	u64 block_start, block_end, blk;
+	size_t erase_sz, lost = 0;
+	int ret = 0;
 
 	if (!mtd || !data || !len)
 		return -EINVAL;
 
-	ret = failsafe_mtd_erase_blocks(mtd, start, len);
-	if (ret)
-		return ret;
+	erase_sz = mtd->erasesize;
+	if (!erase_sz)
+		return -EINVAL;
 
-	return failsafe_mtd_program_range(mtd, start, data, len);
+	block_start = start & ~((u64)erase_sz - 1);
+	block_end = (start + len + erase_sz - 1) & ~((u64)erase_sz - 1);
+
+	/* Block by block, so that a bad block only costs its own share of
+	 * the payload: the bytes around it are still written.
+	 */
+	for (blk = block_start; blk < block_end; blk += erase_sz) {
+		u64 data_start = max(start, blk);
+		u64 data_end = min(start + (u64)len, blk + (u64)erase_sz);
+		size_t copy_len = (size_t)(data_end - data_start);
+		int bad;
+
+		bad = mtd_block_isbad(mtd, blk);
+		if (bad < 0) {
+			ret = bad;
+			goto out;
+		}
+
+		if (bad) {
+			lost += copy_len;
+			continue;
+		}
+
+		ret = failsafe_mtd_erase_blocks(mtd, blk, erase_sz);
+		if (ret)
+			goto out;
+
+		if (!copy_len)
+			continue;
+
+		ret = failsafe_mtd_program_range(mtd, data_start,
+						 data + (size_t)(data_start -
+								 start),
+						 copy_len);
+		if (ret)
+			goto out;
+	}
+
+out:
+	if (skipped)
+		*skipped = lost;
+
+	return ret;
 }
 
-int failsafe_mtd_erase_range(struct mtd_info *mtd, u64 start, u64 len)
+int failsafe_mtd_erase_range(struct mtd_info *mtd, u64 start, u64 len,
+			     u32 *skipped_blocks)
 {
 	u64 block_start, block_end, blk;
 	size_t erase_sz;
+	u32 skipped = 0;
 	u8 *blkbuf = NULL;
 	int ret = 0;
 
@@ -331,6 +421,21 @@ int failsafe_mtd_erase_range(struct mtd_info *mtd, u64 start, u64 len)
 		bool full_block = (data_start == blk) &&
 				  (data_end == blk + (u64)erase_sz);
 		size_t readsz = 0;
+		int bad;
+
+		/* A bad block is not erased and is counted: the check has to
+		 * come before the read of a partially covered block below,
+		 * which is what would fail on one. */
+		bad = mtd_block_isbad(mtd, blk);
+		if (bad < 0) {
+			ret = bad;
+			goto out;
+		}
+
+		if (bad) {
+			skipped++;
+			continue;
+		}
 
 		if (full_block) {
 			ret = failsafe_mtd_erase_blocks(mtd, blk, erase_sz);
@@ -371,6 +476,10 @@ int failsafe_mtd_erase_range(struct mtd_info *mtd, u64 start, u64 len)
 
 out:
 	free(blkbuf);
+
+	if (skipped_blocks)
+		*skipped_blocks = skipped;
+
 	return ret;
 }
 

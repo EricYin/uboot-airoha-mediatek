@@ -23,10 +23,15 @@
  *   - a read can report corrected bit flips (-EUCLEAN), which is not a
  *     failure: the data is what was stored.
  *
- * Both pages used to carry their own copy of all of this.  Bad blocks are
- * *not* handled here - a failure is reported to the caller.  The one caller
- * that has to survive them (a whole-chip restore, where losing a block
- * beats losing the dump) drives the loop itself, see simg_write_range().
+ * Both pages used to carry their own copy of all of this.  A bad block is
+ * never erased: the erase helpers walk the range block by block and skip
+ * the bad ones, the way "mtd erase" does - a NAND driver aborts a range
+ * erase with -EIO on the first bad block it meets, and it does so without
+ * a message, so a single call over a partition only works on a device that
+ * has no bad block at all.  Nothing else is swallowed: any other failure
+ * is reported to the caller.  The one path that has to survive bad blocks
+ * while *programming* (a whole-chip restore, where losing a block beats
+ * losing the dump) drives its loop itself, see simg_write_range().
  *
  * This is only built and called when CONFIG_MTD is enabled (see the
  * Makefile and the guards in the callers): a board without MTD links none
@@ -82,6 +87,9 @@ int failsafe_mtd_program_range(struct mtd_info *mtd, u64 off,
  * touches are erased, nothing outside them.  Blocks that are only partially
  * covered are erased completely - use failsafe_mtd_erase_range() to keep
  * their remaining bytes.
+ *
+ * The blocks are erased one call at a time and bad ones are skipped, so a
+ * device with a bad block in the range still gets the rest of it erased.
  */
 int failsafe_mtd_erase_blocks(struct mtd_info *mtd, u64 start, u64 len);
 
@@ -97,9 +105,13 @@ int failsafe_mtd_erase_blocks(struct mtd_info *mtd, u64 start, u64 len);
  * outside the range keep their content.  This is the one to use for a small
  * update in the middle of a partition (the flash editor's write); to write
  * a whole backup file use failsafe_mtd_restore_range().
+ *
+ * Bad blocks are skipped, so the update goes through on a device that has
+ * one: @skipped (may be NULL) receives the number of payload bytes that
+ * landed in a bad block and were therefore not written.
  */
 int failsafe_mtd_update_range(struct mtd_info *mtd, u64 start,
-			      const u8 *data, size_t len);
+			      const u8 *data, size_t len, size_t *skipped);
 
 /**
  * failsafe_mtd_restore_range() - erase a range and program it
@@ -113,9 +125,13 @@ int failsafe_mtd_update_range(struct mtd_info *mtd, u64 start,
  * (its start is normally block aligned): the bytes between the end of the
  * payload and the end of its last block read back as erased, and a @start
  * inside a block also loses the bytes in front of it.
+ *
+ * Bad blocks are skipped one by one, so only the payload that falls into
+ * them is lost and not the whole restore: @skipped (may be NULL) receives
+ * the number of payload bytes that were not programmed.
  */
 int failsafe_mtd_restore_range(struct mtd_info *mtd, u64 start,
-			       const u8 *data, size_t len);
+			       const u8 *data, size_t len, size_t *skipped);
 
 /**
  * failsafe_mtd_erase_range() - erase a range, keeping the bytes around it
@@ -127,8 +143,13 @@ int failsafe_mtd_restore_range(struct mtd_info *mtd, u64 start,
  * covered head / tail blocks go through a read-modify-write cycle that
  * fills only the requested bytes with 0xff, so everything outside the range
  * survives.
+ *
+ * Bad blocks are skipped, exactly like in failsafe_mtd_erase_blocks():
+ * @skipped_blocks (may be NULL) receives the number of blocks that were left
+ * alone because they are bad.
  */
-int failsafe_mtd_erase_range(struct mtd_info *mtd, u64 start, u64 len);
+int failsafe_mtd_erase_range(struct mtd_info *mtd, u64 start, u64 len,
+			     u32 *skipped_blocks);
 
 #endif /* CONFIG_MTD */
 
