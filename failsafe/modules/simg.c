@@ -53,6 +53,13 @@
 #define SIMG_INFO_BUF_SZ	4096
 #define SIMG_JSON_BUF_SZ	256
 
+/* Bad block map: the device is scanned block by block, so the answer grows
+ * with the number of bad blocks found (roughly 7 bytes each).  The buffer
+ * is a hard limit: once it is full the scan goes on for the count, but the
+ * list stops growing and "truncated" is set.
+ */
+#define SIMG_BADMAP_BUF_SZ	8192
+
 /* Maximum accepted length of the optional "target" form value */
 #define SIMG_TARGET_MAX_LEN	64
 
@@ -307,6 +314,137 @@ void simg_info_handler(enum httpd_uri_handler_status status,
 }
 
 /* ------------------------------------------------------------------ */
+/*  GET /simg/badblocks                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * simg_badblocks_handler - GET /simg/badblocks
+ *
+ * Walks the whole-flash (master) MTD device erase block by erase block and
+ * reports the bad ones, so the page can draw where they sit on the chip.
+ * The device is the first master device: the one /simg/info reports, the
+ * one /simg/write programs, and the only one this page works with.
+ *
+ * Every block has to be looked at (a marker read on the devices that store
+ * one per block, a lookup on the ones that keep a bad block table), so a
+ * large chip can take up to a second to scan - which is why the page asks
+ * for it separately from the device info.
+ *
+ * Returns JSON:
+ * {"ok":true,"name":"...","size":N,"erasesize":N,"writesize":N,"bb":true,
+ *  "blocks":N,"bad":[i,j,...],"bad_count":N,"truncated":false}
+ * or {"ok":false,"error":"..."}.
+ *
+ * "bb" is false for a device that cannot have bad blocks at all (NOR), and
+ * no block is looked at in that case: the page then hides the map instead
+ * of drawing a chip that could only ever come out all good.
+ */
+void simg_badblocks_handler(enum httpd_uri_handler_status status,
+			    struct httpd_request *request,
+			    struct httpd_response *response)
+{
+#ifndef CONFIG_MTD
+	failsafe_free_session(status, response);
+
+	if (status != HTTP_CB_NEW)
+		return;
+
+	failsafe_http_reply_json(response, 500,
+				 "{\"ok\":false,\"error\":\"no_mtd\"}");
+#else
+	char esc_name[128];
+	char *buf;
+	struct mtd_info *mtd;
+	u64 erase_sz, blocks, i;
+	u32 bad_count = 0;
+	bool first = true, truncated = false, can_be_bad;
+	int len = 0;
+	const int left = SIMG_BADMAP_BUF_SZ;
+
+	failsafe_free_session(status, response);
+
+	if (status != HTTP_CB_NEW)
+		return;
+
+	if (!request || request->method != HTTP_GET) {
+		failsafe_http_reply_text(response, 405, "method");
+		return;
+	}
+
+	mtd = simg_get_master(NULL);
+	if (!mtd) {
+		failsafe_http_reply_json(response, 404,
+			"{\"ok\":false,\"error\":\"target_not_found\"}");
+		return;
+	}
+
+	erase_sz = mtd->erasesize;
+	blocks = erase_sz ? mtd->size / erase_sz : 0;
+	can_be_bad = mtd_can_have_bb(mtd);
+
+	buf = malloc(left);
+	if (!buf) {
+		put_mtd_device(mtd);
+		failsafe_http_reply_json(response, 500,
+					 "{\"ok\":false,\"error\":\"oom\"}");
+		return;
+	}
+
+	json_escape(esc_name, sizeof(esc_name), mtd->name);
+
+	len = buf_appendf(buf, left, len,
+		"{\"ok\":true,\"name\":\"%s\",\"size\":%llu,\"erasesize\":%llu,"
+		"\"writesize\":%llu,\"bb\":%s,\"blocks\":%llu,\"bad\":[",
+		esc_name,
+		(unsigned long long)mtd->size,
+		(unsigned long long)erase_sz,
+		(unsigned long long)mtd->writesize,
+		can_be_bad ? "true" : "false",
+		(unsigned long long)blocks);
+
+	if (can_be_bad) {
+		for (i = 0; i < blocks; i++) {
+			int bad = mtd_block_isbad(mtd, (loff_t)(i * erase_sz));
+
+			if (bad < 0) {
+				free(buf);
+				put_mtd_device(mtd);
+				failsafe_http_reply_json(response, 500,
+					"{\"ok\":false,\"error\":\"scan_failed\"}");
+				return;
+			}
+
+			if (!bad)
+				continue;
+
+			bad_count++;
+
+			/* The count stays exact, the list is what gets cut
+			 * when the buffer runs out.  The reserve has to be
+			 * larger than the closing part below. */
+			if (len >= left - 64) {
+				truncated = true;
+				continue;
+			}
+
+			len = buf_appendf(buf, left, len, "%s%llu",
+					  first ? "" : ",",
+					  (unsigned long long)i);
+			first = false;
+		}
+	}
+
+	buf_appendf(buf, left, len,
+		    "],\"bad_count\":%u,\"truncated\":%s}\n",
+		    bad_count, truncated ? "true" : "false");
+
+	put_mtd_device(mtd);
+
+	failsafe_http_reply_json_alloc(response, 200, buf, buf);
+#endif /* CONFIG_MTD */
+}
+
+/* ------------------------------------------------------------------ */
 /*  POST /simg/write                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -451,6 +589,8 @@ void simg_register_handlers(struct httpd_instance *inst)
 	/* The page and its script are registered by the page inventory
 	 * (failsafe/pages.c); this module only owns the endpoints. */
 	httpd_register_uri_handler(inst, "/simg/info", &simg_info_handler, NULL);
+	httpd_register_uri_handler(inst, "/simg/badblocks", &simg_badblocks_handler,
+				   NULL);
 	httpd_register_uri_handler(inst, "/simg/write", &simg_write_handler, NULL);
 }
 #endif
