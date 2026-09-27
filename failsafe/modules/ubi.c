@@ -33,6 +33,7 @@
 
 #include <failsafe/internal.h>
 #include <failsafe/storage.h>
+#include <failsafe/cprint.h>
 
 #include <env.h>
 #if IS_ENABLED(CONFIG_ENV_IS_IN_UBI)
@@ -315,9 +316,10 @@ void ubi_detach_handler(enum httpd_uri_handler_status status,
  *      package uses keeps it there);
  *   1. "ubi detach";
  *   2. erase the whole MTD partition that holds UBI, the same thing as
- *      "mtd erase <partition>": afterwards there is no volume table left
- *      at all, which is what makes this work on a device whose table is
- *      corrupt or whose volumes cannot be removed any more;
+ *      "mtd erase <partition>" (block by block, bad blocks skipped):
+ *      afterwards there is no volume table left at all, which is what
+ *      makes this work on a device whose table is corrupt or whose
+ *      volumes cannot be removed any more;
  *   3. "ubi part <partition>", which formats a new, empty UBI device;
  *   4. create the "fip" volume again - as the static volume of
  *      FAILSAFE_STORAGE_STATIC_SIZE the firmware upgrade creates (see
@@ -350,6 +352,9 @@ void ubi_rebuild_handler(enum httpd_uri_handler_status status,
 	char *json_out;
 	struct mtd_info *mtd;
 	struct erase_info ei;
+	loff_t off;
+	u32 erase_sz;
+	int bad_blocks = 0;
 	void *fip = NULL;
 	size_t fip_size = 0;
 #if IS_ENABLED(CONFIG_ENV_IS_IN_UBI)
@@ -449,6 +454,14 @@ void ubi_rebuild_handler(enum httpd_uri_handler_status status,
 
 	/* Step 2: erase what it lived on, so no stale volume table is left
 	 * behind for the new device to pick up.
+	 *
+	 * Block by block, with the bad ones skipped - exactly what
+	 * "mtd erase <partition>" does.  One mtd_erase() over the whole
+	 * partition is not usable here: the NAND drivers abort such a range
+	 * erase with -EIO on the first bad block they meet, and they do it
+	 * silently (the only message is a debug one), so the erase would fail
+	 * on every device that has a single factory bad block - which every
+	 * NAND has a chance of.
 	 */
 	mtd_probe_devices();
 	mtd = get_mtd_device_nm(mtd_name);
@@ -465,13 +478,58 @@ void ubi_rebuild_handler(enum httpd_uri_handler_status status,
 		return;
 	}
 
-	memset(&ei, 0, sizeof(ei));
-	ei.mtd = mtd;
-	ei.addr = 0;
-	ei.len = mtd->size;
+	erase_sz = mtd->erasesize;
+	if (!erase_sz) {
+		put_mtd_device(mtd);
+		free(fip);
+		json_out = strdup("{\"error\":\"partition has no erase size\"}");
+		failsafe_http_reply_json_alloc(response, 500,
+			json_out ? json_out : "{\"error\":\"erase failed\"}",
+			json_out);
+		return;
+	}
 
-	ret = mtd_erase(mtd, &ei);
+	ret = 0;
+	for (off = 0; off < mtd->size; off += erase_sz) {
+		int bad = mtd_block_isbad(mtd, off);
+
+		if (bad < 0) {
+			ret = bad;
+			break;
+		}
+
+		if (bad) {
+			/* Nothing to erase, and erasing it is not allowed:
+			 * the UBI layer finds it again when it attaches. */
+			bad_blocks++;
+			continue;
+		}
+
+		memset(&ei, 0, sizeof(ei));
+		ei.mtd = mtd;
+		ei.addr = off;
+		ei.len = erase_sz;
+
+		ret = mtd_erase(mtd, &ei);
+		if (ret == -EIO) {
+			/* Like "mtd erase": a block the driver refuses to
+			 * erase does not stop the wipe of the others. */
+			cprintln(CAUTION,
+				 "ubi: erase of 0x%llx failed, continuing",
+				 (unsigned long long)off);
+			ret = 0;
+			continue;
+		}
+
+		if (ret)
+			break;
+	}
+
 	put_mtd_device(mtd);
+
+	if (bad_blocks)
+		cprintln(CAUTION, "ubi: %d bad block(s) skipped in '%s'",
+			 bad_blocks, mtd_name);
 
 	if (ret) {
 		free(fip);
