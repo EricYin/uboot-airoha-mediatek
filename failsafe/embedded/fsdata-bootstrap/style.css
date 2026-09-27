@@ -2156,6 +2156,97 @@ body[data-page="404"] #m {
     }
 }
 
+/* ── Bad block map (SIMG page) ──────────────────────────────────── */
+/*
+ * One cell per erase block, filled left to right, top to bottom, so the
+ * map looks like the chip itself: the cell size follows the block count
+ * (--bbcell is set from the page script), the bad ones are red and carry
+ * the block index and offset in their tooltip.
+ */
+.bbmap {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, var(--bbcell, 10px));
+    gap: 2px;
+    align-content: start;
+    margin-top: var(--sp-sm);
+    padding: var(--sp-sm);
+    max-height: 320px;
+    overflow-y: auto;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.bbcell {
+    width: var(--bbcell, 10px);
+    height: var(--bbcell, 10px);
+    border-radius: 2px;
+    background: rgba(var(--primary-rgb), 0.18);
+    transition: transform var(--anim-fast) var(--ease-out);
+}
+
+.bbcell-bad {
+    background: var(--danger);
+    box-shadow: 0 0 0 1px rgba(var(--danger-rgb), 0.30);
+}
+
+.bbcell-bad:hover {
+    position: relative;
+    z-index: 2;
+    transform: scale(1.7);
+    box-shadow: 0 0 0 2px rgba(var(--danger-rgb), 0.45);
+}
+
+.bbmap-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-md);
+    margin-top: var(--sp-sm);
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.bbmap-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.bbmap-legend i {
+    width: 11px;
+    height: 11px;
+    border-radius: 2px;
+    background: rgba(var(--primary-rgb), 0.18);
+}
+
+.bbmap-legend i.bbcell-bad {
+    background: var(--danger);
+}
+
+.bbmap-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: var(--sp-sm);
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+
+.bbmap-list span {
+    padding: 2px 6px;
+    color: var(--danger);
+    background: var(--err-bg);
+    border: 1px solid var(--err-border);
+    border-radius: var(--radius-xs);
+}
+
+.bbmap-list span.bbmap-more {
+    color: var(--muted);
+    background: var(--panel-2);
+    border-color: var(--border);
+}
+
 /* ── Upload pages (card-head hero + centering) ──────────────────── */
 body[data-page="index"] .card-head,
 body[data-page="bl2"] .card-head,

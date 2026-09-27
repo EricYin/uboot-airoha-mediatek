@@ -114,6 +114,119 @@
         });
     }
 
+    /* ── Bad block map ───────────────────────────────────────────── */
+
+    /* Cell size in pixels: a 128 MiB chip has 1024 blocks and a 512 MiB one
+     * 4096, so the map is scaled down as the chip grows to stay readable.
+     */
+    var BAD_CELL_BIG = 16;
+    var BAD_CELL_MID = 10;
+    var BAD_CELL_SMALL = 6;
+
+    /* Bad blocks listed below the map, as "#index offset" chips. */
+    var BAD_LIST_MAX = 24;
+
+    function badCellSize(blocks) {
+        if (blocks <= 256) return BAD_CELL_BIG;
+        if (blocks <= 1024) return BAD_CELL_MID;
+        return BAD_CELL_SMALL;
+    }
+
+    function badCellTitle(index, eraseSize) {
+        return t("simg.bad.cell")
+            .replace("$1", index)
+            .replace("$2", toHex(index * eraseSize));
+    }
+
+    /*
+     * Draw the bad block map of the chip: one cell per erase block, in
+     * order, so a cluster of bad blocks is visible as a cluster of red
+     * cells.  A device that cannot have bad blocks (NOR) has no map to
+     * show, and the whole section is hidden for it.
+     */
+    function renderBadBlocks(data) {
+        var section = document.getElementById("simg_bad_section");
+        if (!section) return;
+
+        if (!data || !data.ok || !data.bb || !data.blocks) {
+            section.style.display = "none";
+            return;
+        }
+
+        section.style.display = "";
+
+        var eraseSize = data.erasesize || 0;
+        var bad = data.bad || [];
+        var percent = data.bad_count ?
+            (data.bad_count / data.blocks * 100).toFixed(2) : "0";
+
+        var info = document.getElementById("simg_bad_info");
+        if (info) {
+            info.innerHTML =
+                '<div class="sysinfo-line">' + t("simg.bad.blocks") + ' ' +
+                data.blocks + ' × ' + human(eraseSize) + '</div>' +
+                '<div class="sysinfo-line">' + t("simg.bad.count") + ' ' +
+                data.bad_count + ' (' + percent + '%)</div>';
+        }
+
+        var map = document.getElementById("simg_bad_map");
+        if (map) {
+            map.style.setProperty("--bbcell", badCellSize(data.blocks) + "px");
+
+            var isBad = {};
+            var i;
+            for (i = 0; i < bad.length; i++) isBad[bad[i]] = true;
+
+            var cells = [];
+            for (i = 0; i < data.blocks; i++) {
+                if (isBad[i]) {
+                    cells.push('<i class="bbcell bbcell-bad" title="' +
+                        badCellTitle(i, eraseSize) + '"></i>');
+                } else {
+                    cells.push('<i class="bbcell"></i>');
+                }
+            }
+            map.innerHTML = cells.join("");
+        }
+
+        var list = document.getElementById("simg_bad_list");
+        if (list) {
+            var chips = [];
+            var shown = Math.min(bad.length, BAD_LIST_MAX);
+            var j;
+
+            for (j = 0; j < shown; j++) {
+                chips.push('<span>#' + bad[j] + ' ' +
+                    toHex(bad[j] * eraseSize) + '</span>');
+            }
+
+            if (data.truncated || bad.length > shown) {
+                chips.push('<span class="bbmap-more">' +
+                    t("simg.bad.truncated") + '</span>');
+            }
+
+            list.innerHTML = chips.join("");
+        }
+    }
+
+    function fetchBadBlocks() {
+        ajax({
+            url: "/simg/badblocks",
+            done: function (resp) {
+                try {
+                    renderBadBlocks(JSON.parse(resp));
+                } catch (e) {
+                    renderBadBlocks(null);
+                }
+            },
+            /* No device to map, or an answer we cannot read: the section
+             * stays hidden and the device info above says what is wrong. */
+            fail: function () {
+                renderBadBlocks(null);
+            }
+        });
+    }
+
     /* Upload one chunk; resolves with the server JSON payload. */
     function sendChunk(blob, start, end, onProgress) {
         return new Promise(function (resolve, reject) {
@@ -210,10 +323,16 @@
 
     window.simgInit = function () {
         fetchInfo();
+        fetchBadBlocks();
         updateFileInfo();
 
         var refreshButton = document.getElementById("simg_btn_refresh");
-        if (refreshButton) refreshButton.addEventListener("click", fetchInfo);
+        if (refreshButton) {
+            refreshButton.addEventListener("click", function () {
+                fetchInfo();
+                fetchBadBlocks();
+            });
+        }
 
         var writeButton = document.getElementById("simg_btn_write");
         if (writeButton) writeButton.addEventListener("click", writeSimg);

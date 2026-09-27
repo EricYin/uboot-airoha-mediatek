@@ -42,6 +42,18 @@
 							</div>
 						</section>
 
+						<section class="settings-section" id="simg_bad_section" style="display: none;">
+							<h2 class="settings-heading" data-i18n="simg.bad.title">Bad Block Map</h2>
+							<p data-i18n="simg.bad.hint">Every erase block of the chip, as the MTD layer sees it. A red block is bad: the writer skips it, so the bytes of the image that fall into it are lost.</p>
+							<div id="simg_bad_info" class="sysinfo"></div>
+							<div id="simg_bad_map" class="bbmap"></div>
+							<div class="bbmap-legend">
+								<span><i></i><span data-i18n="simg.bad.legend_good">good</span></span>
+								<span><i class="bbcell-bad"></i><span data-i18n="simg.bad.legend_bad">bad</span></span>
+							</div>
+							<div id="simg_bad_list" class="bbmap-list"></div>
+						</section>
+
 						<section class="settings-section">
 							<h2 class="settings-heading" data-i18n="simg.write.title">Write SIMG</h2>
 							<div class="form-row">
