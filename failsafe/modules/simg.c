@@ -240,7 +240,12 @@ out:
  * Reports the whole-flash MTD devices a SIMG can be restored to, plus
  * the maximum chunk size the writer accepts:
  * {"targets":[{"name":"spi-nand0","size":N,"erasesize":N,"writesize":N,
- *              "type":N}],"max_chunk":N}
+ *              "type":N,"bb":true}],"max_chunk":N}
+ *
+ * "bb" is true on a device that can have bad blocks (NAND), which is what
+ * the page uses to decide whether to offer the bad block map of
+ * /simg/badblocks: that map costs a scan of the whole chip, so it is only
+ * offered where it can mean something, and only drawn when asked for.
  */
 void simg_info_handler(enum httpd_uri_handler_status status,
 		       struct httpd_request *request,
@@ -294,13 +299,17 @@ void simg_info_handler(enum httpd_uri_handler_status status,
 			len = buf_appendf(buf, left, len,
 				"%s{\"name\":\"%s\",\"size\":%llu,"
 				"\"erasesize\":%llu,\"writesize\":%llu,"
-				"\"type\":%d}",
+				"\"type\":%d,\"bb\":%s}",
 				first ? "" : ",",
 				esc_name,
 				(unsigned long long)mtd->size,
 				(unsigned long long)mtd->erasesize,
 				(unsigned long long)mtd->writesize,
-				(int)mtd->type);
+				(int)mtd->type,
+				/* Whether a bad block map makes sense for it
+				 * at all, so the page can offer the scan only
+				 * where there is something to scan. */
+				mtd_can_have_bb(mtd) ? "true" : "false");
 
 			first = false;
 			put_mtd_device(mtd);

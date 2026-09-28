@@ -66,6 +66,7 @@
         var flash = currentFlash();
         if (!flash) {
             el.innerHTML = '<div class="sysinfo-line">' + t("simg.info.none") + '</div>';
+            updateBadSection();
             return;
         }
 
@@ -75,6 +76,7 @@
         html += '<div class="sysinfo-line">' + t("simg.info.erasesize") + ' ' + human(flash.erasesize) + '</div>';
         html += '<div class="sysinfo-line">' + t("simg.info.writesize") + ' ' + human(flash.writesize) + '</div>';
         el.innerHTML = html;
+        updateBadSection();
         updateFileInfo();
     }
 
@@ -138,22 +140,58 @@
             .replace("$2", toHex(index * eraseSize));
     }
 
+    /* Drop everything the last scan drew, so the next one starts clean. */
+    function resetBadResult() {
+        var result = document.getElementById("simg_bad_result");
+        var map = document.getElementById("simg_bad_map");
+        var info = document.getElementById("simg_bad_info");
+        var list = document.getElementById("simg_bad_list");
+
+        if (result) result.style.display = "none";
+        if (map) map.innerHTML = "";
+        if (info) info.innerHTML = "";
+        if (list) list.innerHTML = "";
+    }
+
     /*
-     * Draw the bad block map of the chip: one cell per erase block, in
-     * order, so a cluster of bad blocks is visible as a cluster of red
-     * cells.  A device that cannot have bad blocks (NOR) has no map to
-     * show, and the whole section is hidden for it.
+     * The map costs a scan of every block of the chip, so the section is
+     * offered (and the button with it) only on a device that can have bad
+     * blocks at all - NOR has none - and nothing is drawn until the user
+     * asks for it.
      */
-    function renderBadBlocks(data) {
+    function updateBadSection() {
         var section = document.getElementById("simg_bad_section");
+        var flash = currentFlash();
+
         if (!section) return;
 
-        if (!data || !data.ok || !data.bb || !data.blocks) {
+        if (!flash || !flash.bb) {
             section.style.display = "none";
+            resetBadResult();
             return;
         }
 
         section.style.display = "";
+    }
+
+    /*
+     * Draw the bad block map of the chip: one cell per erase block, in
+     * order, so a cluster of bad blocks is visible as a cluster of red
+     * cells.
+     */
+    function renderBadBlocks(data) {
+        var section = document.getElementById("simg_bad_section");
+        var result = document.getElementById("simg_bad_result");
+        if (!section) return;
+
+        if (!data || !data.ok || !data.bb || !data.blocks) {
+            section.style.display = "none";
+            resetBadResult();
+            return;
+        }
+
+        section.style.display = "";
+        if (result) result.style.display = "";
 
         var eraseSize = data.erasesize || 0;
         var bad = data.bad || [];
@@ -209,20 +247,42 @@
         }
     }
 
+    /* Scan button state: the scan reads every block, so it takes a moment
+     * and must not be started twice by an impatient second click.
+     */
+    function badScanBusy(busy) {
+        var button = document.getElementById("simg_btn_bad");
+        if (!button) return;
+
+        button.disabled = !!busy;
+        button.textContent = busy ? t("simg.bad.scanning") : t("simg.bad.scan");
+    }
+
     function fetchBadBlocks() {
+        var button = document.getElementById("simg_btn_bad");
+
+        if (button && button.disabled) return;
+        badScanBusy(true);
+
         ajax({
             url: "/simg/badblocks",
             done: function (resp) {
+                var data = null;
+
                 try {
-                    renderBadBlocks(JSON.parse(resp));
+                    data = JSON.parse(resp);
                 } catch (e) {
-                    renderBadBlocks(null);
+                    data = null;
                 }
+
+                renderBadBlocks(data);
+                badScanBusy(false);
             },
-            /* No device to map, or an answer we cannot read: the section
-             * stays hidden and the device info above says what is wrong. */
+            /* No device to map, or an answer we cannot read: the map stays
+             * hidden and the device info above says what is wrong. */
             fail: function () {
                 renderBadBlocks(null);
+                badScanBusy(false);
             }
         });
     }
@@ -323,16 +383,15 @@
 
     window.simgInit = function () {
         fetchInfo();
-        fetchBadBlocks();
         updateFileInfo();
 
         var refreshButton = document.getElementById("simg_btn_refresh");
-        if (refreshButton) {
-            refreshButton.addEventListener("click", function () {
-                fetchInfo();
-                fetchBadBlocks();
-            });
-        }
+        if (refreshButton) refreshButton.addEventListener("click", fetchInfo);
+
+        /* The bad block map is drawn on demand only: reading every block
+         * of the chip is not something to do on every page load. */
+        var badButton = document.getElementById("simg_btn_bad");
+        if (badButton) badButton.addEventListener("click", fetchBadBlocks);
 
         var writeButton = document.getElementById("simg_btn_write");
         if (writeButton) writeButton.addEventListener("click", writeSimg);
