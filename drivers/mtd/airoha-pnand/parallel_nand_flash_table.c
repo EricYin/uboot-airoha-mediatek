@@ -13,6 +13,10 @@
  *              PARALLEL_NAND_FLASH_TIMING -> 150 MHz APB (AN7581)
  * addr_cycle:  4 = 1 column + 3 row bytes, 5 = 2 column + 3 row bytes
  *
+ * Per-entry comment format:
+ *   <vendor> | <chip name> | <ECC requirement>
+ *   ECC requirement is min_ecc_req in bit/512B.
+ *
  * The vendor table also carries an "oob_free_layout" pointer used by the
  * SPI-NAND erase-statistics feature and by the BL2 optimization blob; neither
  * exists in this port, so the field is not carried over.  The user OOB layout
@@ -30,6 +34,8 @@
 
 /* STATIC VARIABLE DECLARATIONS ------------------------------------------------------ */
 static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
+	/* MXIC */
+	/* MXIC   | MX30LF1G18AC     | 4bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_MXIC,
 		.dev_id		= 0xF1,
@@ -45,6 +51,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 4,
 		.soc_ecc_ability	= 4,
 	},
+	/* MXIC   | MX30LF2G18AC     | 4bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_MXIC,
 		.dev_id		= 0xDA,
@@ -60,6 +67,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* MXIC   | MX30LF1G08AA     | 1bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_MXIC,
 		.dev_id		= 0xF1,
@@ -75,6 +83,8 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 4,
 		.soc_ecc_ability	= 4,
 	},
+	/* ESMT */
+	/* ESMT   | F59L2G81A        | 4bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_ESMT,
 		.dev_id		= 0xDA,
@@ -90,6 +100,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* ESMT   | F59L4G81A        | 4bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_ESMT,
 		.dev_id		= 0xDC,
@@ -105,6 +116,8 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* Winbond */
+	/* Winbond| W29N08GVSIAD     | 1bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_WINBOND,
 		.dev_id		= 0xDC,
@@ -120,6 +133,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* Winbond| W29N08GVSIAA     | 1bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_WINBOND,
 		.dev_id		= 0xD3,
@@ -135,6 +149,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* Winbond| W29N02GV         | 1bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_WINBOND,
 		.dev_id		= 0xDA,
@@ -150,6 +165,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* Winbond| W29N02KVSIAE     | 8bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_WINBOND,
 		.dev_id		= 0xDA,
@@ -165,6 +181,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 8,
 	},
+	/* Winbond| W29N02KVSIAF     | 4bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_WINBOND,
 		.dev_id		= 0xDA,
@@ -180,6 +197,8 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* Micron */
+	/* Micron | MT29F01G08ABAEA  | 4bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_MICRON,
 		.dev_id		= 0xF1,
@@ -195,6 +214,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* Micron | MT29F02G08ABAGA  | 8bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_MICRON,
 		.dev_id		= 0xDA,
@@ -210,6 +230,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 12,
 	},
+	/* Micron | MT29F08G08ABACA  | 8bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_MICRON,
 		.dev_id		= 0xD3,
@@ -225,6 +246,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 12,
 	},
+	/* Micron | MT29F4G08ABAEA   | 8bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_MICRON,
 		.dev_id		= 0xDC,
@@ -240,6 +262,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 12,
 	},
+	/* Micron | MT29F2G08ABAFA   | 8bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_MICRON,
 		.dev_id		= 0xDA,
@@ -255,6 +278,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 12,
 	},
+	/* Micron | MT29F16G08ABACA  | 8bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_MICRON,
 		.dev_id		= 0x48,
@@ -270,6 +294,8 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 12,
 	},
+	/* Toshiba */
+	/* Toshiba| TC58NVG4S0HTA20  | 8bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_TOSHIBA,
 		.dev_id		= 0xD3,
@@ -285,6 +311,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 12,
 	},
+	/* Toshiba| TC58NVG1S3HTAI0  | 8bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_TOSHIBA,
 		.dev_id		= 0xDA,
@@ -300,6 +327,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 8,
 	},
+	/* Toshiba| TC58NVG0S3HTA00  | 8bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_TOSHIBA,
 		.dev_id		= 0xF1,
@@ -315,6 +343,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 4,
 		.soc_ecc_ability	= 8,
 	},
+	/* Toshiba| TC58NVG3S0FTA00  | 4bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_TOSHIBA,
 		.dev_id		= 0xD3,
@@ -330,6 +359,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* Toshiba| TC58NVG2S0HTA00  | 12bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_TOSHIBA,
 		.dev_id		= 0xDC,
@@ -345,6 +375,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 12,
 	},
+	/* Toshiba| TH58NVG2S3HTA00  | 4bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_TOSHIBA,
 		.dev_id		= 0xDC,
@@ -360,6 +391,8 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* Spansion */
+	/* Spansion| S34ML02G300TFI00| 4bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_SPANSION,
 		.dev_id		= 0xDA,
@@ -375,6 +408,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* Spansion| S34ML04G200TFI00| 4bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_SPANSION,
 		.dev_id		= 0xDC,
@@ -390,6 +424,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* Spansion| S34ML01G1       | 1bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_SPANSION,
 		.dev_id		= 0xF1,
@@ -405,6 +440,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 4,
 		.soc_ecc_ability	= 4,
 	},
+	/* Spansion| S34ML02G1       | 1bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_SPANSION,
 		.dev_id		= 0xDA,
@@ -420,6 +456,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* Spansion| S34ML04G1       | 1bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_SPANSION,
 		.dev_id		= 0xDC,
@@ -435,6 +472,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* Spansion| S34ML02G2_1     | 4bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_SPANSION,
 		.dev_id		= 0xDA,
@@ -450,6 +488,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
+	/* Spansion| S34ML02G2_2     | 4bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_SPANSION,
 		.dev_id		= 0xDA,
