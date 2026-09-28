@@ -14,6 +14,7 @@
 #include <dm/device_compat.h>
 #include <dm/devres.h>
 #include <linux/bitfield.h>
+#include <linux/iopoll.h>
 #include <linux/dma-mapping.h>
 #include <linux/mtd/spinand.h>
 #include <linux/sizes.h>
@@ -255,6 +256,7 @@ struct airoha_snand_soc_data {
 
 struct airoha_snand_priv {
 	struct udevice *dev;
+	void __iomem *ctrl_base;
 	struct regmap *regmap_ctrl;
 	struct regmap *regmap_nfi;
 	struct clk *spi_clk;
@@ -421,35 +423,41 @@ static int airoha_snand_write_data_to_fifo(struct airoha_snand_priv *priv,
 	return 0;
 }
 
+/*
+ * Every SPI-NAND page read on EN751221 goes through the manual FIFO one byte
+ * at a time. Through regmap, each byte costs a range lookup per access and a
+ * timer read in the poll: several times what the SPI bus needs. Use the
+ * mapped range directly (regmap reads this node with readl()), and only fall
+ * back to the timed poll when the FIFO is actually empty.
+ */
 static int airoha_snand_read_data_from_fifo(struct airoha_snand_priv *priv,
 					    u8 *ptr, int len)
 {
+	void __iomem *base = priv->ctrl_base;
 	int i;
 
 	for (i = 0; i < len; i++) {
-		int err;
 		u32 val;
 
 		/* 1. wait until dfifo is not empty */
-		err = regmap_read_poll_timeout(priv->regmap_ctrl,
-					       REG_SPI_CTRL_DFIFO_EMPTY, val,
-					       !(val & SPI_CTRL_DFIFO_EMPTY),
-					       0, 250 * USEC_PER_MSEC);
-		if (err)
-			return err;
+		val = readl(base + REG_SPI_CTRL_DFIFO_EMPTY);
+		if (val & SPI_CTRL_DFIFO_EMPTY) {
+			int err;
+
+			err = readl_poll_timeout(base + REG_SPI_CTRL_DFIFO_EMPTY,
+						 val,
+						 !(val & SPI_CTRL_DFIFO_EMPTY),
+						 250 * USEC_PER_MSEC);
+			if (err)
+				return err;
+		}
 
 		/* 2. read from dfifo to register DFIFO_RDATA */
-		err = regmap_read(priv->regmap_ctrl,
-				  REG_SPI_CTRL_DFIFO_RDATA, &val);
-		if (err)
-			return err;
-
+		val = readl(base + REG_SPI_CTRL_DFIFO_RDATA);
 		ptr[i] = FIELD_GET(SPI_CTRL_DFIFO_RDATA, val);
+
 		/* 3. enable register DFIFO_RD to read next byte */
-		err = regmap_write(priv->regmap_ctrl,
-				   REG_SPI_CTRL_DFIFO_RD, SPI_CTRL_DFIFO_RD);
-		if (err)
-			return err;
+		writel(SPI_CTRL_DFIFO_RD, base + REG_SPI_CTRL_DFIFO_RD);
 	}
 
 	return 0;
@@ -1398,6 +1406,7 @@ static int airoha_snand_probe(struct udevice *dev)
 		dev_err(dev, "failed to init spi ctrl regmap\n");
 		return ret;
 	}
+	priv->ctrl_base = regmap_get_range(priv->regmap_ctrl, 0);
 
 	if (priv->soc->has_nfi) {
 		ret = regmap_init_mem_index(dev_ofnode(dev), &priv->regmap_nfi, 1);
