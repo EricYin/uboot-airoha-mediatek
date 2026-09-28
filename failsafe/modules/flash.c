@@ -177,6 +177,19 @@ static bool flash_mtd_part_exists(const char *name)
 }
 
 #if IS_ENABLED(CONFIG_MTD_SPI_NAND)
+static bool flash_mtd_is_spinand(struct mtd_info *mtd)
+{
+	struct udevice *dev;
+
+	if (!mtd)
+		return false;
+
+	dev = mtd->dev;
+
+	return dev && dev->driver && dev->driver->name &&
+	       !strcmp(dev->driver->name, "spi_nand");
+}
+
 static const struct spinand_info *
 flash_spinand_match_info(struct spinand_device *spinand)
 {
@@ -239,8 +252,10 @@ static const char *flash_mtd_chip_model(struct mtd_info *mtd, char *out,
 
 #if IS_ENABLED(CONFIG_MTD_SPI_NAND)
 	/* SPI NAND: mtd->priv points to the struct nand_device embedded in
-	 * struct spinand_device. */
-	if (mtd->type == MTD_NANDFLASH || mtd->type == MTD_MLCNANDFLASH) {
+	 * struct spinand_device - but only for the generic SPI NAND driver,
+	 * see flash_mtd_is_spinand(). */
+	if ((mtd->type == MTD_NANDFLASH || mtd->type == MTD_MLCNANDFLASH) &&
+	    flash_mtd_is_spinand(mtd)) {
 		struct spinand_device *spinand = mtd_to_spinand(mtd);
 		const struct spinand_manufacturer *manufacturer;
 		const struct spinand_info *info;
