@@ -1663,10 +1663,15 @@ endif # CMD_NAND
 config CMD_NAND_EXT
 	bool "nand - extended nand utility for debugging"
 	depends on !CMD_NAND
-	default y if MTK_SPI_NAND
+	default y if MTK_SPI_NAND || AIROHA_PARALLEL_NAND
 	select MTD_PARTITIONS
 	help
 	  NAND flash R/W and debugging support.
+
+	  Unlike CMD_NAND, which needs the raw NAND framework, this command
+	  only uses the generic MTD API, so it also works with NAND drivers
+	  that expose nothing but a struct mtd_info (the MediaTek SPI NAND
+	  driver and the Airoha parallel NAND controller).
 
 config CMD_NVME
 	bool "nvme"
