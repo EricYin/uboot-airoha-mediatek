@@ -171,7 +171,7 @@
 			     "simple-mfd";
 		reg = <0x1fbf0200 0xc0>;
 
-		an7563_pinctrl: pinctrl {
+		pinctrl: pinctrl {
 			compatible = "airoha,an7563-pinctrl";
 
 			interrupt-parent = <&gic>;
@@ -183,7 +183,7 @@
 			interrupt-controller;
 			#interrupt-cells = <2>;
 
-			gpio-ranges = <&an7563_pinctrl 0 0 38>;
+			gpio-ranges = <&pinctrl 0 0 38>;
 		};
 	};
 
