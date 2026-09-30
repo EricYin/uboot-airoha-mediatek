@@ -320,6 +320,22 @@ int env_erase(void);
  * Return: 0 when an environment volume is usable, -ENODEV otherwise
  */
 int env_ubi_volumes_create(void);
+
+/**
+ * env_ubi_extra_volume_names() - names of the extra UBI volumes
+ *
+ * The volumes CONFIG_ENV_UBI_EXTRA_VOLUMES lists, comma separated and
+ * without their sizes, for a caller that has to keep their contents across
+ * a rebuild of the UBI device (the failsafe UBI page): the environment
+ * driver is what creates them again, and their content - the factory MAC
+ * in "ri", the radio calibration in "art" - exists nowhere else.
+ *
+ * @names: buffer to receive the names, may come back empty
+ * @sz: size of @names
+ *
+ * Return: 0, or -ENOSPC when the names do not fit in @names
+ */
+int env_ubi_extra_volume_names(char *names, size_t sz);
 #endif
 
 

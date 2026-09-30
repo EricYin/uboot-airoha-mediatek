@@ -213,6 +213,60 @@ static void env_ubi_extra_volume_create(void)
 }
 
 /*
+ * Give the names of the extra volumes to a caller that has to keep their
+ * contents across a rebuild of the UBI device (the failsafe UBI page):
+ * those volumes hold board data - the factory MAC in "ri", the radio
+ * calibration in "art" - that is recreated empty otherwise.
+ *
+ * @names receives the names comma separated ("bosa,ri,art"), or an empty
+ * string when the list is: the "size(name)" syntax is the environment
+ * driver's, so it is parsed here instead of a second time by the caller.
+ *
+ * Return: 0, or -ENOSPC when the names do not fit in @names.
+ */
+int env_ubi_extra_volume_names(char *names, size_t sz)
+{
+	char buf[sizeof(CONFIG_ENV_UBI_EXTRA_VOLUMES)];
+	char *p, *entry;
+
+	if (!sz)
+		return -ENOSPC;
+
+	names[0] = '\0';
+
+	if (!CONFIG_ENV_UBI_EXTRA_VOLUMES[0])
+		return 0;
+
+	strcpy(buf, CONFIG_ENV_UBI_EXTRA_VOLUMES);
+	p = buf;
+
+	while ((entry = strsep(&p, ",")) != NULL) {
+		char *name, *end;
+
+		if (*entry == '\0')
+			continue;
+
+		name = strchr(entry, '(');
+		if (!name)
+			continue;
+		name++;
+
+		end = strchr(name, ')');
+		if (!end || end == name)
+			continue;
+		*end = '\0';
+
+		if (names[0] && strlcat(names, ",", sz) >= sz)
+			return -ENOSPC;
+
+		if (strlcat(names, name, sz) >= sz)
+			return -ENOSPC;
+	}
+
+	return 0;
+}
+
+/*
  * Create the environment volumes (and the extra ones) if they are missing.
  *
  * This is what env_ubi_load() does on every boot when
