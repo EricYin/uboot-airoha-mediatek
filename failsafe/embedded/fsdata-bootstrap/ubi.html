@@ -57,10 +57,12 @@
 
 					<section class="settings-section">
 						<h2 class="settings-heading" data-i18n="ubi.rebuild.title">Rebuild UBI</h2>
-						<p class="settings-help" data-i18n="ubi.rebuild.hint">Erases the whole UBI partition and attaches a fresh, empty UBI device. The FIP is copied out beforehand and written back into its volume; every other volume, including the system image and the overlay, is lost.</p>
+						<p class="settings-help" data-i18n="ubi.rebuild.hint">Erases the whole UBI partition and attaches a fresh, empty UBI device. The FIP and the board data volumes (the factory MAC, the radio calibration) are copied out beforehand and written back into their volumes; every other volume, including the system image and the overlay, is lost.</p>
 						<div class="form-actions">
 							<button type="button" id="btn_rebuild" class="button button-danger" data-i18n="ubi.btn.rebuild">Rebuild UBI</button>
 						</div>
+						<div class="bar" id="ubi_rebuild_bar" style="display: none; --percent: 0;"></div>
+						<p id="ubi_rebuild_status" class="settings-status"></p>
 					</section>
 
 					<section class="settings-section">

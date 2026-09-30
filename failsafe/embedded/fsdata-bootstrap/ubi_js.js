@@ -273,53 +273,263 @@
         });
     }
 
+    /* ── Rebuild: progress inside the card ───────────────────────── */
+
+    var rebuildBusy = false;
+
+    function rebuildStatus(message, isError) {
+        var el = document.getElementById("ubi_rebuild_status");
+        if (!el) return;
+        el.textContent = message || "";
+        el.className = "settings-status" + (isError ? " red" : "");
+    }
+
+    function rebuildProgress(percent) {
+        var bar = document.getElementById("ubi_rebuild_bar");
+        if (!bar) return;
+
+        if (percent === null || percent === undefined) {
+            bar.style.display = "none";
+            return;
+        }
+
+        bar.style.display = "block";
+        bar.style.setProperty("--percent",
+            Math.max(0, Math.min(100, Math.round(percent))));
+    }
+
+    function rebuildButton(busy) {
+        var button = document.getElementById("btn_rebuild");
+        if (button) button.disabled = !!busy;
+        rebuildBusy = !!busy;
+    }
+
+    function erasePercent(done, total) {
+        return total ? Math.min(100, Math.floor(done / total * 100)) : 0;
+    }
+
     /*
-     * Throw the volume table away and build the device again: the FIP is
-     * read out on the device first, the partition is erased, a new empty
-     * UBI device is attached and the FIP is written back into its volume.
-     * Everything else (the system image, the overlay, ...) is gone.
+     * The steps a rebuild goes through, in the order the device runs them
+     * (see ubi_rebuild_handler()).  Only the wipe is asked for again and
+     * again, one chunk of the partition per request; the others are a request
+     * each, and every reply says where the progress bar belongs
+     * (result.progress) - so it is the device that decides that a finished
+     * wipe is not the end of the rebuild: formatting the partition and
+     * writing everything back are steps as well.
      */
-    function rebuildUbi() {
+    var REBUILD_STEPS = [
+        { op: "erase", label: "ubi.rebuild.progress.erase",
+          text: "Erasing: $1% (block $2 of $3, $4 bad skipped)" },
+        { op: "format", label: "ubi.rebuild.progress.format",
+          text: "Formatting the partition and attaching a fresh UBI device..." },
+        { op: "fip", label: "ubi.rebuild.progress.fip",
+          text: "Writing the FIP back..." },
+        { op: "env", label: "ubi.rebuild.progress.env",
+          text: "Rebuilding the environment and the board data volumes..." },
+        { op: "restore", label: "ubi.rebuild.progress.restore",
+          text: "Writing the board data volumes back..." }
+    ];
+
+    function rebuildStepName(step) {
+        if (step >= REBUILD_STEPS.length)
+            step = REBUILD_STEPS.length - 1;
+
+        return t(REBUILD_STEPS[step].label, REBUILD_STEPS[step].text);
+    }
+
+    /* Where a rebuild the device still holds got to, for the messages about
+     * continuing it. */
+    function rebuildWhere(data) {
+        var step = data.step || 0;
+
+        if (step === 0)
+            return t("ubi.rebuild.erased", "$1% erased")
+                .replace("$1", erasePercent(data.done, data.total));
+
+        return rebuildStepName(step);
+    }
+
+    /* One step of the rebuild; resolves with the server's JSON. */
+    function rebuildStep(formData) {
+        return new Promise(function (resolve, reject) {
+            ubiAjax({
+                url: "/ubi/rebuild",
+                data: formData,
+                /* One erase chunk can take a while on a big partition. */
+                timeout: 600000,
+                done: function (resp) {
+                    try {
+                        resolve(JSON.parse(resp));
+                    } catch (e) {
+                        reject(new Error(t("ubi.error.parse")));
+                    }
+                }
+            }, function (message) {
+                /* Report in the card, not in the page status line. */
+                reject(new Error(message || "http"));
+            });
+        });
+    }
+
+    /* What the device kept across the wipe, for the closing message. */
+    function rebuildSummary(result) {
+        var text = result.fip_bytes ?
+            bytesToHuman(result.fip_bytes) :
+            t("ubi.rebuild.no_fip", "no FIP was present");
+
+        /* The board data volumes (the factory MAC, the radio calibration)
+         * are read out before the wipe and written back after it. */
+        if (result.extra_bytes) {
+            text += ", " + t("ubi.rebuild.extra",
+                "board data volumes kept: $1")
+                .replace("$1", bytesToHuman(result.extra_bytes));
+        }
+
+        /* The environment lives in the UBI device too, so report what
+         * happened to it (and to the MAC the network stack needs). */
+        if (result.env_restored) {
+            text += ", " + (result.ethaddr_generated ?
+                t("ubi.rebuild.env_new", "ethaddr generated") :
+                t("ubi.rebuild.env_kept", "ethaddr kept"));
+        }
+
+        return text;
+    }
+
+    /*
+     * Throw the volume table away and build the device again.  The device
+     * does the work one step per request, so the card can say what is
+     * running and the bar can move through all of them:
+     *
+     *   begin   - read the FIP and the board data volumes out of the device
+     *   erase   - wipe the partition, one chunk per request
+     *   format  - format the partition and attach a fresh UBI device
+     *   fip     - write the FIP back into its volume
+     *   env     - rebuild the environment, and the board data volumes
+     *   restore - write the board data volumes back
+     *
+     * "begin" picks up a rebuild that was left unfinished instead of
+     * reading a device that is already half erased - there would be nothing
+     * left to read, and the copies are still held on the device.  It also
+     * says which step to carry on at, so a reload in the middle does not
+     * start the wipe over.
+     */
+    async function rebuildUbi() {
+        if (rebuildBusy) return;
         if (!confirm(t("ubi.confirm.rebuild", "Erase the whole UBI partition and rebuild the UBI device?"))) {
             return;
         }
 
         var select = document.getElementById("mtd_select");
-        var formData = new FormData();
-        if (select && select.value) formData.append("mtd_name", select.value);
+        var mtd = (select && select.value) ? select.value : "";
+        var totalBlocks, doneBlocks;
 
-        setStatus(t("ubi.status.rebuilding"));
+        rebuildButton(true);
+        rebuildProgress(0);
+        rebuildStatus(t("ubi.rebuild.progress.prepare",
+            "Reading the FIP and the board data volumes..."));
+
+        try {
+            var begin = new FormData();
+            begin.append("op", "begin");
+            if (mtd) begin.append("mtd_name", mtd);
+
+            var plan = await rebuildStep(begin);
+            if (!plan.ok) throw new Error(plan.error || t("ubi.error.rebuild_failed"));
+
+            var done = plan.done || 0;
+            var step = plan.step || 0;          /* where the device left off */
+            var index, result = null;
+
+            totalBlocks = Math.ceil(plan.total / (plan.erasesize || 1));
+
+            if (plan.resumed) {
+                rebuildStatus(t("ubi.rebuild.resumed",
+                    "Continuing the unfinished rebuild ($1).")
+                    .replace("$1", rebuildWhere(plan)));
+            }
+
+            rebuildProgress(plan.progress);
+
+            /* The wipe is the only step that has to be asked for again and
+             * again: it takes one chunk of the partition per request. */
+            if (step === 0) {
+                while (done < plan.total) {
+                    var erase = new FormData();
+                    erase.append("op", "erase");
+
+                    var erased = await rebuildStep(erase);
+                    if (!erased.ok) throw new Error(erased.error || t("ubi.error.rebuild_failed"));
+                    if (erased.done <= done && erased.done < plan.total)
+                        throw new Error(t("ubi.error.rebuild_stuck"));
+
+                    done = erased.done;
+                    doneBlocks = Math.ceil(done / (plan.erasesize || 1));
+
+                    rebuildProgress(erased.progress);
+                    rebuildStatus(rebuildStepName(0)
+                        .replace("$1", erasePercent(done, plan.total))
+                        .replace("$2", doneBlocks)
+                        .replace("$3", totalBlocks)
+                        .replace("$4", erased.bad_blocks));
+                }
+
+                step = 1;
+            }
+
+            /* Everything the device does after the wipe: one request a step,
+             * with the bar where the device says the step left it. */
+            for (index = step; index < REBUILD_STEPS.length; index++) {
+                var request = new FormData();
+
+                rebuildStatus(rebuildStepName(index));
+                request.append("op", REBUILD_STEPS[index].op);
+
+                result = await rebuildStep(request);
+                if (!result.ok) throw new Error(result.error || t("ubi.error.rebuild_failed"));
+
+                rebuildProgress(result.progress);
+            }
+
+            rebuildProgress(100);
+            rebuildStatus(t("ubi.status.rebuilt", "UBI rebuilt.")
+                .replace("$1", rebuildSummary(result || {})));
+
+            fetchUbiInfo();
+            fetchMtdList();
+        } catch (error) {
+            rebuildProgress(null);
+            rebuildStatus((error && error.message) ? error.message :
+                t("ubi.error.rebuild_failed"), true);
+        } finally {
+            rebuildButton(false);
+        }
+    }
+
+    /* A rebuild the device is still holding on to (page was reloaded or the
+     * browser gave up): tell the user it can be continued. */
+    function fetchRebuildState() {
+        var formData = new FormData();
+        formData.append("op", "status");
+
         ubiAjax({
             url: "/ubi/rebuild",
             data: formData,
-            /* Erasing a whole NAND partition takes a while. */
-            timeout: 600000,
             done: function (resp) {
+                var data = null;
+
                 try {
-                    var data = JSON.parse(resp);
-                    if (data.ok) {
-                        var fip = data.fip_bytes ?
-                            bytesToHuman(data.fip_bytes) :
-                            t("ubi.rebuild.no_fip", "no FIP was present");
-
-                        /* The environment lives in the UBI device too, so
-                         * report what happened to it (and to the MAC
-                         * address the network stack needs). */
-                        if (data.env_restored) {
-                            fip += ", " + (data.ethaddr_generated ?
-                                t("ubi.rebuild.env_new", "ethaddr generated") :
-                                t("ubi.rebuild.env_kept", "ethaddr kept"));
-                        }
-
-                        setStatus(t("ubi.status.rebuilt", "UBI rebuilt.").replace("$1", fip));
-                        fetchUbiInfo();
-                        fetchMtdList();
-                    } else {
-                        setStatus(data.error || t("ubi.error.rebuild_failed"), true);
-                    }
+                    data = JSON.parse(resp);
                 } catch (e) {
-                    setStatus(t("ubi.error.parse"), true);
+                    return;
                 }
+
+                if (!data || !data.ok || !data.active) return;
+
+                rebuildProgress(data.progress);
+                rebuildStatus(t("ubi.rebuild.pending",
+                    "An earlier rebuild did not finish ($1). Press Rebuild UBI to continue it.")
+                    .replace("$1", rebuildWhere(data)));
             }
         });
     }
@@ -676,6 +886,9 @@
         if (btnRebuild) {
             btnRebuild.addEventListener("click", rebuildUbi);
         }
+
+        /* Was a rebuild left unfinished by an earlier visit? */
+        fetchRebuildState();
 
         var btnCreate = document.getElementById("btn_create");
         if (btnCreate) {
