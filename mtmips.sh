@@ -21,6 +21,10 @@
 #   SOC           Target SoC (required: mt7620, mt7621, mt7628, or mt7688)
 #   BOARD         Target board name (required)
 #   TOOLCHAIN     Cross-compiler prefix (auto-detected if empty)
+#   AUTO_DL       Set to 1 to auto-download the toolchain without prompting
+#                 when no local copy is found (also via --auto-download / -d)
+#   FORCE_DL      Set to 1 to force re-download the toolchain even if a local
+#                 one is found (also via --force-download / -f)
 #   JOBS          Parallel make jobs (default: nproc)
 #   STAGING_DIR   Staging directory (passed to make)
 #
@@ -33,6 +37,12 @@
 # ============================================================================
 
 set -e
+
+# ---------------------------------------------------------------------------
+# Defaults for command-line / env options
+# ---------------------------------------------------------------------------
+AUTO_DL=${AUTO_DL:-0}
+FORCE_DL=${FORCE_DL:-0}
 
 # ---------------------------------------------------------------------------
 # --help / -h
@@ -50,28 +60,56 @@ Required:
   SOC=<mt7620|mt7621|mt7628|mt7688>   Target SoC
   BOARD=<board>                       Target board name
 
-Options:
-  TOOLCHAIN=...   Cross-compiler prefix (auto-detected from ../openwrt*/toolchain-mipsel*)
-  JOBS=<n>        Parallel make jobs (default: nproc)
-  STAGING_DIR=... Staging directory (auto-detected from TOOLCHAIN)
-  STAGE_SRAM_SRC=...  Local path to mt7621_stage_sram.bin (mt7621 only;
-                      downloaded from upstream if unset and absent)
+Options (environment or command line):
+  --auto-download,-d   If no local toolchain is found, download it
+                       automatically without prompting (env: AUTO_DL=1)
+  --force-download,-f  Force (re-)download the toolchain even if a local
+                       copy is found (env: FORCE_DL=1)
+  TOOLCHAIN=...         Cross-compiler prefix (auto-detected from
+                        ../openwrt*/toolchain-mipsel*)
+  JOBS=<n>              Parallel make jobs (default: nproc)
+  STAGING_DIR=...       Staging directory (auto-detected from TOOLCHAIN)
+  STAGE_SRAM_SRC=...    Local path to mt7621_stage_sram.bin (mt7621 only;
+                        downloaded from upstream if unset and absent)
 
 Examples:
   SOC=mt7620 BOARD=rfb                ./mtmips.sh
   SOC=mt7621 BOARD=rfb                ./mtmips.sh
   SOC=mt7621 BOARD=nand_rfb           ./mtmips.sh
   SOC=mt7628 BOARD=rfb                ./mtmips.sh
-  SOC=mt7688 BOARD=linkit-smart		  ./mtmips.sh
+  SOC=mt7688 BOARD=linkit-smart       ./mtmips.sh
+  SOC=mt7621 BOARD=rfb -d             ./mtmips.sh   # auto-download if absent
+  SOC=mt7621 BOARD=rfb -f             ./mtmips.sh   # force re-download
 EOF
 }
 
-case "${1:-}" in
-	--help|-h|help)
-		show_help
-		exit 0
-		;;
-esac
+# ---------------------------------------------------------------------------
+# Parse command-line arguments (env vars can also be used)
+# ---------------------------------------------------------------------------
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--help|-h|help)
+			show_help
+			exit 0
+			;;
+		--auto-download|-d)
+			AUTO_DL=1
+			;;
+		--force-download|-f)
+			FORCE_DL=1
+			;;
+		--)
+			shift
+			break
+			;;
+		*)
+			echo "Unknown option: $1"
+			echo "Try '$0 --help' for more information."
+			exit 1
+			;;
+	esac
+	shift
+done
 
 # ---------------------------------------------------------------------------
 # Validate SOC
@@ -134,7 +172,7 @@ get_config()
 	grep -oP "^CONFIG_$1=\K.*" "$UBOOT_DIR/.config" 2>/dev/null || true
 }
 
-# URL of the prebuilt OpenWrt toolchain (can be overridden by env)
+# URL of the prebuilt OpenWrt toolchain (auto-built from SOC)
 TOOLCHAIN_URL_NAME=$(echo "$TOOLCHAIN_SUBPATH" | tr '/' '-')
 TOOLCHAIN_URL="${TOOLCHAIN_URL:-https://downloads.openwrt.org/releases/25.12.5/targets/${TOOLCHAIN_SUBPATH}/openwrt-toolchain-25.12.5-${TOOLCHAIN_URL_NAME}_gcc-14.3.0_musl.Linux-x86_64.tar.zst}"
 
@@ -169,19 +207,29 @@ download_toolchain() {
 }
 
 if [ -z "$TOOLCHAIN" ]; then
-	if ! find_toolchain; then
-		echo "Toolchain not found in parent directory ($PARENT_DIR)."
-		read -p "Download it now? [Y/n] " dlcc
-		dlcc=${dlcc:-Y}
-		case "$dlcc" in
-			[Yy]* )
-				download_toolchain || die "Toolchain download failed."
-				find_toolchain || die "Toolchain not found after extraction."
-				;;
-			* )
-				die "Toolchain required. Set TOOLCHAIN=... or place ${TOOLCHAIN_PATTERN}/toolchain-mipsel*/ in $PARENT_DIR."
-				;;
-		esac
+	if [ "$FORCE_DL" = "1" ]; then
+		echo "FORCE_DL set: (re-)downloading toolchain from: $TOOLCHAIN_URL"
+		download_toolchain || die "Toolchain download failed."
+		find_toolchain || die "Toolchain not found after extraction."
+	elif ! find_toolchain; then
+		if [ "$AUTO_DL" = "1" ]; then
+			echo "AUTO_DL set: downloading toolchain from: $TOOLCHAIN_URL"
+			download_toolchain || die "Toolchain download failed."
+			find_toolchain || die "Toolchain not found after extraction."
+		else
+			echo "Toolchain not found in parent directory ($PARENT_DIR)."
+			read -p "Download it now? [Y/n] " dlcc
+			dlcc=${dlcc:-Y}
+			case "$dlcc" in
+				[Yy]* )
+					download_toolchain || die "Toolchain download failed."
+					find_toolchain || die "Toolchain not found after extraction."
+					;;
+				* )
+					die "Toolchain required. Set TOOLCHAIN=... or place ${TOOLCHAIN_PATTERN}/toolchain-mipsel*/ in $PARENT_DIR."
+					;;
+			esac
+		fi
 	fi
 	TOOLCHAIN="${TOOLCHAIN_BIN}/mipsel-openwrt-linux-"
 fi
