@@ -1,0 +1,85 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+
+/ {
+	failsafe-layout {
+		compatible = "failsafe-layout";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		layout@0 {
+			label = "stock";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0_all {
+				label = "all_flash";
+				reg = <0x0 0xfaff000>;
+			};
+
+			partition@0 {
+				label = "boot";
+				reg = <0x0 0x280000>;
+			};
+
+			partition@280000 {
+				label = "bootflag";
+				reg = <0x280000 0x80000>;
+			};
+
+			partition@300000 {
+				label = "KernelA";
+				reg = <0x300000 0x600000>;
+			};
+
+			partition@900000 {
+				label = "RootfsA";
+				reg = <0x900000 0x3c00000>;
+			};
+
+			partition@4500000 {
+				label = "KernelB";
+				reg = <0x4500000 0x600000>;
+			};
+
+			partition@4b00000 {
+				label = "RootfsB";
+				reg = <0x4b00000 0x3c00000>;
+			};
+
+			partition@8700000 {
+				label = "apps_1";
+				reg = <0x8700000 0x4000000>;
+			};
+
+			partition@c700000 {
+				label = "frameworka";
+				reg = <0xc700000 0x1000000>;
+			};
+
+			partition@d700000 {
+				label = "frameworkb";
+				reg = <0xd700000 0x1000000>;
+			};
+
+			partition@e700000 {
+				label = "factory";
+				reg = <0xe700000 0x300000>;
+			};
+
+			partition@ea00000 {
+				label = "userlocalct";
+				reg = <0xea00000 0x200000>;
+			};
+
+			partition@ec00000 {
+				label = "apps_2";
+				reg = <0xec00000 0x6a4000>;
+			};
+
+			partition@f2a4000 {
+				label = "userdata";
+				reg = <0xf2a4000 0x85b000>;
+			};
+		};
+	};
+};

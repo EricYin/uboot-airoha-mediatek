@@ -1,0 +1,194 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/dts-v1/;
+
+#include "an7581.dtsi"
+#include <dt-bindings/input/linux-event-codes.h>
+#include <dt-bindings/leds/common.h>
+#include <dt-bindings/gpio/gpio.h>
+#include "an7581-fiberhome-hg5585f-stock-parts.dtsi"
+
+/ {
+	model = "Fiberhome HG5585F";
+	compatible = "fiberhome,hg5585f",
+			 "fiberhome,hg5585f-ct",
+			 "fiberhome,hg5585f-cu",
+		     "airoha,an7581",
+		     "airoha,en7581";
+
+	aliases {
+		serial0 = &uart1;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+		linux,usable-memory-range = <0x0 0x80200000 0x0 0x1fe00000>;
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x2 0x00000000>;
+	};
+
+	keys {
+		compatible = "gpio-keys";
+
+		reset {
+			label = "reset";
+			linux,code = <KEY_RESTART>;
+			gpios = <&pinctrl 35 GPIO_ACTIVE_LOW>;
+			debounce-interval = <60>;
+		};
+
+/*
+ *	Enable this node will lead to initr_dm() error.
+ *		wireless {
+ *			lebel = "wireless";
+ *			linux,code = <KEY_WLAN>;
+ *			gpios = <&pinctrl 3 GPIO_ACTIVE_LOW>;
+ *			debounce-interval = <60>;
+ *		};
+ *
+ *		wps {
+ *			lebel = "wps";
+ *			linux,code = <KEY_WPS_BUTTON>;
+ *			gpios = <&pinctrl 4 GPIO_ACTIVE_LOW>;
+ *			debounce-interval = <60>;
+ *		};
+ */
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led-0 {
+			label = "blue:power";
+			gpios = <&pinctrl 13 GPIO_ACTIVE_LOW>;
+		};
+
+		led-1 {
+			label = "blue:sign";
+			gpios = <&pinctrl 14 GPIO_ACTIVE_LOW>;
+		};
+
+		led-2 {
+			label = "red:pon";
+			gpios = <&pinctrl 16 GPIO_ACTIVE_LOW>;
+		};
+
+		led-3 {
+			label = "green:wan";
+			gpios = <&pinctrl 5 GPIO_ACTIVE_LOW>;
+		};
+
+		led-4 {
+			label = "green:wireless";
+			gpios = <&pinctrl 15 GPIO_ACTIVE_LOW>;
+		};
+
+		led-5 {
+			label = "green:lan1";
+			gpios = <&pinctrl 34 GPIO_ACTIVE_LOW>;
+		};
+
+		led-6 {
+			label = "green:lan2";
+			gpios = <&pinctrl 44 GPIO_ACTIVE_LOW>;
+		};
+
+		led-7 {
+			label = "green:lan3";
+			gpios = <&pinctrl 45 GPIO_ACTIVE_LOW>;
+		};
+
+		led-8 {
+			label = "green:lan4";
+			gpios = <&pinctrl 46 GPIO_ACTIVE_LOW>;
+		};
+
+		led-9 {
+			label = "blue:phone";
+			gpios = <&pinctrl 0 GPIO_ACTIVE_LOW>;
+		};
+
+		led-10 {
+			label = "blue:usb2";
+			gpios = <&pinctrl 6 GPIO_ACTIVE_LOW>;
+		};
+
+/*
+ *	Enable this node will lead to initr_dm() error.
+ *		led-11 {
+ *			label = "blue:usb3";
+ *			gpios = <&pinctrl 8 GPIO_ACTIVE_LOW>;
+ *		};
+ */
+	};
+};
+
+/*
+ * The EVB wires a raw NAND device to the NFI block instead of the SPI-NAND
+ * part, so the parallel interface is used.  &snfi keeps its default disabled
+ * state from an7581.dtsi: both nodes drive the same NFI block and only one of
+ * them may be enabled.
+ */
+&nand {
+	status = "okay";
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		partition@0 {
+			label = "bl2";
+			reg = <0x0 0x20000>;
+		};
+
+		partition@20000 {
+			label = "ubi";
+			reg = <0x20000 0x000000>;
+		};
+	};
+};
+
+&pinctrl {
+	gpio-ranges = <&pinctrl 0 13 47>;
+
+	pcie0_rst_pins: pcie0-rst-pins {
+		conf {
+			pins = "pcie_reset0";
+			drive-open-drain = <1>;
+		};
+	};
+
+	pcie1_rst_pins: pcie1-rst-pins {
+		conf {
+			pins = "pcie_reset1";
+			drive-open-drain = <1>;
+		};
+	};
+};
+
+&pcie0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie0_rst_pins>;
+	status = "okay";
+};
+
+&pcie1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie1_rst_pins>;
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+};
+
+&eth {
+	status = "okay";
+};
+
+&gdm1 {
+	status = "okay";
+};
