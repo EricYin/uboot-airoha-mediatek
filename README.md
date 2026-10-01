@@ -7,6 +7,8 @@
 
 This repository contains the U‑Boot bootloader for Airoha SoCs, along with the necessary tools and scripts to build and flash it onto supported Airoha devices.  
 
+Click [here](./document/support-devices.md) to view supported devices.
+
 > [!NOTE]
 > Please note that this version is maintained exclusively for the OpenWrt UBI layout/Openwrt FIT format, so be sure to select the correct firmware layout when flashing.  
 
