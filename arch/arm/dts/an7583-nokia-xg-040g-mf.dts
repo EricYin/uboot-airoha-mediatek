@@ -5,6 +5,7 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include "an7583.dtsi"
+#include "an758x-nokia_xg-040g-stock-parts.dtsi"
 
 / {
 	model = "Nokia XG-040G-MF";
