@@ -23,9 +23,12 @@
 #include <linux/kconfig.h>
 #include <linux/types.h>
 
-/* UBI static volume holding a FIP, always created at a fixed size. */
+/* UBI static volume holding a FIP, always created at the configured size
+ * (CONFIG_WEBUI_FAILSAFE_FIP_SIZE: 1 MiB on Airoha / EcoNet, 2 MiB on
+ * MediaTek - the size the boot chain of the SoC expects).
+ */
 #define FAILSAFE_STORAGE_STATIC_TARGET	"fip"
-#define FAILSAFE_STORAGE_STATIC_SIZE	0x100000
+#define FAILSAFE_STORAGE_STATIC_SIZE	CONFIG_WEBUI_FAILSAFE_FIP_SIZE
 
 /* UBI volume whose OpenWrt overlay ("rootfs_data") is rebuilt after a write.
  *

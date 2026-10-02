@@ -100,7 +100,7 @@ int failsafe_ubi_capacity(const char *name, size_t size)
 {
 	if (!strcmp(name, FAILSAFE_STORAGE_STATIC_TARGET) &&
 	    size > FAILSAFE_STORAGE_STATIC_SIZE) {
-		/* The "fip" static volume is created at the fixed
+		/* The "fip" static volume is created at the configured
 		 * FAILSAFE_STORAGE_STATIC_SIZE (see failsafe_ubi_write), so
 		 * reject images that would not fit - otherwise "ubi write"
 		 * fails after the volume has already been recreated empty.
@@ -142,11 +142,11 @@ int failsafe_ubi_write(const char *name, const void *data, size_t size)
 
 	/*
 	 * Create the new volume.  "fip" is a static volume created at the
-	 * fixed FAILSAFE_STORAGE_STATIC_SIZE (0x100000), exactly like
-	 * "ubi create fip 0x100000 static" from the console "ubi_write_fip";
-	 * "ubi write" later records the actual image size as used_bytes.
-	 * All other UBI targets are dynamic volumes sized to the uploaded
-	 * image ("ubi create fit $filesize dynamic").
+	 * configured FAILSAFE_STORAGE_STATIC_SIZE, exactly like the console
+	 * "ubi_write_fip" environment command; "ubi write" later records the
+	 * actual image size as used_bytes.  All other UBI targets are dynamic
+	 * volumes sized to the uploaded image ("ubi create fit $filesize
+	 * dynamic").
 	 */
 	if (!strcmp(name, FAILSAFE_STORAGE_STATIC_TARGET))
 		snprintf(cmd, sizeof(cmd), "ubi create %s 0x%zx static", name,

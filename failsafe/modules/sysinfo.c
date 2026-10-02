@@ -231,6 +231,16 @@ static int sysinfo_json_append_board(char *buf, int len, int left)
 	len = buf_appendf(buf, left, len, ",\"atf\":false");
 #endif
 
+#if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_LAYOUT_FIP)
+	/* Size of the storage holding the FIP - a build time value, 1 MiB on
+	 * Airoha / EcoNet and 2 MiB on MediaTek (see
+	 * CONFIG_WEBUI_FAILSAFE_FIP_SIZE).  The FIP page announces it and
+	 * rejects an oversized image before the upload; the firmware applies
+	 * the very same limit again on the write path. */
+	len = buf_appendf(buf, left, len, ",\"fip_size\":%u",
+			  (unsigned int)CONFIG_WEBUI_FAILSAFE_FIP_SIZE);
+#endif
+
 	return len;
 }
 

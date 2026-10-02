@@ -407,9 +407,10 @@ int failsafe_bl2_version_info(const void *data, size_t size,
 
 /*
  * Scratch area used to read the flashed boot chain: one
- * FAILSAFE_STORAGE_STATIC_SIZE (1 MiB) fits the whole "fip" UBI volume
- * and, clamped to its real size by the storage helper, the "bl2" MTD
- * partition.  With CONFIG_WEBUI_FAILSAFE_BL31 the BL31 decompression
+ * FAILSAFE_STORAGE_STATIC_SIZE (the configured FIP size, 2 MiB on
+ * MediaTek - see CONFIG_WEBUI_FAILSAFE_FIP_SIZE) fits the whole "fip" UBI
+ * volume and, clamped to its real size by the storage helper, the "bl2"
+ * MTD partition.  With CONFIG_WEBUI_FAILSAFE_BL31 the BL31 decompression
  * scratch follows it.
  */
 #define FAILSAFE_ATF_READ_MAX	FAILSAFE_STORAGE_STATIC_SIZE

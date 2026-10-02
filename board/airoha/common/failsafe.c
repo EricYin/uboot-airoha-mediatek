@@ -398,7 +398,8 @@ int failsafe_bl2_version_info(const void *data, size_t size,
 
 /*
  * Scratch area used to read the flashed boot chain: one
- * FAILSAFE_STORAGE_STATIC_SIZE (1 MiB) fits the whole "fip" UBI volume
+ * FAILSAFE_STORAGE_STATIC_SIZE (the configured FIP size, see
+ * CONFIG_WEBUI_FAILSAFE_FIP_SIZE) fits the whole "fip" UBI volume
  * and, clamped to its real size by the storage helper, the legacy
  * 512 KiB "u-boot" partition.  With CONFIG_WEBUI_FAILSAFE_BL31 the BL31
  * decompression scratch follows it.

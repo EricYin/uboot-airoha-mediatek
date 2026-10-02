@@ -124,6 +124,30 @@ endif # ARM
 
 endchoice
 
+config WEBUI_FAILSAFE_FIP_SIZE
+	hex "FIP storage size in bytes" if WEBUI_FAILSAFE_LAYOUT_FIP
+	default 0x200000 if ARCH_MEDIATEK
+	default 0x100000
+	help
+	  Size of the storage that holds the FIP (BL31 + U-Boot) on a device
+	  built with the FIP layout: the Web UI creates the "fip" UBI volume
+	  at this size, rejects uploaded images that do not fit and bounds
+	  the read used to report the flashed BL31 banner.
+
+	  It has to match the layout the boot chain expects (a smaller value
+	  truncates the FIP, a larger one only wastes flash):
+	    - Airoha:   1 MiB (0x100000), the default here,
+	    - MediaTek: 2 MiB (0x200000), the default for MediaTek.
+
+	  On an MMC device the "fip" is a partition of the partition table
+	  instead, whose size decides what fits; this value then only bounds
+	  the BL31 banner read.
+
+	  Only the FIP layout offers the option: the other layouts have no
+	  "fip" target, but the shared storage code still sizes its read
+	  scratch with the value, so it always gets one (1 MiB unless the
+	  SoC default above applies).
+
 if MMC && PARTITIONS
 
 config WEBUI_FAILSAFE_GPT
