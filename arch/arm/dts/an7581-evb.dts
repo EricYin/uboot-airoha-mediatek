@@ -101,3 +101,22 @@
 	managed = "in-band-status";
 	phy-mode = "usxgmii";
 };
+
+/*
+ * USB: both controllers use the SoC default PHY list from an7581.dtsi, i.e.
+ * a USB 2.0 port plus the USB 3.0 port of their PHY block.
+ *
+ * Note on the second controller: its serdes (AIROHA_SCU_SERDES_USB2) is the
+ * one that can also be routed to PCIe, and bringing its USB3 port up switches
+ * that serdes to USB. To keep it USB 2.0 only, replace its 'phys' with
+ * <&usb1_phy PHY_TYPE_USB2> and add "mediatek,u3p-dis-msk = <0x1>;".
+ */
+&usb0 {
+	status = "okay";
+
+	phys = <&usb0_phy PHY_TYPE_USB2>, <&usb0_phy PHY_TYPE_USB3>;
+};
+
+&usb1 {
+	status = "okay";
+};
