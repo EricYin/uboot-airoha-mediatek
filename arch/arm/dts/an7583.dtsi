@@ -423,23 +423,22 @@
 		};
 
 		uart2: serial@1fbf0300 {
-			compatible = "airoha,en7523-uart";
+			compatible = "airoha,arht-uart2";
 			reg = <0x0 0x1fbf0300 0x0 0x30>;
 			reg-io-width = <4>;
 			reg-shift = <2>;
 			interrupts = <GIC_SPI 32 IRQ_TYPE_LEVEL_HIGH>;
-			clock-frequency = <7372800>;
 
 			status = "disabled";
 		};
 
 		hsuart3: serial@1fbe1000 {
-			compatible = "airoha,en7523-uart";
+			compatible = "airoha,arht-uart2";
 			reg = <0x0 0x1fbe1000 0x0 0x40>;
 			reg-io-width = <4>;
 			reg-shift = <2>;
 			interrupts = <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>;
-			clock-frequency = <7372800>;
+			high-speed = <1>;
 
 			status = "disabled";
 		};
@@ -450,18 +449,16 @@
 			reg-io-width = <4>;
 			reg-shift = <2>;
 			interrupts = <GIC_SPI 61 IRQ_TYPE_LEVEL_HIGH>;
-			clock-frequency = <7372800>;
 
 			status = "disabled";
 		};
 
 		uart5: serial@1fbf0700 {
-			compatible = "airoha,en7523-uart";
+			compatible = "airoha,arht-uart2";
 			reg = <0x0 0x1fbf0700 0x0 0x30>;
 			reg-io-width = <4>;
 			reg-shift = <2>;
-			interrupts = <GIC_SPI 18 IRQ_TYPE_LEVEL_HIGH>;
-			clock-frequency = <7372800>;
+			interrupts = <GIC_SPI 62 IRQ_TYPE_LEVEL_HIGH>;
 
 			status = "disabled";
 		};
