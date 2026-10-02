@@ -1123,6 +1123,19 @@ config MTK_SERIAL
 	  The High-speed UART is compatible with the ns16550a UART and have
 	  its own high-speed registers.
 
+config AIROHA_SERIAL
+	bool "Airoha ARM UART support"
+	depends on DM_SERIAL
+	depends on ARCH_AIROHA
+	help
+	  Support the 16550-like UART used by the Airoha ARM SoCs
+	  (EN7523/AN7552/AN7581/AN7583). The controller is clocked from the
+	  baudrate generator clock described by the 'clock-frequency'
+	  property and uses a vendor-specific fractional divider (XYD) for
+	  baudrate generation.
+	  Compatible strings: airoha,en7523-uart, airoha,an7552-uart,
+	  airoha,an7581-uart, airoha,an7583-uart, airoha,arht-uart2.
+
 config MT7620_SERIAL
 	bool "UART driver for MediaTek MT7620 and earlier SoCs"
 	depends on DM_SERIAL && SOC_MT7620
