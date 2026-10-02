@@ -599,6 +599,22 @@ static void record_transfer_result(struct usb_device *udev,
 	udev->act_len = min(length, length -
 		(int)EVENT_TRB_LEN(le32_to_cpu(event->trans_event.transfer_len)));
 
+#if IS_ENABLED(CONFIG_ARCH_AIROHA)
+	/*
+	 * Those completion codes are turned into an udev->status below without
+	 * any trace, and the endpoint they leave halted is recovered by the
+	 * callers. Report them so a device that fails to enumerate can be
+	 * diagnosed (this only runs on the error path, it cannot hide a
+	 * failure).
+	 */
+	u32 comp_code = GET_COMP_CODE(le32_to_cpu(event->trans_event.transfer_len));
+
+	if (comp_code != COMP_SUCCESS && comp_code != COMP_SHORT_TX)
+		printf("xhci: ep%u transfer failed, comp_code=%u len=%d act_len=%d\n",
+		       TRB_TO_EP_INDEX(le32_to_cpu(event->trans_event.flags)),
+		       comp_code, length, (int)udev->act_len);
+#endif
+
 	switch (GET_COMP_CODE(le32_to_cpu(event->trans_event.transfer_len))) {
 	case COMP_SUCCESS:
 		BUG_ON(udev->act_len != length);
@@ -828,6 +844,18 @@ again:
 	xhci_inval_cache((uintptr_t)buffer, length);
 	xhci_dma_unmap(ctrl, buf_64, length);
 
+#if IS_ENABLED(CONFIG_ARCH_AIROHA)
+	/*
+	 * Same as in xhci_ctrl_tx(): a failed bulk transfer (babble, TRB error,
+	 * transaction error) halts the endpoint in the xHC, and without
+	 * resetting it every later transfer on that endpoint fails in
+	 * prepare_ring() with "WARN endpoint is halted" - which for a storage
+	 * device means it is dead for good.
+	 */
+	if (udev->status)
+		reset_ep(udev, ep_index);
+#endif
+
 	return (udev->status != USB_ST_NOT_PROC) ? 0 : -1;
 }
 
@@ -1016,10 +1044,30 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 
 	record_transfer_result(udev, event, length);
 	xhci_acknowledge_event(ctrl);
+#if IS_ENABLED(CONFIG_ARCH_AIROHA)
+	/*
+	 * Recover the endpoint on every error, not only on a stall. A babble,
+	 * a TRB error or a transaction error leaves the endpoint halted in the
+	 * xHC (record_transfer_result() maps those completion codes to
+	 * USB_ST_BUF_ERR / USB_ST_BABBLE_DET / 0x80 without printing
+	 * anything), and from then on every transfer - the configuration
+	 * descriptor reads as well as the retries the USB core does - fails in
+	 * prepare_ring() with "WARN endpoint is halted" and the device is
+	 * dropped. Linux resets the endpoint for those codes as well.
+	 */
+	if (udev->status) {
+		bool stalled = udev->status == USB_ST_STALLED;
+
+		reset_ep(udev, ep_index);
+
+		return stalled ? -EPIPE : -EIO;
+	}
+#else
 	if (udev->status == USB_ST_STALLED) {
 		reset_ep(udev, ep_index);
 		return -EPIPE;
 	}
+#endif
 
 	/* Invalidate buffer to make it available to usb-core */
 	if (length > 0) {
