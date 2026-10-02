@@ -59,3 +59,17 @@
 		};
 	};
 };
+
+/*
+ * USB: the SoC default PHY list from an7563.dtsi is used, i.e. both USB 2.0
+ * ports and the USB 3.0 port. To keep the board USB 2.0 only, drop
+ * <&usb0_u3 PHY_TYPE_USB3> from usb0's 'phys' and add
+ * "mediatek,u3p-dis-msk = <0x1>;".
+ */
+&usb0 {
+	status = "okay";
+};
+
+&usb_phy {
+	status = "okay";
+};
