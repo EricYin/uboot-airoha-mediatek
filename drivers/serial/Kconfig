@@ -1136,6 +1136,18 @@ config AIROHA_SERIAL
 	  Compatible strings: airoha,en7523-uart, airoha,an7552-uart,
 	  airoha,an7581-uart, airoha,an7583-uart, airoha,arht-uart2.
 
+config ECONET_SERIAL
+	bool "Econet MIPS UART support"
+	depends on DM_SERIAL
+	depends on ARCH_ECONET
+	help
+	  Support the byte-lane 16550-like UART used by the Econet MIPS
+	  EN751221/EN7528 parts. The controller is clocked from a fixed
+	  20 MHz source that is divided by 10 before the baudrate generator
+	  and uses a vendor-specific fractional divider (XYD) for baudrate
+	  generation.
+	  Compatible strings: econet,en751221-uart, econet,en7528-uart.
+
 config MT7620_SERIAL
 	bool "UART driver for MediaTek MT7620 and earlier SoCs"
 	depends on DM_SERIAL && SOC_MT7620

@@ -22,6 +22,7 @@ obj-$(CONFIG_BCM6345_SERIAL) += serial_bcm6345.o
 obj-$(CONFIG_COREBOOT_SERIAL) += serial_coreboot.o
 obj-$(CONFIG_CORTINA_UART) += serial_cortina.o
 obj-$(CONFIG_DEBUG_SBI_CONSOLE) += serial_sbi.o
+obj-$(CONFIG_ECONET_SERIAL) += serial_econet.o
 obj-$(CONFIG_EFI_APP) += serial_efi.o
 obj-$(CONFIG_ESP32_SERIAL) += serial_esp32.o
 obj-$(CONFIG_MCFUART) += serial_mcf.o
