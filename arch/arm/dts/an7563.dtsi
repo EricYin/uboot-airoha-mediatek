@@ -157,6 +157,27 @@
 		status = "okay";
 	};
 
+	uart2: serial@1fbf0300 {
+		compatible = "airoha,arht-uart2";
+		reg = <0x1fbf0300 0x30>;
+		reg-io-width = <4>;
+		reg-shift = <2>;
+		interrupts = <GIC_SPI 32 IRQ_TYPE_LEVEL_HIGH>;
+
+		status = "disabled";
+	};
+
+	hsuart3: serial@1fbe1000 {
+		compatible = "airoha,arht-uart2";
+		reg = <0x1fbe1000 0x40>;
+		reg-io-width = <4>;
+		reg-shift = <2>;
+		interrupts = <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>;
+		high-speed = <1>;
+
+		status = "disabled";
+	};
+
 	thermal: thermal-sensor@1efbd000 {
 		compatible = "airoha,en7581-thermal";
 		reg = <0x1efbd000 0xd5c>;
