@@ -139,6 +139,9 @@ function setLang(language) {
         localStorage.setItem("lang", APP_STATE.lang);
     } catch { /* ignore */ }
     applyI18n(document);
+    /* The translated hint carries the placeholders of the current FIP
+     * size again, so they are filled once more after every re-render. */
+    updateFipMaxSizeLabels();
     if (typeof renderSysInfo === "function") renderSysInfo();
     updateDocumentTitle();
 }
@@ -1556,6 +1559,7 @@ function getSysInfo() {
             } catch {
                 return;
             }
+            updateFipMaxSizeLabels();
             if (sysinfoElement) renderSysInfo();
         },
     });
@@ -1645,14 +1649,41 @@ async function failInit() {
     box.style.display = "";
 }
 
+/*
+ * Size of the storage holding the FIP, as reported by GET /sysinfo
+ * (CONFIG_WEBUI_FAILSAFE_FIP_SIZE: 1 MiB on Airoha / EcoNet, 2 MiB on
+ * MediaTek).  Returns 0 while the answer has not arrived yet or on a build
+ * that does not report it; the client side check is then skipped and the
+ * firmware's own capacity check remains the only limit.
+ */
+function fipMaxSize() {
+    const size = Number(APP_STATE.sysinfo?.fip_size);
+    return Number.isFinite(size) && size > 0 ? size : 0;
+}
+
+/*
+ * Put the configured FIP size into the [data-fip-max-size] placeholders of
+ * the FIP page.  applyI18n() re-renders the hint on every language switch,
+ * which is why this runs after it (see setLang()) and again once /sysinfo
+ * has answered (see getSysInfo()).
+ */
+function updateFipMaxSizeLabels() {
+    const limit = fipMaxSize();
+    if (!limit) return;
+
+    for (const node of document.querySelectorAll("[data-fip-max-size]"))
+        node.textContent = bytesToHuman(limit);
+}
+
 function upload(formFieldName) {
     const selectedFile = document.getElementById("file").files[0];
     if (!selectedFile) return;
 
-    /* The FIP UBI volume is created at a fixed 1 MiB size (matches
-     * AIROHA_FAILSAFE_FIP_VOL_SIZE in board/airoha/common/failsafe.c),
-     * so reject oversized images before uploading. */
-    if (formFieldName === "fip" && selectedFile.size > 0x100000) {
+    /* The FIP storage is created at the size the build configures, so
+     * reject oversized images before uploading them.  The firmware applies
+     * the same limit again and reports the reason on the fail page. */
+    const fipLimit = formFieldName === "fip" ? fipMaxSize() : 0;
+    if (fipLimit && selectedFile.size > fipLimit) {
         alert(t("fip.err.too_big"));
         return;
     }
