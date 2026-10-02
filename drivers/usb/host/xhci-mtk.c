@@ -15,6 +15,7 @@
 #include <usb/xhci.h>
 #include <linux/bitfield.h>
 #include <linux/compat.h>
+#include <linux/delay.h>
 #include <linux/errno.h>
 #include <linux/iopoll.h>
 
@@ -68,6 +69,26 @@
 #define SSG2EOF_OFFSET		0x3c
 
 #define XSEOF_OFFSET_MASK	GENMASK(11, 0)
+
+/*
+ * Airoha SoCs: the ports have to be switched on before U-Boot scans them
+ * (the vendor code does the same in its enableXhciAllPortPower()), and their
+ * PHY / serdes need a moment to settle. The IPPC clock status wait is relaxed
+ * as well: a SuperSpeed MAC that fails to leave reset only costs the USB3
+ * port, while failing the probe would take the USB2 ports of the same
+ * controller down with it.
+ *
+ * All of this is limited to CONFIG_ARCH_AIROHA so that the behaviour of the
+ * other MediaTek SoCs using this driver stays unchanged.
+ */
+#if IS_ENABLED(CONFIG_ARCH_AIROHA)
+/* Time given to the PHY / serdes before U-Boot scans the ports */
+#define MTK_XHCI_AIROHA_SETTLE_MS	200
+/* The vendor waits up to 100ms for the IPPC clocks and continues anyway */
+#define MTK_XHCI_AIROHA_STS1_TIMEOUT	100000
+#else
+#define MTK_XHCI_AIROHA_STS1_TIMEOUT	20000
+#endif
 
 struct mtk_xhci {
 	struct xhci_ctrl ctrl;	/* Needs to come first in this struct! */
@@ -152,11 +173,27 @@ static int xhci_mtk_host_enable(struct mtk_xhci *mtk)
 		check_val |= STS1_U3_MAC_RST;
 
 	ret = readl_poll_timeout(mtk->ippc + IPPC_IP_PW_STS1, value,
-				 (check_val == (value & check_val)), 20000);
-	if (ret)
+				 (check_val == (value & check_val)),
+				 MTK_XHCI_AIROHA_STS1_TIMEOUT);
+	if (ret) {
+#if IS_ENABLED(CONFIG_ARCH_AIROHA)
+		/*
+		 * The vendor code just falls through here: a SuperSpeed MAC
+		 * that does not leave reset only costs the USB3 port, the USB2
+		 * ports of the same controller stay usable.
+		 */
+		dev_warn(mtk->dev, "clocks are not stable 0x%x, continuing\n",
+			 value);
+
+		return 0;
+#else
 		dev_err(mtk->dev, "clocks are not stable 0x%x!\n", value);
 
-	return ret;
+		return ret;
+#endif
+	}
+
+	return 0;
 }
 
 static int xhci_mtk_host_disable(struct mtk_xhci *mtk)
@@ -218,8 +255,17 @@ static int xhci_mtk_ofdata_get(struct mtk_xhci *mtk)
 
 	ret = clk_get_bulk(dev, &mtk->clks);
 	if (ret) {
+#if IS_ENABLED(CONFIG_ARCH_AIROHA)
+		/*
+		 * The Airoha SoCs keep the xHCI clocks always on, so their DT
+		 * has no 'clocks' property.
+		 */
+		dev_dbg(dev, "no clocks: %d\n", ret);
+		mtk->clks.count = 0;
+#else
 		dev_err(dev, "failed to get clocks %d!\n", ret);
 		return ret;
+#endif
 	}
 
 	ret = device_get_supply_regulator(dev, "vusb33-supply",
@@ -294,6 +340,28 @@ static void xhci_mtk_phy_shutdown(struct mtk_xhci *mtk)
 	generic_phy_exit_bulk(&mtk->phys);
 }
 
+#if IS_ENABLED(CONFIG_ARCH_AIROHA)
+/*
+ * Switch the port power on before U-Boot scans the ports. The root hub
+ * advertises power switching (PPC), so they would otherwise stay unpowered
+ * until the hub layer configures them, i.e. after the first port scan - the
+ * vendor does this right after its IPPC setup. U3 ports are exposed first,
+ * then the U2 ones.
+ */
+static void xhci_mtk_ports_power_on(struct mtk_xhci *mtk, struct xhci_hcor *hcor)
+{
+	int i;
+
+	for (i = 0; i < mtk->num_u3ports + mtk->num_u2ports; i++) {
+		volatile u32 *portsc = &hcor->portregs[i].or_portsc;
+		u32 val = readl(portsc);
+
+		val = (val & XHCI_PORT_RO) | (val & XHCI_PORT_RWS);
+		writel(val | PORT_POWER, portsc);
+	}
+}
+#endif
+
 static int xhci_mtk_probe(struct udevice *dev)
 {
 	struct mtk_xhci *mtk = dev_get_priv(dev);
@@ -321,11 +389,18 @@ static int xhci_mtk_probe(struct udevice *dev)
 	if (ret)
 		goto ssusb_init_err;
 
-	xhci_mtk_set_frame_interval(mtk);
-
 	mtk->ctrl.quirks = XHCI_MTK_HOST;
 	hcor = (struct xhci_hcor *)((uintptr_t)mtk->hcd +
 			HC_LENGTH(xhci_readl(&mtk->hcd->cr_capbase)));
+
+#if IS_ENABLED(CONFIG_ARCH_AIROHA)
+	xhci_mtk_ports_power_on(mtk, hcor);
+
+	/* Give the PHY / serdes time to settle before the first port scan */
+	mdelay(MTK_XHCI_AIROHA_SETTLE_MS);
+#endif
+
+	xhci_mtk_set_frame_interval(mtk);
 
 	return xhci_register(dev, mtk->hcd, hcor);
 
