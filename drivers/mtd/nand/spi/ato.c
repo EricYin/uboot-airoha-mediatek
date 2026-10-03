@@ -13,6 +13,7 @@
 
 
 #define SPINAND_MFR_ATO		0x9b
+#define SPINAND_MFR_ATO_AD	0xAD
 
 
 static SPINAND_OP_VARIANTS(read_cache_variants,
@@ -63,6 +64,70 @@ static const struct mtd_ooblayout_ops ato25d1ga_ooblayout = {
 	.rfree = ato25d1ga_ooblayout_free,
 };
 
+static int ato25d2ga_ooblayout_ecc(struct mtd_info *mtd, int section,
+				    struct mtd_oob_region *region)
+{
+	if (section > 3)
+		return -ERANGE;
+
+	region->offset = (16 * section) + 3;
+	region->length = 13;
+
+	return 0;
+}
+
+static int ato25d2ga_ooblayout_free(struct mtd_info *mtd, int section,
+				     struct mtd_oob_region *region)
+{
+	if (section > 3)
+		return -ERANGE;
+
+	region->offset = (16 * section) + 0;
+	region->length = 3;
+
+	return 0;
+}
+
+static const struct mtd_ooblayout_ops ato25d2ga_ooblayout = {
+	.ecc = ato25d2ga_ooblayout_ecc,
+	.rfree = ato25d2ga_ooblayout_free,
+};
+
+static int ato25d2gb_ooblayout_ecc(struct mtd_info *mtd, int section,
+				    struct mtd_oob_region *region)
+{
+	if (section > 4)
+		return -ERANGE;
+
+	if (section < 4) {
+		region->offset = (16 * section) + 12;
+		region->length = 4;
+	} else {
+		/* Bytes 64-127 are all ECC */
+		region->offset = 64;
+		region->length = 64;
+	}
+
+	return 0;
+}
+
+static int ato25d2gb_ooblayout_free(struct mtd_info *mtd, int section,
+				     struct mtd_oob_region *region)
+{
+	if (section > 3)
+		return -ERANGE;
+
+	region->offset = (16 * section) + 0;
+	region->length = 12;
+
+	return 0;
+}
+
+static const struct mtd_ooblayout_ops ato25d2gb_ooblayout = {
+	.ecc = ato25d2gb_ooblayout_ecc,
+	.rfree = ato25d2gb_ooblayout_free,
+};
+
 
 static const struct spinand_info ato_spinand_table[] = {
 	SPINAND_INFO("ATO25D1GA",
@@ -74,6 +139,27 @@ static const struct spinand_info ato_spinand_table[] = {
 					      &update_cache_variants),
 		     SPINAND_HAS_QE_BIT,
 		     SPINAND_ECCINFO(&ato25d1ga_ooblayout, NULL)),
+	SPINAND_INFO("ATO25D2GA",
+		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xF1),
+		     NAND_MEMORG(1, 2048, 64, 64, 2048, 40, 1, 1, 1),
+		     NAND_ECCREQ(4, 512),
+		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+					      &write_cache_variants,
+					      &update_cache_variants),
+		     SPINAND_HAS_QE_BIT,
+		     SPINAND_ECCINFO(&ato25d2ga_ooblayout, NULL)),
+};
+
+static const struct spinand_info ato_ad_spinand_table[] = {
+	SPINAND_INFO("ATO25D2GB",
+		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xDA),
+		     NAND_MEMORG(1, 2048, 128, 64, 2048, 40, 1, 1, 1),
+		     NAND_ECCREQ(4, 512),
+		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+					      &write_cache_variants,
+					      &update_cache_variants),
+		     SPINAND_HAS_QE_BIT,
+		     SPINAND_ECCINFO(&ato25d2gb_ooblayout, NULL)),
 };
 
 static const struct spinand_manufacturer_ops ato_spinand_manuf_ops = {
@@ -85,4 +171,15 @@ const struct spinand_manufacturer ato_spinand_manufacturer = {
 	.chips = ato_spinand_table,
 	.nchips = ARRAY_SIZE(ato_spinand_table),
 	.ops = &ato_spinand_manuf_ops,
+};
+
+static const struct spinand_manufacturer_ops ato_ad_spinand_manuf_ops = {
+};
+
+const struct spinand_manufacturer ato_ad_spinand_manufacturer = {
+	.id = SPINAND_MFR_ATO_AD,
+	.name = "ATO",
+	.chips = ato_ad_spinand_table,
+	.nchips = ARRAY_SIZE(ato_ad_spinand_table),
+	.ops = &ato_ad_spinand_manuf_ops,
 };
