@@ -10,6 +10,7 @@ spinand-$(CONFIG_MTD_SPI_NAND_ETRON)		+= etron.o
 spinand-$(CONFIG_MTD_SPI_NAND_FMSH)		+= fmsh.o
 spinand-$(CONFIG_MTD_SPI_NAND_FORESEE)		+= foresee.o
 spinand-$(CONFIG_MTD_SPI_NAND_GIGADEVICE)	+= gigadevice.o
+spinand-$(CONFIG_MTD_SPI_NAND_ISSI)		+= issi.o
 spinand-$(CONFIG_MTD_SPI_NAND_MACRONIX)		+= macronix.o
 spinand-$(CONFIG_MTD_SPI_NAND_MICRON)		+= micron.o
 spinand-$(CONFIG_MTD_SPI_NAND_PARAGON)		+= paragon.o
