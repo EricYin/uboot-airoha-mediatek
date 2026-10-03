@@ -446,6 +446,10 @@ extern const struct spinand_manufacturer tym_spinand_manufacturer;
 #ifdef CONFIG_MTD_SPI_NAND_UNILC
 extern const struct spinand_manufacturer unilc_spinand_manufacturer;
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_UNIM
+extern const struct spinand_manufacturer unim_spinand_manufacturer;
+extern const struct spinand_manufacturer unim_zl_spinand_manufacturer;
+#endif
 #ifdef CONFIG_MTD_SPI_NAND_WINBOND
 extern const struct spinand_manufacturer winbond_spinand_manufacturer;
 #endif
