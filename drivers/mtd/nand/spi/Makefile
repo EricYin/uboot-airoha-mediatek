@@ -24,4 +24,5 @@ spinand-$(CONFIG_MTD_SPI_NAND_TITAN)		+= titan.o
 spinand-$(CONFIG_MTD_SPI_NAND_TOSHIBA)		+= toshiba.o
 spinand-$(CONFIG_MTD_SPI_NAND_UNILC)		+= unilc.o
 spinand-$(CONFIG_MTD_SPI_NAND_WINBOND)		+= winbond.o
+spinand-$(CONFIG_MTD_SPI_NAND_WODPOSIT)		+= wodposit.o
 spinand-$(CONFIG_MTD_SPI_NAND_XTX)		+= xtx.o

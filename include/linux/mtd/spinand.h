@@ -422,6 +422,9 @@ extern const struct spinand_manufacturer unilc_spinand_manufacturer;
 #ifdef CONFIG_MTD_SPI_NAND_WINBOND
 extern const struct spinand_manufacturer winbond_spinand_manufacturer;
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_WODPOSIT
+extern const struct spinand_manufacturer wodposit_spinand_manufacturer;
+#endif
 #ifdef CONFIG_MTD_SPI_NAND_XTX
 extern const struct spinand_manufacturer xtx_spinand_manufacturer;
 #endif
