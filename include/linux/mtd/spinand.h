@@ -367,6 +367,9 @@ extern const struct spinand_manufacturer ato_spinand_manufacturer;
 #ifdef CONFIG_MTD_SPI_NAND_BIWIN
 extern const struct spinand_manufacturer biwin_spinand_manufacturer;
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_CHUCUN
+extern const struct spinand_manufacturer chucun_spinand_manufacturer;
+#endif
 #ifdef CONFIG_MTD_SPI_NAND_DAMAY
 extern const struct spinand_manufacturer damay_spinand_manufacturer;
 #endif
