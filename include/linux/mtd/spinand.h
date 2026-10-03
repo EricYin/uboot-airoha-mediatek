@@ -453,6 +453,9 @@ extern const struct spinand_manufacturer xincun_6c_spinand_manufacturer;
 #ifdef CONFIG_MTD_SPI_NAND_XTX
 extern const struct spinand_manufacturer xtx_spinand_manufacturer;
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_ZBIT
+extern const struct spinand_manufacturer zbit_spinand_manufacturer;
+#endif
 #ifdef CONFIG_MTD_SPI_NAND_ZENTEL
 extern const struct spinand_manufacturer zentel_spinand_manufacturer;
 #endif
