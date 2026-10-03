@@ -358,21 +358,49 @@ struct spinand_manufacturer {
 };
 
 /* SPI NAND manufacturers */
+#ifdef CONFIG_MTD_SPI_NAND_ALLIANCEMEMORY
 extern const struct spinand_manufacturer alliancememory_spinand_manufacturer;
+#endif
+#ifdef CONFIG_MTD_SPI_NAND_ATO
 extern const struct spinand_manufacturer ato_spinand_manufacturer;
+#endif
+#ifdef CONFIG_MTD_SPI_NAND_ESMT
 extern const struct spinand_manufacturer esmt_c8_spinand_manufacturer;
 extern const struct spinand_manufacturer esmt_8c_spinand_manufacturer;
+#endif
+#ifdef CONFIG_MTD_SPI_NAND_ETRON
 extern const struct spinand_manufacturer etron_spinand_manufacturer;
+#endif
+#ifdef CONFIG_MTD_SPI_NAND_FMSH
 extern const struct spinand_manufacturer fmsh_spinand_manufacturer;
+#endif
+#ifdef CONFIG_MTD_SPI_NAND_FORESEE
 extern const struct spinand_manufacturer foresee_spinand_manufacturer;
+#endif
+#ifdef CONFIG_MTD_SPI_NAND_GIGADEVICE
 extern const struct spinand_manufacturer gigadevice_spinand_manufacturer;
+#endif
+#ifdef CONFIG_MTD_SPI_NAND_MACRONIX
 extern const struct spinand_manufacturer macronix_spinand_manufacturer;
+#endif
+#ifdef CONFIG_MTD_SPI_NAND_MICRON
 extern const struct spinand_manufacturer micron_spinand_manufacturer;
+#endif
+#ifdef CONFIG_MTD_SPI_NAND_PARAGON
 extern const struct spinand_manufacturer paragon_spinand_manufacturer;
+#endif
+#ifdef CONFIG_MTD_SPI_NAND_SKYHIGH
 extern const struct spinand_manufacturer skyhigh_spinand_manufacturer;
+#endif
+#ifdef CONFIG_MTD_SPI_NAND_TOSHIBA
 extern const struct spinand_manufacturer toshiba_spinand_manufacturer;
+#endif
+#ifdef CONFIG_MTD_SPI_NAND_WINBOND
 extern const struct spinand_manufacturer winbond_spinand_manufacturer;
+#endif
+#ifdef CONFIG_MTD_SPI_NAND_XTX
 extern const struct spinand_manufacturer xtx_spinand_manufacturer;
+#endif
 
 /**
  * struct spinand_op_variants - SPI NAND operation variants

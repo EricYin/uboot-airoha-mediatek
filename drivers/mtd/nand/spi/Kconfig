@@ -6,3 +6,112 @@ menuconfig MTD_SPI_NAND
 	select SPI_MEM
 	help
 	  This is the framework for the SPI NAND device drivers.
+
+config MTD_SPI_NAND_DEVICE_AUTOSELECT
+	bool "Autoselect SPI Nand flash"
+	default y
+	help
+	  By default, auto-selects frequent used SPI Nand flash.
+	  Enable by default: ESMT, ETRON, FMSH, FORESEE, GIGADEVICE,
+	  MACRONIX, MICRON, PARAGON, SKYHIGH, TOSHIBA, WINBOND, XTX.
+	  Disable by default: ALLIANCEMEMORY, ATO.
+	  If you want to add support for more SPI Nand flash chips,
+	  please enable the corresponding option below.
+
+config MTD_SPI_NAND_ALLIANCEMEMORY
+	bool "ALLIANCEMEMORY SPI flash support"
+	depends on MTD_SPI_NAND
+	default n
+	help
+	  Add support for various ALLIANCEMEMORY SPI Nand flash chips
+
+config MTD_SPI_NAND_ATO
+	bool "ATO SPI flash support"
+	depends on MTD_SPI_NAND
+	default n
+	help
+	  Add support for various ATO SPI Nand flash chips
+
+config MTD_SPI_NAND_ESMT
+	bool "ESMT SPI flash support"
+	depends on MTD_SPI_NAND
+	default y if MTD_SPI_NAND_DEVICE_AUTOSELECT
+	help
+	  Add support for various ESMT SPI Nand flash chips
+
+config MTD_SPI_NAND_ETRON
+	bool "ETRON SPI flash support"
+	depends on MTD_SPI_NAND
+	default y if MTD_SPI_NAND_DEVICE_AUTOSELECT
+	help
+	  Add support for various ETRON SPI Nand flash chips
+
+config MTD_SPI_NAND_FMSH
+	bool "FMSH SPI flash support"
+	depends on MTD_SPI_NAND
+	default y if MTD_SPI_NAND_DEVICE_AUTOSELECT
+	help
+	  Add support for various FMSH SPI Nand flash chips
+
+config MTD_SPI_NAND_FORESEE
+	bool "FORESEE SPI flash support"
+	depends on MTD_SPI_NAND
+	default y if MTD_SPI_NAND_DEVICE_AUTOSELECT
+	help
+	  Add support for various FORESEE SPI Nand flash chips
+
+config MTD_SPI_NAND_GIGADEVICE
+	bool "GIGADEVICE SPI flash support"
+	depends on MTD_SPI_NAND
+	default y if MTD_SPI_NAND_DEVICE_AUTOSELECT
+	help
+	  Add support for various GIGADEVICE SPI Nand flash chips
+
+config MTD_SPI_NAND_MACRONIX
+	bool "MACRONIX SPI flash support"
+	depends on MTD_SPI_NAND
+	default y if MTD_SPI_NAND_DEVICE_AUTOSELECT
+	help
+	  Add support for various MACRONIX SPI Nand flash chips
+
+config MTD_SPI_NAND_MICRON
+	bool "MICRON SPI flash support"
+	depends on MTD_SPI_NAND
+	default y if MTD_SPI_NAND_DEVICE_AUTOSELECT
+	help
+	  Add support for various MICRON SPI Nand flash chips
+
+config MTD_SPI_NAND_PARAGON
+	bool "PARAGON SPI flash support"
+	depends on MTD_SPI_NAND
+	default y if MTD_SPI_NAND_DEVICE_AUTOSELECT
+	help
+	  Add support for various PARAGON SPI Nand flash chips
+
+config MTD_SPI_NAND_SKYHIGH
+	bool "SKYHIGH SPI flash support"
+	depends on MTD_SPI_NAND
+	default y if MTD_SPI_NAND_DEVICE_AUTOSELECT
+	help
+	  Add support for various SKYHIGH SPI Nand flash chips
+
+config MTD_SPI_NAND_TOSHIBA
+	bool "TOSHIBA SPI flash support"
+	depends on MTD_SPI_NAND
+	default y if MTD_SPI_NAND_DEVICE_AUTOSELECT
+	help
+	  Add support for various TOSHIBA SPI Nand flash chips
+
+config MTD_SPI_NAND_WINBOND
+	bool "WINBOND SPI flash support"
+	depends on MTD_SPI_NAND
+	default y if MTD_SPI_NAND_DEVICE_AUTOSELECT
+	help
+	  Add support for various WINBOND SPI Nand flash chips
+
+config MTD_SPI_NAND_XTX
+	bool "XTX SPI flash support"
+	depends on MTD_SPI_NAND
+	default y if MTD_SPI_NAND_DEVICE_AUTOSELECT
+	help
+	  Add support for various XTX SPI Nand flash chips
