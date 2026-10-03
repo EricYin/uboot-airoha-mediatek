@@ -32,5 +32,6 @@ spinand-$(CONFIG_MTD_SPI_NAND_TYM)		+= tym.o
 spinand-$(CONFIG_MTD_SPI_NAND_UNILC)		+= unilc.o
 spinand-$(CONFIG_MTD_SPI_NAND_WINBOND)		+= winbond.o
 spinand-$(CONFIG_MTD_SPI_NAND_WODPOSIT)		+= wodposit.o
+spinand-$(CONFIG_MTD_SPI_NAND_XINCUN)		+= xincun.o
 spinand-$(CONFIG_MTD_SPI_NAND_XTX)		+= xtx.o
 spinand-$(CONFIG_MTD_SPI_NAND_ZENTEL)		+= zentel.o

@@ -446,6 +446,10 @@ extern const struct spinand_manufacturer winbond_spinand_manufacturer;
 #ifdef CONFIG_MTD_SPI_NAND_WODPOSIT
 extern const struct spinand_manufacturer wodposit_spinand_manufacturer;
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_XINCUN
+extern const struct spinand_manufacturer xincun_spinand_manufacturer;
+extern const struct spinand_manufacturer xincun_6c_spinand_manufacturer;
+#endif
 #ifdef CONFIG_MTD_SPI_NAND_XTX
 extern const struct spinand_manufacturer xtx_spinand_manufacturer;
 #endif
