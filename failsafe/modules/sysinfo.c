@@ -31,11 +31,13 @@
 
 /*
  * SoC model reporting is available on Airoha (read from the NP-SCU
- * registers) and MediaTek (derived from the CONFIG_TARGET_MT798x build
- * target, no runtime detection needed).
+ * registers), EcoNet (read from the NP-SCU / CHIP-SCU / eFuse registers)
+ * and MediaTek.  The MediaTek model is derived from the build target:
+ * CONFIG_TARGET_MT798x (ARM) or SOC_MT762x (MIPS / mtmips), no runtime
+ * detection needed.
  */
 #if defined(CONFIG_ARCH_AIROHA) || defined(CONFIG_ARCH_MEDIATEK) || \
-	defined(CONFIG_ARCH_MTMIPS)
+	defined(CONFIG_ARCH_ECONET) || defined(CONFIG_ARCH_MTMIPS)
 #define FAILSAFE_SOC_NAME_ENABLED	1
 #endif
 
@@ -54,6 +56,10 @@
 #ifdef CONFIG_ARCH_AIROHA
 #include <linux/err.h>
 #include <soc/airoha/pkgids.h>
+#endif
+
+#ifdef CONFIG_ARCH_ECONET
+#include <soc/airoha/pkgids-econet.h>
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -167,6 +173,34 @@ static const char *sysinfo_soc_name(char *out, size_t out_sz)
 	return out;
 }
 #endif /* CONFIG_ARCH_MTMIPS */
+
+#ifdef CONFIG_ARCH_ECONET
+/*
+ * EcoNet SoCs are identified at runtime from the NP-SCU / CHIP-SCU /
+ * eFuse registers by econet_get_soc_name() (the same helper
+ * print_cpuinfo() in arch/mips/mach-econet/cpu.c uses).  When the
+ * registers do not decode to a known package fall back to the build time
+ * CONFIG_SYS_SOC, i.e. the SoC family the image was built for.
+ */
+static const char *sysinfo_soc_name(char *out, size_t out_sz)
+{
+	const char *name;
+
+	if (!out || !out_sz)
+		return "";
+	out[0] = '\0';
+
+	name = econet_get_soc_name();
+	if (!name || !name[0] || !strcmp(name, "unknown"))
+		name = CONFIG_SYS_SOC;
+
+	if (!name || !name[0])
+		return "";
+
+	snprintf(out, out_sz, "%s", name);
+	return out;
+}
+#endif /* CONFIG_ARCH_ECONET */
 
 static int sysinfo_json_append_board(char *buf, int len, int left)
 {
