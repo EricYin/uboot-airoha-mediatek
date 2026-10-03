@@ -428,6 +428,9 @@ extern const struct spinand_manufacturer wodposit_spinand_manufacturer;
 #ifdef CONFIG_MTD_SPI_NAND_XTX
 extern const struct spinand_manufacturer xtx_spinand_manufacturer;
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_ZENTEL
+extern const struct spinand_manufacturer zentel_spinand_manufacturer;
+#endif
 
 /**
  * struct spinand_op_variants - SPI NAND operation variants
