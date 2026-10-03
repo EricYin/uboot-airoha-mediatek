@@ -53,6 +53,13 @@ config MTD_SPI_NAND_ATO
 	help
 	  Add support for various ATO SPI Nand flash chips
 
+config MTD_SPI_NAND_DOSILICON
+	bool "DOSILICON SPI flash support"
+	depends on MTD_SPI_NAND
+	default n
+	help
+	  Add support for various DOSILICON SPI Nand flash chips
+
 config MTD_SPI_NAND_ESMT
 	bool "ESMT SPI flash support"
 	depends on MTD_SPI_NAND
