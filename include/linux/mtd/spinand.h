@@ -380,6 +380,9 @@ extern const struct spinand_manufacturer esmt_8c_spinand_manufacturer;
 #ifdef CONFIG_MTD_SPI_NAND_ETRON
 extern const struct spinand_manufacturer etron_spinand_manufacturer;
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_FISON
+extern const struct spinand_manufacturer fison_spinand_manufacturer;
+#endif
 #ifdef CONFIG_MTD_SPI_NAND_FMSH
 extern const struct spinand_manufacturer fmsh_spinand_manufacturer;
 #endif
