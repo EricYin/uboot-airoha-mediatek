@@ -398,6 +398,9 @@ extern const struct spinand_manufacturer gsto_spinand_manufacturer;
 #ifdef CONFIG_MTD_SPI_NAND_HIKSEMI
 extern const struct spinand_manufacturer hiksemi_spinand_manufacturer;
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_HYF
+extern const struct spinand_manufacturer hyf_spinand_manufacturer;
+#endif
 #ifdef CONFIG_MTD_SPI_NAND_ICTHINK
 extern const struct spinand_manufacturer icthink_spinand_manufacturer;
 #endif
