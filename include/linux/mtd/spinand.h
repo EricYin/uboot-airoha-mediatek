@@ -410,6 +410,9 @@ extern const struct spinand_manufacturer silicongo_spinand_manufacturer;
 #ifdef CONFIG_MTD_SPI_NAND_SKYHIGH
 extern const struct spinand_manufacturer skyhigh_spinand_manufacturer;
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_TITAN
+extern const struct spinand_manufacturer titan_spinand_manufacturer;
+#endif
 #ifdef CONFIG_MTD_SPI_NAND_TOSHIBA
 extern const struct spinand_manufacturer toshiba_spinand_manufacturer;
 #endif
