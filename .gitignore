@@ -44,6 +44,9 @@
 *.ti-*
 # Build tree
 /build*
+# ...but keep the batch build driver and its logs dir readable: the rule above
+# is meant for U-Boot's generated build/ tree.
+!/build.sh
 
 #
 # Top-level generic files
