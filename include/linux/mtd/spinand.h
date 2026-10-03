@@ -401,6 +401,9 @@ extern const struct spinand_manufacturer mira_spinand_manufacturer;
 #ifdef CONFIG_MTD_SPI_NAND_PARAGON
 extern const struct spinand_manufacturer paragon_spinand_manufacturer;
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_SILICONGO
+extern const struct spinand_manufacturer silicongo_spinand_manufacturer;
+#endif
 #ifdef CONFIG_MTD_SPI_NAND_SKYHIGH
 extern const struct spinand_manufacturer skyhigh_spinand_manufacturer;
 #endif

@@ -17,6 +17,7 @@ spinand-$(CONFIG_MTD_SPI_NAND_MACRONIX)		+= macronix.o
 spinand-$(CONFIG_MTD_SPI_NAND_MICRON)		+= micron.o
 spinand-$(CONFIG_MTD_SPI_NAND_MIRA)		+= mira.o
 spinand-$(CONFIG_MTD_SPI_NAND_PARAGON)		+= paragon.o
+spinand-$(CONFIG_MTD_SPI_NAND_SILICONGO)	+= silicongo.o
 spinand-$(CONFIG_MTD_SPI_NAND_SKYHIGH)		+= skyhigh.o
 spinand-$(CONFIG_MTD_SPI_NAND_TOSHIBA)		+= toshiba.o
 spinand-$(CONFIG_MTD_SPI_NAND_WINBOND)		+= winbond.o
