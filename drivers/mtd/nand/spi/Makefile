@@ -13,6 +13,7 @@ spinand-$(CONFIG_MTD_SPI_NAND_GIGADEVICE)	+= gigadevice.o
 spinand-$(CONFIG_MTD_SPI_NAND_ICTHINK)		+= icthink.o
 spinand-$(CONFIG_MTD_SPI_NAND_ISSI)		+= issi.o
 spinand-$(CONFIG_MTD_SPI_NAND_JSC)		+= jsc.o
+spinand-$(CONFIG_MTD_SPI_NAND_KINGSTON)		+= kingston.o
 spinand-$(CONFIG_MTD_SPI_NAND_MACRONIX)		+= macronix.o
 spinand-$(CONFIG_MTD_SPI_NAND_MICRON)		+= micron.o
 spinand-$(CONFIG_MTD_SPI_NAND_MIRA)		+= mira.o
