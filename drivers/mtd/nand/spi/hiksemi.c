@@ -1,0 +1,103 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (c) 2024 Rockchip Electronics Co., Ltd.
+ *
+ * SPI NAND flash driver for HIKSEMI (海康存储) devices.
+ *
+ * Authors:
+ *	Dingqiang Lin <jon.lin@rock-chips.com>
+ */
+
+#ifndef __UBOOT__
+#include <linux/device.h>
+#include <linux/kernel.h>
+#endif
+#include <linux/mtd/spinand.h>
+
+#define SPINAND_MFR_HIKSEMI		0x3C
+
+static SPINAND_OP_VARIANTS(read_cache_variants,
+		SPINAND_PAGE_READ_FROM_CACHE_1S_4S_4S_OP(0, 2, NULL, 0, 0),
+		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_4S_OP(0, 1, NULL, 0, 0),
+		SPINAND_PAGE_READ_FROM_CACHE_1S_2S_2S_OP(0, 1, NULL, 0, 0),
+		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_2S_OP(0, 1, NULL, 0, 0),
+		SPINAND_PAGE_READ_FROM_CACHE_FAST_1S_1S_1S_OP(0, 1, NULL, 0, 0),
+		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_1S_OP(0, 1, NULL, 0, 0));
+
+static SPINAND_OP_VARIANTS(write_cache_variants,
+		SPINAND_PROG_LOAD_1S_1S_4S_OP(true, 0, NULL, 0),
+		SPINAND_PROG_LOAD_1S_1S_1S_OP(true, 0, NULL, 0));
+
+static SPINAND_OP_VARIANTS(update_cache_variants,
+		SPINAND_PROG_LOAD_1S_1S_4S_OP(false, 0, NULL, 0),
+		SPINAND_PROG_LOAD_1S_1S_1S_OP(false, 0, NULL, 0));
+
+static int hsesyhdswxg_ooblayout_ecc(struct mtd_info *mtd, int section,
+				 struct mtd_oob_region *region)
+{
+	if (section)
+		return -ERANGE;
+
+	region->offset = mtd->oobsize / 2;
+	region->length = mtd->oobsize / 2;
+
+	return 0;
+}
+
+static int hsesyhdswxg_ooblayout_free(struct mtd_info *mtd, int section,
+				  struct mtd_oob_region *region)
+{
+	if (section)
+		return -ERANGE;
+
+	region->offset = 2;
+	region->length = mtd->oobsize / 2 - 2;
+
+	return 0;
+}
+
+static const struct mtd_ooblayout_ops hsesyhdswxg_ooblayout = {
+	.ecc = hsesyhdswxg_ooblayout_ecc,
+	.rfree = hsesyhdswxg_ooblayout_free,
+};
+
+static const struct spinand_info hiksemi_spinand_table[] = {
+	SPINAND_INFO("HSESYHDSW2G",
+		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xD2),
+		     NAND_MEMORG(1, 2048, 128, 64, 2048, 40, 1, 1, 1),
+		     NAND_ECCREQ(4, 512),
+		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+					      &write_cache_variants,
+					      &update_cache_variants),
+		     0,
+		     SPINAND_ECCINFO(&hsesyhdswxg_ooblayout, NULL)),
+	SPINAND_INFO("HSESDFDSW4G",
+		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xD4),
+		     NAND_MEMORG(1, 2048, 128, 64, 4096, 40, 1, 1, 1),
+		     NAND_ECCREQ(4, 512),
+		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+					      &write_cache_variants,
+					      &update_cache_variants),
+		     0,
+		     SPINAND_ECCINFO(&hsesyhdswxg_ooblayout, NULL)),
+	SPINAND_INFO("HSESYHDSW1G",
+		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xD1, 0xD1),
+		     NAND_MEMORG(1, 2048, 64, 64, 1024, 20, 1, 1, 1),
+		     NAND_ECCREQ(4, 512),
+		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+					      &write_cache_variants,
+					      &update_cache_variants),
+		     0,
+		     SPINAND_ECCINFO(&hsesyhdswxg_ooblayout, NULL)),
+};
+
+static const struct spinand_manufacturer_ops hiksemi_spinand_manuf_ops = {
+};
+
+const struct spinand_manufacturer hiksemi_spinand_manufacturer = {
+	.id = SPINAND_MFR_HIKSEMI,
+	.name = "HIKSEMI",
+	.chips = hiksemi_spinand_table,
+	.nchips = ARRAY_SIZE(hiksemi_spinand_table),
+	.ops = &hiksemi_spinand_manuf_ops,
+};
