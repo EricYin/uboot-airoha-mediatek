@@ -116,6 +116,13 @@ config MTD_SPI_NAND_MIRA
 	help
 	  Add support for various MIRA SPI Nand flash chips
 
+config MTD_SPI_NAND_MK
+	bool "MK SPI flash support"
+	depends on MTD_SPI_NAND
+	default n
+	help
+	  Add support for various MK SPI Nand flash chips
+
 config MTD_SPI_NAND_PARAGON
 	bool "PARAGON SPI flash support"
 	depends on MTD_SPI_NAND
