@@ -389,6 +389,9 @@ extern const struct spinand_manufacturer foresee_spinand_manufacturer;
 #ifdef CONFIG_MTD_SPI_NAND_GIGADEVICE
 extern const struct spinand_manufacturer gigadevice_spinand_manufacturer;
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_GSTO
+extern const struct spinand_manufacturer gsto_spinand_manufacturer;
+#endif
 #ifdef CONFIG_MTD_SPI_NAND_HIKSEMI
 extern const struct spinand_manufacturer hiksemi_spinand_manufacturer;
 #endif

@@ -1292,6 +1292,9 @@ static const struct spinand_manufacturer *spinand_manufacturers[] = {
 #ifdef CONFIG_MTD_SPI_NAND_GIGADEVICE
 	&gigadevice_spinand_manufacturer,
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_GSTO
+	&gsto_spinand_manufacturer,
+#endif
 #ifdef CONFIG_MTD_SPI_NAND_HIKSEMI
 	&hiksemi_spinand_manufacturer,
 #endif
