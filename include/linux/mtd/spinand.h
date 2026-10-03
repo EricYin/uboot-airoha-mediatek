@@ -386,6 +386,9 @@ extern const struct spinand_manufacturer icthink_spinand_manufacturer;
 #ifdef CONFIG_MTD_SPI_NAND_ISSI
 extern const struct spinand_manufacturer issi_spinand_manufacturer;
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_JSC
+extern const struct spinand_manufacturer jsc_spinand_manufacturer;
+#endif
 #ifdef CONFIG_MTD_SPI_NAND_MACRONIX
 extern const struct spinand_manufacturer macronix_spinand_manufacturer;
 #endif
