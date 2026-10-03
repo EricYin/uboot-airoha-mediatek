@@ -364,6 +364,9 @@ extern const struct spinand_manufacturer alliancememory_spinand_manufacturer;
 #ifdef CONFIG_MTD_SPI_NAND_ATO
 extern const struct spinand_manufacturer ato_spinand_manufacturer;
 #endif
+#ifdef CONFIG_MTD_SPI_NAND_DAMAY
+extern const struct spinand_manufacturer damay_spinand_manufacturer;
+#endif
 #ifdef CONFIG_MTD_SPI_NAND_ESMT
 extern const struct spinand_manufacturer esmt_c8_spinand_manufacturer;
 extern const struct spinand_manufacturer esmt_8c_spinand_manufacturer;

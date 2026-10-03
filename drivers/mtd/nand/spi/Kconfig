@@ -7,6 +7,13 @@ menuconfig MTD_SPI_NAND
 	help
 	  This is the framework for the SPI NAND device drivers.
 
+config MTD_SPI_NAND_DAMAY
+	bool "DAMAY SPI flash support"
+	depends on MTD_SPI_NAND
+	default n
+	help
+	  Add support for various DAMAY SPI Nand flash chips
+
 config MTD_SPI_NAND_DEVICE_AUTOSELECT
 	bool "Autoselect SPI Nand flash"
 	default y
