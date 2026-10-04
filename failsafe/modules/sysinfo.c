@@ -28,6 +28,10 @@
 #endif
 
 #include <failsafe/internal.h>
+#ifdef CONFIG_MMC
+#include <failsafe/mmc.h>
+#endif
+#include <failsafe/helpers.h>
 
 /*
  * SoC model reporting is available on Airoha (read from the NP-SCU
@@ -517,6 +521,76 @@ void sysinfo_nand_handler(enum httpd_uri_handler_status status,
 	len = buf_appendf(buf, left, len, "\"present\":false,\"parts\":[]");
 #endif
 	len = buf_appendf(buf, left, len, "}");
+
+	len = buf_appendf(buf, left, len, ",\"mmc\":{");
+#if IS_ENABLED(CONFIG_MMC)
+	{
+		struct mmc *mmc;
+		struct blk_desc *bd;
+		bool present;
+
+		mmc = failsafe_mmc_get_dev();
+		bd = failsafe_mmc_blk_desc(mmc);
+		present = bd && bd->type != DEV_TYPE_UNKNOWN;
+
+		if (present) {
+			char pretty_vendor[256];
+			char esc_vendor[256], esc_product[128];
+
+			failsafe_mmc_vendor_pretty(bd->vendor, pretty_vendor,
+						   sizeof(pretty_vendor));
+			json_escape(esc_vendor, sizeof(esc_vendor),
+				    pretty_vendor);
+			json_escape(esc_product, sizeof(esc_product),
+				    bd->product);
+			len = buf_appendf(buf, left, len,
+				"\"present\":true,\"vendor\":\"%s\","
+				"\"product\":\"%s\"",
+				esc_vendor, esc_product);
+		} else {
+			len = buf_appendf(buf, left, len,
+					  "\"present\":false");
+		}
+
+		len = buf_appendf(buf, left, len, ",\"parts\":[");
+#ifdef CONFIG_PARTITIONS
+		if (present) {
+			struct disk_partition dpart;
+			char esc_name[128];
+			u32 i = 1;
+			bool first = true;
+
+			part_init(bd);
+			while (len < left - 128) {
+				if (part_get_info(bd, i, &dpart))
+					break;
+
+				if (!dpart.name[0]) {
+					i++;
+					continue;
+				}
+
+				json_escape(esc_name, sizeof(esc_name),
+					    dpart.name);
+				len = buf_appendf(buf, left, len,
+					"%s{\"name\":\"%s\",\"size\":%llu}",
+					first ? "" : ",",
+					esc_name,
+					(unsigned long long)dpart.size *
+					dpart.blksz);
+
+				first = false;
+				i++;
+			}
+		}
+#endif
+		len = buf_appendf(buf, left, len, "]");
+	}
+#else
+	len = buf_appendf(buf, left, len, "\"present\":false,\"parts\":[]");
+#endif
+	len = buf_appendf(buf, left, len, "}");
+
 	len = buf_appendf(buf, left, len, "}");
 
 	failsafe_http_reply_json_alloc(response, 200, buf, buf);

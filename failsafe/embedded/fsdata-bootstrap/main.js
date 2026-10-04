@@ -1480,14 +1480,26 @@ function renderSysInfoNand() {
     if (!sysinfoContainer) return;
 
     const nandData = APP_STATE.sysinfoNand;
-    if (!nandData || !nandData.nand) return;
+    if (!nandData) return;
 
     const nand = nandData.nand;
-    const model = nand.model || t("sysinfo.unknown");
+    const mmc = nandData.mmc;
+
+    /* Flash model: prefer the NAND chip; fall back to the MMC device on
+     * boards that boot from eMMC / SD (no NAND).  Without the fallback the
+     * home page printed "闪存：未知" even though /flash/info had the data. */
+    let model = null;
+    if (nand && nand.present && nand.model)
+        model = nand.model;
+    else if (mmc && mmc.present) {
+        const v = (mmc.vendor || "").trim();
+        const p = (mmc.product || "").trim();
+        model = (v + " " + p).trim();
+    }
 
     // Flash model: append to the summary block (after RAM line)
     const summary = sysinfoContainer.querySelector(".sysinfo-summary");
-    if (summary) {
+    if (model && summary) {
         let flashLine = summary.querySelector("[data-sysinfo='flash']");
         if (!flashLine) {
             flashLine = document.createElement("div");
@@ -1498,8 +1510,12 @@ function renderSysInfoNand() {
         flashLine.textContent = t("sysinfo.flash") + " " + model;
     }
 
-    // Partitions: merge into the "More info" details/extra block
-    if (Array.isArray(nand.parts) && nand.parts.length) {
+    // Partitions: merge into the "More info" details/extra block.
+    // Prefer NAND parts, otherwise the MMC ones.
+    const parts = (nand && Array.isArray(nand.parts) && nand.parts.length) ? nand.parts
+                : (mmc && Array.isArray(mmc.parts) ? mmc.parts : []);
+
+    if (parts.length) {
         let details = sysinfoContainer.querySelector(".sysinfo-details");
         let extra = sysinfoContainer.querySelector(".sysinfo-extra");
 
@@ -1537,7 +1553,7 @@ function renderSysInfoNand() {
 
         const list = document.createElement("div");
         list.className = "sysinfo-list";
-        nand.parts.forEach((part) => {
+        parts.forEach((part) => {
             const item = document.createElement("div");
             item.textContent = part.name + (part.master ? " (" + t("sysinfo.master") + ")" : "") + " - " + bytesToHuman(part.size);
             list.appendChild(item);
