@@ -155,6 +155,30 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
 int failsafe_storage_write_firmware(const char *target, const void *data,
 				    size_t size);
 
+/**
+ * failsafe_storage_firmware_part() - partition a system image is stored in
+ * @target: the board's firmware target (FAILSAFE_STORAGE_FIT_TARGET, i.e.
+ *	    "fit", for both boards)
+ *
+ * Resolves @target exactly the way failsafe_storage_write_firmware() does:
+ * on an MMC device the first partition of the standard single-image layout
+ * that exists - @target ("fit"), then "firmware" and "production" (see
+ * FAILSAFE_STORAGE_{FIRMWARE,PRODUCTION}_TARGET).
+ *
+ * The board level capacity check has to use the name returned here rather
+ * than @target itself: the board target only exists as a *volume* on NAND /
+ * NOR devices, while the OpenWrt eMMC layout keeps the single FIT in
+ * "production", so validating "fit" on an eMMC device fails with -ENODEV
+ * even though the write path would have found a partition.  Because the
+ * image is written to the partition returned here, its size has to be
+ * checked against the same one.
+ *
+ * Returns the partition name, or NULL when no MMC partition can hold the
+ * image (NAND / NOR devices, or an MMC device with none of the three
+ * partitions) - it is then written to @target through the generic path.
+ */
+const char *failsafe_storage_firmware_part(const char *target);
+
 
 /**
  * failsafe_storage_read() - read raw bytes from a storage target

@@ -201,15 +201,24 @@ int failsafe_storage_write(const char *target, u64 mtd_off,
  * two well-known ones.  Only an existing partition is used, so a board
  * with one of the other layouts (or with a UBI volume instead) is not
  * affected.
+ *
+ * The resolver is public (see include/failsafe/storage.h) because the
+ * board level capacity check has to name the same partition the write path
+ * picks: the board target need not exist at all ("fit" is a UBI volume on
+ * NAND / NOR, while the OpenWrt eMMC layout carries the single FIT in
+ * "production"), and validating the raw target instead of the resolved one
+ * rejected the upload before the fallback could run.
  */
 static const char *const mmc_fw_part_names[] = {
 	FAILSAFE_STORAGE_FIT_TARGET,
 	FAILSAFE_STORAGE_FIRMWARE_TARGET,
 	FAILSAFE_STORAGE_PRODUCTION_TARGET,
 };
+#endif /* CONFIG_MMC */
 
-static const char *mmc_fw_part(const char *target)
+const char *failsafe_storage_firmware_part(const char *target)
 {
+#if IS_ENABLED(CONFIG_MMC)
 	int i;
 
 	/* The target the board asked for wins when it is a partition. */
@@ -219,29 +228,28 @@ static const char *mmc_fw_part(const char *target)
 	for (i = 0; i < ARRAY_SIZE(mmc_fw_part_names); i++)
 		if (!failsafe_mmc_part_size(mmc_fw_part_names[i], NULL))
 			return mmc_fw_part_names[i];
+#else
+	(void)target;
+#endif /* CONFIG_MMC */
 
 	return NULL;
 }
-#endif /* CONFIG_MMC */
 
 int failsafe_storage_write_firmware(const char *target, const void *data,
 				    size_t size)
 {
+	const char *part;
+
 	if (!data || !size)
 		return -EINVAL;
 
-#if IS_ENABLED(CONFIG_MMC)
 	/*
 	 * An eMMC / SD system image is one ITB / FIT in a single partition of
 	 * the standard layout, not a UBI volume.
 	 */
-	{
-		const char *part = mmc_fw_part(target);
-
-		if (part)
-			return failsafe_storage_write(part, 0, data, size);
-	}
-#endif /* CONFIG_MMC */
+	part = failsafe_storage_firmware_part(target);
+	if (part)
+		return failsafe_storage_write(part, 0, data, size);
 
 	/* NAND / NOR devices: the "fit" volume, as before. */
 	return failsafe_storage_write(target, 0, data, size);

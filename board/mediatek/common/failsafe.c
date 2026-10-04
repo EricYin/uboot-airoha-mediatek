@@ -309,11 +309,24 @@ int failsafe_validate_image(const void *data, size_t size, failsafe_fw_t fw)
 	 * this is the single size gate for fip.  The preloader has its own
 	 * three locations (MTD partition, eMMC boot0, SD partition), so it
 	 * is checked by the MediaTek specific helper.
+	 *
+	 * The system image is checked against the partition the write path
+	 * will use, not against the board target: on an MMC device the
+	 * target ("fit") need not be a partition at all - the OpenWrt eMMC
+	 * layout keeps the single FIT in "production" - so the shared
+	 * resolver is applied here as well.  Without it an upload to such a
+	 * device was rejected with -ENODEV before the write path's fallback
+	 * could pick "production".
 	 */
-	if (fw == FW_TYPE_BL2)
+	if (fw == FW_TYPE_BL2) {
 		ret = mtk_bl2_capacity(size);
-	else
+	} else if (fw == FW_TYPE_FW) {
+		const char *part = failsafe_storage_firmware_part(target);
+
+		ret = failsafe_check_capacity(part ? part : target, 0, size);
+	} else {
 		ret = failsafe_check_capacity(target, 0, size);
+	}
 
 	if (ret)
 		return ret;

@@ -292,11 +292,23 @@ int failsafe_validate_image(const void *data, size_t size, failsafe_fw_t fw)
 	 * u-boot / chainloader.  The preloader has its own two locations
 	 * (MTD partition with the bootrom offset, MMC user area), so it is
 	 * checked by the Airoha specific helper.
+	 *
+	 * The system image is checked against the partition the write path
+	 * will use, not against the board target: on an MMC device the
+	 * target ("fit") need not be a partition at all (the OpenWrt eMMC
+	 * layout keeps the single FIT in "production"), so the shared
+	 * resolver is applied here as well - the same reason as on
+	 * MediaTek.
 	 */
-	if (fw == FW_TYPE_BL2)
+	if (fw == FW_TYPE_BL2) {
 		ret = airoha_bl2_capacity(size);
-	else
+	} else if (fw == FW_TYPE_FW) {
+		const char *part = failsafe_storage_firmware_part(target);
+
+		ret = failsafe_check_capacity(part ? part : target, 0, size);
+	} else {
 		ret = failsafe_check_capacity(target, 0, size);
+	}
 
 	if (ret)
 		return ret;
