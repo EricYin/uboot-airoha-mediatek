@@ -260,6 +260,8 @@ endif
 
 hostprogs-always-$(CONFIG_MIPS) += mips-relocs
 
+hostprogs-always-$(CONFIG_MMC) += ptgen
+
 hostprogs-always-$(CONFIG_ASN1_COMPILER)	+= asn1_compiler
 HOSTCFLAGS_asn1_compiler.o = -idirafter $(srctree)/include
 
