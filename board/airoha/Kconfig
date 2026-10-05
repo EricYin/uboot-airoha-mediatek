@@ -293,14 +293,15 @@ menuconfig AIROHA_FAILSAFE_VALIDATE
 if AIROHA_FAILSAFE_VALIDATE
 
 config AIROHA_FAILSAFE_VALIDATE_UBOOT
-	bool "Validate 'u-boot' (legacy 512 KiB) images"
-	depends on AIROHA_BUILD_LEGACY
+	bool "Validate 'u-boot' images"
+	depends on AIROHA_BUILD_LEGACY || ARCH_ECONET
 	default y
 	help
-	  Structurally validate uploaded 'u-boot' images before they are
-	  flashed.  The 'u-boot' MTD partition holds the legacy 512 KiB
-	  boot image in one of two flavours, depending on
-	  CONFIG_AIROHA_LEGACY_BL1:
+	  Validate uploaded 'u-boot' images before they are flashed.
+
+	  On the ARM SoCs the 'u-boot' MTD partition holds the legacy
+	  512 KiB boot image (BL2 and FIP packed together in one file) in
+	  one of two flavours, depending on CONFIG_AIROHA_LEGACY_BL1:
 	    - with BL1 (bl1-bl2-bl31-uboot.bin): BL1 @0x0 + FIP @0x800,
 	    - without BL1 (bl2-bl31-uboot.bin, e.g. AN7563): the same
 	      self-contained FIP (BL2 + BL31 + U-Boot) behind a 2 KiB zero
@@ -314,15 +315,37 @@ config AIROHA_FAILSAFE_VALIDATE_UBOOT
 	  check inherently covers BL2 as well; no separate 'bl2' option
 	  exists in these modes.
 
+	  On the MIPS SoCs (EcoNet) no FIP is involved: the 'u-boot'
+	  storage holds the whole bootloader image, with the U-Boot
+	  payload inside it ([TCBoot loader][ECNT descriptor][u-boot.bin]
+	  on EcoNet).  Such an image is accepted only when it really
+	  carries a U-Boot - a valid legacy uImage or its control device
+	  tree.
+
+	  In both cases the U-Boot the image ships is also checked against
+	  this board: the 'compatible' list of its device tree and the one
+	  of the running U-Boot must match, comparing the entries in order
+	  with the shorter list having to be a prefix of the longer one
+	  (the same rule the reference implementation applies), so a
+	  bootloader built for a different board is rejected even when it
+	  shares this SoC.  The environment variable
+	  "failsafe_strict_model" (on by default, 0 disables it) turns
+	  that comparison off.
+
+	  A U-Boot stored compressed is expanded first (LZMA on these
+	  SoCs), which needs CONFIG_LZMA; without the decoder the board
+	  comparison is skipped while the U-Boot itself still has to be
+	  there.
+
+	  Note that the requirement "the image must be recognisable as a
+	  U-Boot" is structural, not a board-model check: it is not
+	  affected by "failsafe_strict_model".  Setting the
+	  "failsafe_validate" environment variable to 0 (the master
+	  switch documented above), or disabling this option, turns the
+	  whole check off.
+
 	  The image size is bounded by the generic MTD partition capacity
 	  check (must fit the 'u-boot' partition, no fixed size limit).
-
-	  The U-Boot the image ships is also checked against this board
-	  (the 'compatible' of the device tree U-Boot carries must match),
-	  unless the environment variable "failsafe_strict_model" is set
-	  to 0 on the running device.  A U-Boot stored compressed inside
-	  the image (LZMA, as Airoha does) is expanded first, which needs
-	  CONFIG_LZMA; without the decoder the check is skipped.
 
 if ARM
 

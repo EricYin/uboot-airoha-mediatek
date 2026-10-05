@@ -14,7 +14,7 @@
  * CONFIG_AIROHA_FAILSAFE_VALIDATE ("Failsafe image validation" menu in
  * board/airoha/Kconfig).  Per-image-type checks can be enabled or
  * disabled individually with:
- *   u-boot (legacy image)      CONFIG_AIROHA_FAILSAFE_VALIDATE_UBOOT
+ *   u-boot            CONFIG_AIROHA_FAILSAFE_VALIDATE_UBOOT
  *   bl2               CONFIG_AIROHA_FAILSAFE_VALIDATE_BL2
  *   fip               CONFIG_AIROHA_FAILSAFE_VALIDATE_FIP
  *   chainloader       CONFIG_AIROHA_FAILSAFE_VALIDATE_CHAINLOADER
@@ -32,6 +32,11 @@
  *   - FIP mode: BL2 lives in its own partition / image (preloader.bin),
  *     so CONFIG_AIROHA_FAILSAFE_VALIDATE_BL2 always includes the deep
  *     LZMA-layout + trailing CRC32 check for bare preloaders.
+ *   - MIPS (EcoNet): no FIP is involved.  The 'u-boot' storage holds the
+ *     whole bootloader image ([TCBoot loader][ECNT descriptor][u-boot.bin
+ *     payload]), from which the shared helper extracts the U-Boot, checks
+ *     that it is really there and compares its device tree with this
+ *     board.
  *
  * Both the legacy 'u-boot' image and the 'fip' volume ship a U-Boot, so
  * each of them is also checked against this board: the 'compatible' of
@@ -128,11 +133,12 @@ static bool bl2_lzma_layout_ok(const u8 *data, size_t size, u32 *crc)
 #if defined(CONFIG_AIROHA_FAILSAFE_VALIDATE_UBOOT)
 static int failsafe_validate_uboot(const void *data, size_t size)
 {
+#if defined(CONFIG_AIROHA_BUILD_LEGACY)
 	int ret;
 
-	/* The 'u-boot' MTD partition holds either the legacy image with BL1
-	 * (BL1 @0x0 + internal FIP @0x800) or, when BL1 is left out
-	 * (CONFIG_AIROHA_LEGACY_BL1 disabled, e.g. AN7563), the same
+	/* ARM: the 'u-boot' MTD partition holds either the legacy image
+	 * with BL1 (BL1 @0x0 + internal FIP @0x800) or, when BL1 is left
+	 * out (CONFIG_AIROHA_LEGACY_BL1 disabled, e.g. AN7563), the same
 	 * internal FIP (BL2 + BL31 + U-Boot) behind a 2 KiB zero prefix
 	 * instead of BL1.  tools/airoha_pack_boot.sh writes the FIP at
 	 * 0x800 in both cases, so both are validated as a FIP ToC @0x800.
@@ -151,6 +157,16 @@ static int failsafe_validate_uboot(const void *data, size_t size)
 	return failsafe_fip_check_model(data, size,
 					AIROHA_FAILSAFE_LEGACY_FIP_OFF,
 					"u-boot");
+#else
+	/* MIPS (EcoNet): no FIP.  The 'u-boot' storage holds the whole
+	 * bootloader image - [TCBoot loader][ECNT descriptor][u-boot.bin
+	 * payload] - so the shared helper looks for the U-Boot inside it,
+	 * requires it to be there, and compares its device tree with this
+	 * board (env 'failsafe_strict_model').  Size is bounded by the
+	 * generic MTD partition capacity check in failsafe_validate_image().
+	 */
+	return failsafe_image_validate_uboot(data, size, "u-boot");
+#endif
 }
 #endif /* CONFIG_AIROHA_FAILSAFE_VALIDATE_UBOOT */
 
