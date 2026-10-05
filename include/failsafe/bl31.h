@@ -21,14 +21,15 @@
 
 #include <linux/kconfig.h>
 #include <linux/types.h>
+#include <failsafe/compress.h>
 #include <failsafe/version.h>
 
 /*
  * Scratch space for the decompression of a BL31 payload.  The Airoha
  * bl31.lzma expands to roughly 100 KiB, the MediaTek bl31.xz to about
- * 41 KiB; the rest is headroom.
+ * 41 KiB, so the shared payload scratch is plenty.
  */
-#define FAILSAFE_BL31_SCRATCH_SIZE	0x200000
+#define FAILSAFE_BL31_SCRATCH_SIZE	FAILSAFE_COMPRESS_SCRATCH_SIZE
 
 #if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_BL31)
 

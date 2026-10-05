@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
 #
-# Shared boot-image helpers (FIP / BL2 / image / storage)
+# Shared boot-image helpers (FIP / BL2 / image / payload / storage)
 
-obj-y += image.o storage.o
+obj-y += compress.o image.o storage.o
 obj-$(CONFIG_ARM) += bl2.o fip.o
 
 # Storage backends behind failsafe_storage_write() / _read(): one file per
