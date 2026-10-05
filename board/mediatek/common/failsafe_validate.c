@@ -10,6 +10,7 @@
  * disabled individually with:
  *   bl2               CONFIG_MTK_FAILSAFE_VALIDATE_BL2
  *   fip               CONFIG_MTK_FAILSAFE_VALIDATE_FIP
+ *   u-boot (MIPS)     CONFIG_MTK_FAILSAFE_VALIDATE_UBOOT
  *   firmware          CONFIG_MTK_FAILSAFE_VALIDATE_FIRMWARE
  *
  * The layout decides which checks apply:
@@ -19,6 +20,11 @@
  *     EMMC_BOOT / SDMMC_BOOT) and, when the preloader is delivered as a
  *     FIP container ($(FIPTOOL) create --tb-fw bl2.bin preloader.bin),
  *     a FIP ToC check for the BL2 payload.
+ *   - U-Boot layout on the MIPS SoCs (ARCH_MTMIPS): no FIP is involved,
+ *     the 'u-boot' partition holds the whole bootloader image (SPL +
+ *     U-Boot as a legacy uImage, or a TCBoot loader with the U-Boot
+ *     payload behind it), which is validated by the shared
+ *     failsafe_image_validate_uboot().
  *   - 'fip' is a UBI static volume holding a FIP (BL31 + U-Boot, or the
  *     legacy BL2+BL31+U-Boot single-FIP), validated as a FIP ToC.  The
  *     U-Boot it ships is additionally checked against this board - the
@@ -152,6 +158,21 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 }
 #endif /* CONFIG_MTK_FAILSAFE_VALIDATE_BL2 */
 
+#if defined(CONFIG_MTK_FAILSAFE_VALIDATE_UBOOT)
+static int failsafe_validate_uboot(const void *data, size_t size)
+{
+	/* The MIPS 'u-boot' storage holds the whole bootloader image: SPL
+	 * + U-Boot packed as a legacy uImage (u-boot-with-spl.bin,
+	 * u-boot-lzma.img, u-boot-mt7621.bin), or a TCBoot loader with
+	 * the U-Boot payload behind it.  The shared helper checks that it
+	 * really carries a U-Boot and matches the board the model of
+	 * (env 'failsafe_strict_model'); the image size is bounded by the
+	 * generic partition capacity check in failsafe_validate_image().
+	 */
+	return failsafe_image_validate_uboot(data, size, "u-boot");
+}
+#endif /* CONFIG_MTK_FAILSAFE_VALIDATE_UBOOT */
+
 #if defined(CONFIG_MTK_FAILSAFE_VALIDATE_FIP)
 static int failsafe_validate_fip(const void *data, size_t size)
 {
@@ -209,6 +230,12 @@ int failsafe_validate_image_content(const void *data, size_t size,
 #if defined(CONFIG_MTK_FAILSAFE_VALIDATE_BL2)
 		checked = true;
 		ret = failsafe_validate_bl2(data, size);
+#endif
+		break;
+	case FW_TYPE_UBOOT:
+#if defined(CONFIG_MTK_FAILSAFE_VALIDATE_UBOOT)
+		checked = true;
+		ret = failsafe_validate_uboot(data, size);
 #endif
 		break;
 	case FW_TYPE_FIP:

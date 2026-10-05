@@ -50,6 +50,40 @@ config MTK_FAILSAFE_VALIDATE_FIP
 
 endif # ARM
 
+config MTK_FAILSAFE_VALIDATE_UBOOT
+	bool "Validate 'u-boot' images (MIPS: SPL / payload + U-Boot)"
+	depends on MIPS && OF_LIBFDT
+	default y
+	help
+	  Validate uploaded 'u-boot' images before they are flashed.
+
+	  The MIPS SoCs have no FIP: the 'u-boot' storage holds the whole
+	  bootloader image, with the U-Boot inside it - SPL + U-Boot
+	  packed as a legacy uImage (u-boot-with-spl.bin, u-boot-lzma.img)
+	  on MediaTek MIPS, a TCBoot loader with the U-Boot payload behind
+	  it on EcoNet.
+	  
+	  Such an image is accepted only when it carries a
+	  U-Boot - a valid legacy uImage (header and data CRC), or its
+	  control device tree.  This part is structural and deliberately
+	  strict, because this storage has no other guard (there is no FIP
+	  ToC to validate); it is not affected by "failsafe_strict_model",
+	  only by the master "failsafe_validate" switch (or by disabling
+	  this option).
+
+	  The 'compatible' list of that device tree is then compared with
+	  the one of the running U-Boot, entry by entry, with the shorter
+	  list having to be a prefix of the longer one (the same rule the
+	  reference implementation applies) - so a bootloader built for
+	  another board is rejected even when it shares this SoC.  The
+	  environment variable "failsafe_strict_model" (on by default, 0
+	  disables it) turns that comparison off.
+
+	  A U-Boot stored compressed (LZMA on MediaTek MIPS) is expanded
+	  first, which needs CONFIG_LZMA; without the decoder the board
+	  comparison is skipped while the U-Boot itself still has to be
+	  there.
+
 config MTK_FAILSAFE_VALIDATE_FIRMWARE
 	bool "Validate 'firmware' images"
 	depends on FIT
