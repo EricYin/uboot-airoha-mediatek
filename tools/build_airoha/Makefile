@@ -23,6 +23,10 @@
 #                                         airoha_pack_chainloader.sh)
 #   CONFIG_AIROHA_CHAINLOADER_DIR       — chainloader board selection
 #
+# Every BL2/BL31 blob is structure-checked just before it is packed (see the
+# _validate_bl2 / _validate_bl31 targets): a corrupted or truncated blob aborts
+# the build instead of producing a broken FIP image.
+#
 # Output files (placed in U-Boot top-level directory), named to match the
 # OpenWrt artifacts:
 #   bl31-uboot.fip   — main FIP image (modern/split layout only: BL31+U-Boot)
@@ -113,6 +117,33 @@ UBOOT_TC_ARG := --uboot-lzma $(UBOOT_OUT)
 _PRELOADER_INFO_PY := ../airoha_info_preloader.py
 _BL31_INFO_PY      := ../airoha_info_bl31.py
 
+# ---------------------------------------------------------------------------
+# ATF blob validation (BL2 / BL31 build gate)
+# ---------------------------------------------------------------------------
+# BL2 and BL31 are prebuilt blobs: a truncated or corrupted image would
+# otherwise silently end up inside the FIP.  Both targets run the standalone
+# structure checker (--validate) of the matching info tool and hard-fail the
+# build when a check does not pass.
+#
+# They are attached to every rule that consumes a blob as *order-only*
+# prerequisites, so the check runs on each build but does not by itself force
+# the artifact to be re-packed.
+.PHONY: _validate_bl2 _validate_bl31
+
+_validate_bl2: $(BL2_BIN)
+	@echo "  [CHECK]  Validating BL2 image ($(BL2_BIN))..."
+	@python3 "$(_PRELOADER_INFO_PY)" "$(BL2_BIN)" --validate || \
+		{ echo "ERROR: BL2 image failed validation: $(BL2_BIN)"; \
+		  echo "       the blob is corrupt/truncated - refusing to build"; \
+		  exit 1; }
+
+_validate_bl31: $(BL31_LZMA)
+	@echo "  [CHECK]  Validating BL31 image ($(BL31_LZMA))..."
+	@python3 "$(_BL31_INFO_PY)" "$(BL31_LZMA)" --validate || \
+		{ echo "ERROR: BL31 image failed validation: $(BL31_LZMA)"; \
+		  echo "       the blob is corrupt/truncated - refusing to build"; \
+		  exit 1; }
+
 .PHONY: _print_bl_info
 _print_bl_info: $(BL2_BIN)
 	@if [ -f "$(_PRELOADER_INFO_PY)" ] && [ -f "$(BL2_BIN)" ]; then \
@@ -163,7 +194,7 @@ PRELOADER_ALIGN     := --align 1024
 PRELOADER_ALIGN_MSG := , 1024-byte aligned
 endif
 
-$(BL2_FIP): $(BL2_BIN) $(FIPTOOL)
+$(BL2_FIP): $(BL2_BIN) $(FIPTOOL) | _validate_bl2
 	@echo "  [FIP]    Creating preloader.bin (BL2-only$(PRELOADER_ALIGN_MSG))..."
 	$(FIPTOOL) create $(strip $(PRELOADER_ALIGN)) --tb-fw $(BL2_BIN) $@
 
@@ -192,7 +223,7 @@ ifeq ($(CONFIG_AIROHA_BUILD_MODERN),y)
 
 # ----- bl31-uboot.fip (split layout: BL31 + U-Boot) ---------------------------
 all: $(FIP_IMAGE)
-$(FIP_IMAGE): $(BL31_LZMA) $(UBOOT_OUT) $(FIPTOOL) _print_bl_info
+$(FIP_IMAGE): $(BL31_LZMA) $(UBOOT_OUT) $(FIPTOOL) _print_bl_info | _validate_bl31
 	@echo "  [FIP]    Creating bl31-uboot.fip (split layout: BL31+U-Boot)..."
 	$(FIPTOOL) create --soc-fw $(BL31_LZMA) --nt-fw $(UBOOT_OUT) $@
 
@@ -202,7 +233,7 @@ endif  # CONFIG_AIROHA_BUILD_MODERN
 # The two 512 KiB flavours differ only in the 2 KiB prefix (real BL1 header vs
 # zero prefix); the internal FIP is identical.  tools/airoha_pack_boot.sh adds
 # the prefix and pads the image to 512 KiB.
-$(_LEGACY_FIP): $(BL2_BIN) $(BL31_LZMA) $(UBOOT_OUT) $(FIPTOOL) _print_bl_info
+$(_LEGACY_FIP): $(BL2_BIN) $(BL31_LZMA) $(UBOOT_OUT) $(FIPTOOL) _print_bl_info | _validate_bl2 _validate_bl31
 	@echo "  [FIP]    Creating internal shared FIP (BL2+BL31+U-Boot, 1024-byte aligned)..."
 	$(FIPTOOL) create --align 1024 \
 		--tb-fw $(BL2_BIN) \
@@ -244,7 +275,7 @@ $(_BOOTEXT_CERT_TMP): $(CERT_BIN)
 	@echo "  [CERT]   Extracting $(BOOTEXT_CERT_CNT) TF-A certificate(s) from certificates.bin..."
 	python3 $(CERT_EXTRACT_PY) $(CERT_BIN) -o $@ --expected $(BOOTEXT_CERT_CNT)
 
-$(BOOTEXT_IMAGE): $(BL2_BIN) $(_BOOTEXT_CERT_TMP)
+$(BOOTEXT_IMAGE): $(BL2_BIN) $(_BOOTEXT_CERT_TMP) | _validate_bl2
 	@echo "  [BOOTEXT] Packing bootext.ram (BL2 + $(BOOTEXT_CERT_CNT) embedded TF-A cert(s), no CRC)..."
 	@if [ "$(BOOTEXT_CERT_CNT)" = "1" ]; then \
 		python3 $(BOOTEXT_PY) pack $(BL2_BIN) \
@@ -258,7 +289,7 @@ $(BOOTEXT_IMAGE): $(BL2_BIN) $(_BOOTEXT_CERT_TMP)
 	fi
 	@rm -rf $(_BOOTEXT_CERT_TMP)
 else
-$(BOOTEXT_IMAGE): $(BL2_BIN)
+$(BOOTEXT_IMAGE): $(BL2_BIN) | _validate_bl2
 	@echo "  [BOOTEXT] Packing bootext.ram (bare BL2, no embedded certificates)..."
 	python3 $(BOOTEXT_PY) pack $(BL2_BIN) -o $@
 endif
