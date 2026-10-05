@@ -317,6 +317,13 @@ config AIROHA_FAILSAFE_VALIDATE_UBOOT
 	  The image size is bounded by the generic MTD partition capacity
 	  check (must fit the 'u-boot' partition, no fixed size limit).
 
+	  The U-Boot the image ships is also checked against this board
+	  (the 'compatible' of the device tree U-Boot carries must match),
+	  unless the environment variable "failsafe_strict_model" is set
+	  to 0 on the running device.  A U-Boot stored compressed inside
+	  the image (LZMA, as Airoha does) is expanded first, which needs
+	  CONFIG_LZMA; without the decoder the check is skipped.
+
 if ARM
 
 config AIROHA_FAILSAFE_VALIDATE_BL2
@@ -346,6 +353,11 @@ config AIROHA_FAILSAFE_VALIDATE_FIP
 	  Structurally validate uploaded 'fip' (UBI static volume) images
 	  before they are flashed: FIP ToC magic 0xAA640001 at offset 0
 	  and a sane minimum header size.
+
+	  The U-Boot the FIP ships is also checked against this board (the
+	  'compatible' of the device tree U-Boot carries must match),
+	  unless the environment variable "failsafe_strict_model" is set
+	  to 0 on the running device.
 
 config AIROHA_FAILSAFE_VALIDATE_CHAINLOADER
 	bool "Validate 'chainloader' images"

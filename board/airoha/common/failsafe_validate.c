@@ -33,6 +33,11 @@
  *     so CONFIG_AIROHA_FAILSAFE_VALIDATE_BL2 always includes the deep
  *     LZMA-layout + trailing CRC32 check for bare preloaders.
  *
+ * Both the legacy 'u-boot' image and the 'fip' volume ship a U-Boot, so
+ * each of them is also checked against this board: the 'compatible' of
+ * the device tree that U-Boot carries must match (env
+ * 'failsafe_strict_model', always on unless set to "0").
+ *
  * The board independent FIP ToC walk, FIT and legacy uImage checks live
  * in failsafe/bootimg/ and are shared with the MediaTek board code; this
  * file keeps only the Airoha specific policy.
@@ -123,6 +128,8 @@ static bool bl2_lzma_layout_ok(const u8 *data, size_t size, u32 *crc)
 #if defined(CONFIG_AIROHA_FAILSAFE_VALIDATE_UBOOT)
 static int failsafe_validate_uboot(const void *data, size_t size)
 {
+	int ret;
+
 	/* The 'u-boot' MTD partition holds either the legacy image with BL1
 	 * (BL1 @0x0 + internal FIP @0x800) or, when BL1 is left out
 	 * (CONFIG_AIROHA_LEGACY_BL1 disabled, e.g. AN7563), the same
@@ -133,9 +140,17 @@ static int failsafe_validate_uboot(const void *data, size_t size)
 	 * inherently covers BL2 too.  Size is bounded by the generic
 	 * MTD partition capacity check in failsafe_validate_image().
 	 */
-	return failsafe_fip_validate(data, size,
-				     AIROHA_FAILSAFE_LEGACY_FIP_OFF,
-				     NULL, "u-boot");
+	ret = failsafe_fip_validate(data, size,
+				    AIROHA_FAILSAFE_LEGACY_FIP_OFF,
+				    NULL, "u-boot");
+	if (ret)
+		return ret;
+
+	/* The image ships the whole boot chain, so the U-Boot inside it
+	 * must be built for this board (env 'failsafe_strict_model'). */
+	return failsafe_fip_check_model(data, size,
+					AIROHA_FAILSAFE_LEGACY_FIP_OFF,
+					"u-boot");
 }
 #endif /* CONFIG_AIROHA_FAILSAFE_VALIDATE_UBOOT */
 
@@ -212,10 +227,18 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 #if defined(CONFIG_AIROHA_FAILSAFE_VALIDATE_FIP)
 static int failsafe_validate_fip(const void *data, size_t size)
 {
+	int ret;
+
 	/* 'fip' = UBI volume with a FIP (BL31+U-Boot, or the legacy
 	 * BL2+BL31+U-Boot single-FIP).  Any non-empty ToC is accepted.
 	 */
-	return failsafe_fip_validate(data, size, 0, NULL, "fip");
+	ret = failsafe_fip_validate(data, size, 0, NULL, "fip");
+	if (ret)
+		return ret;
+
+	/* The U-Boot the FIP ships must be built for this board (env
+	 * 'failsafe_strict_model'). */
+	return failsafe_fip_check_model(data, size, 0, "fip");
 }
 #endif /* CONFIG_AIROHA_FAILSAFE_VALIDATE_FIP */
 
