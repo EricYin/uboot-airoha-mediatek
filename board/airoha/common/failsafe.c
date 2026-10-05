@@ -129,12 +129,16 @@ DECLARE_GLOBAL_DATA_PTR;
 #define FAILSAFE_LEGACY_FIP_OFFSET	0x800
 
 /* FIP offsets probed for the BL2 "tb-fw" payload, in order: the split
- * preloader.bin keeps the FIP at 0, the legacy image at 0x800.
+ * preloader.bin keeps the FIP at 0, the legacy image at 0x800.  Only the
+ * ARM banner reporting below uses them (see the CONFIG_ARM block near the
+ * end of this file).
  */
+#if IS_ENABLED(CONFIG_ARM)
 static const size_t airoha_bl2_fip_offsets[] = {
 	0,
 	FAILSAFE_LEGACY_FIP_OFFSET,
 };
+#endif
 
 /*
  * Map a failsafe firmware type to the physical storage target name.
@@ -211,9 +215,9 @@ static int airoha_bl2_capacity(size_t size)
  */
 static int airoha_write_bl2(const void *data, size_t size)
 {
+#if IS_ENABLED(CONFIG_MTD)
 	int ret;
 
-#if IS_ENABLED(CONFIG_MTD)
 	if (failsafe_mtd_exists(FAILSAFE_STORAGE_BL2_TARGET)) {
 		ret = failsafe_mtd_capacity(FAILSAFE_STORAGE_BL2_TARGET,
 					    FAILSAFE_BL2_WRITE_OFFSET, size);
@@ -238,7 +242,11 @@ static int airoha_write_bl2(const void *data, size_t size)
 		"to hold the preloader", FAILSAFE_STORAGE_BL2_TARGET);
 }
 
-#ifndef CONFIG_AIROHA_BUILD_LEGACY
+/* Only the ARM banner reporting below reads the preloader back (see the
+ * CONFIG_ARM block near the end of this file); the MIPS SoCs (EcoNet)
+ * have no FIP to take a banner from.
+ */
+#if IS_ENABLED(CONFIG_ARM) && !defined(CONFIG_AIROHA_BUILD_LEGACY)
 /* Read the flashed preloader back, from the same two locations. */
 static int airoha_read_bl2(void *buf, size_t max_len, size_t *read_len)
 {
@@ -258,7 +266,7 @@ static int airoha_read_bl2(void *buf, size_t max_len, size_t *read_len)
 
 	return -ENODEV;
 }
-#endif /* CONFIG_AIROHA_BUILD_LEGACY */
+#endif /* CONFIG_ARM && !CONFIG_AIROHA_BUILD_LEGACY */
 
 
 /* ------------------------------------------------------------------ */
@@ -371,6 +379,17 @@ int boot_from_mem(ulong data_load_addr)
 					    FAILSAFE_INITRAMFS_LOAD_FALLBACK);
 }
 
+#if IS_ENABLED(CONFIG_ARM)
+
+/*
+ * The banner of an uploaded preloader and the flashed BL2 / BL31 banners
+ * (GET /atfversion) are read out of the Airoha FIP - the "tb-fw" and
+ * "soc-fw" entries - which only the ARM SoCs use; the helpers live in
+ * failsafe/bootimg/bl2.c and failsafe/bootimg/fip.c, built for CONFIG_ARM
+ * alone.  The MIPS SoCs (EcoNet) have no FIP at all, their boot chain is
+ * a TCBoot loader with the U-Boot payload, so they keep the weak stubs of
+ * failsafe/core.c, which report "no information".
+ */
 int failsafe_bl2_version_info(const void *data, size_t size,
 			      failsafe_fw_t fw,
 			      struct failsafe_version_info *info)
@@ -529,3 +548,5 @@ int failsafe_atf_version_info(struct failsafe_version_info *bl2,
 
 	return (bl2->found || bl31->found) ? 0 : -ENOENT;
 }
+
+#endif /* CONFIG_ARM */
