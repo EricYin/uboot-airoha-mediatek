@@ -77,7 +77,11 @@ config MTK_FAILSAFE_VALIDATE_UBOOT
 	  reference implementation applies) - so a bootloader built for
 	  another board is rejected even when it shares this SoC.  The
 	  environment variable "failsafe_strict_model" (on by default, 0
-	  disables it) turns that comparison off.
+	  disables it) turns that comparison off, and
+	  "failsafe_compatible_num" = N relaxes it for a bootloader
+	  shared by several board variants: the first N entries of this
+	  board's own list then name the boards it accepts, and the image
+	  passes as soon as it declares one of them.
 
 	  A U-Boot stored compressed (LZMA on MediaTek MIPS) is expanded
 	  first, which needs CONFIG_LZMA; without the decoder the board

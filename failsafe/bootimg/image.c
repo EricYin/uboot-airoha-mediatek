@@ -496,7 +496,8 @@ static int failsafe_model_read_compat(const void *fdt, const char *compats[],
  * Board-specific strings are exactly what this check is for; the
  * environment variable 'failsafe_strict_model=0' is the escape hatch for
  * the cases where it is too strict (e.g. moving a board from a vendor
- * device tree to its own).
+ * device tree to its own), and 'failsafe_compatible_num' below relaxes
+ * it in a controlled way for bootloaders shared between board variants.
  */
 static bool failsafe_model_compat_match(const char *a[], int a_count,
 					const char *b[], int b_count)
@@ -511,6 +512,56 @@ static bool failsafe_model_compat_match(const char *a[], int a_count,
 }
 
 /*
+ * Relaxed comparison, enabled by the environment variable
+ * 'failsafe_compatible_num' = N (> 0).
+ *
+ * The running board is the authority here: the first N 'compatible'
+ * entries of its own device tree are the board names this device
+ * accepts.  A bootloader shared by several board variants then passes as
+ * soon as its 'compatible' list declares one of them, wherever that
+ * entry sits in its list - the image lists every variant it serves, and
+ * the device only has to find itself among them.  The entries beyond the
+ * N-th one on the board side (typically the SoC / reference names) are
+ * not accepted as a board identity.
+ *
+ * N = 0 (the default) leaves the strict comparison above in charge; the
+ * two are OR-ed, so the setting can only widen what is accepted, never
+ * narrow it.
+ */
+static int failsafe_model_compat_num(void)
+{
+	const char *val = env_get("failsafe_compatible_num");
+	unsigned long num;
+
+	if (!val || !val[0])
+		return 0;
+
+	num = simple_strtoul(val, NULL, 10);
+	if (num > FAILSAFE_MODEL_COMPAT_MAX)
+		num = FAILSAFE_MODEL_COMPAT_MAX;
+
+	return (int)num;
+}
+
+static bool failsafe_model_compat_match_any(const char *board[],
+					    int board_count,
+					    const char *target[],
+					    int target_count, int num)
+{
+	int i, j;
+
+	if (num > board_count)
+		num = board_count;
+
+	for (i = 0; i < num; i++)
+		for (j = 0; j < target_count; j++)
+			if (!strcmp(board[i], target[j]))
+				return true;
+
+	return false;
+}
+
+/*
  * Compare the 'compatible' of the U-Boot device tree @fdt with the board
  * this recovery runs on.  Returns 0 when they match (or when the board DT
  * cannot decide), -EINVAL when the U-Boot is built for another board.
@@ -520,7 +571,7 @@ static int failsafe_uboot_match_board(const void *fdt, const char *what)
 	DECLARE_GLOBAL_DATA_PTR;
 	const char *board[FAILSAFE_MODEL_COMPAT_MAX];
 	const char *target[FAILSAFE_MODEL_COMPAT_MAX];
-	int board_count, target_count;
+	int board_count, target_count, num;
 
 	board_count = failsafe_model_read_compat(gd_fdt_blob(), board,
 						 (int)ARRAY_SIZE(board));
@@ -538,16 +589,27 @@ static int failsafe_uboot_match_board(const void *fdt, const char *what)
 		return 0;
 	}
 
-	if (!failsafe_model_compat_match(board, board_count, target,
-					 target_count)) {
-		return failsafe_error(-EINVAL, "%s rejected by strict-model "
-			"check (built for '%s', board is '%s')", what,
-			target[0], board[0]);
+	if (failsafe_model_compat_match(board, board_count, target,
+					target_count)) {
+		cprintln(SUCCESS, "Failsafe: %s strict-model check OK "
+			 "(matches board '%s')", what, board[0]);
+		return 0;
 	}
 
-	cprintln(SUCCESS, "Failsafe: %s strict-model check OK (matches "
-		 "board '%s')", what, board[0]);
-	return 0;
+	/* Shared bootloader: the leading entries of this board's own list
+	 * are the names it accepts (env 'failsafe_compatible_num'). */
+	num = failsafe_model_compat_num();
+	if (num && failsafe_model_compat_match_any(board, board_count, target,
+						   target_count, num)) {
+		cprintln(SUCCESS, "Failsafe: %s strict-model check OK "
+			 "(matches one of this board's first %d compatible "
+			 "entries)", what, num);
+		return 0;
+	}
+
+	return failsafe_error(-EINVAL, "%s rejected by strict-model "
+		"check (built for '%s', board is '%s')", what,
+		target[0], board[0]);
 }
 
 int failsafe_uboot_check_model(const void *data, size_t size, const char *what)

@@ -80,6 +80,15 @@ int failsafe_firmware_check_model(const void *data, size_t size,
  * implementation applies), so a bootloader built for another board is
  * rejected even when that board shares this SoC.
  *
+ * The environment variable 'failsafe_compatible_num' = N (> 0) relaxes
+ * that for a bootloader shared by several board variants: the first N
+ * 'compatible' entries of the running board's device tree become the
+ * board names this device accepts, and the uploaded U-Boot passes as
+ * soon as its own list declares one of them, wherever that entry sits in
+ * its list (the rest of the image's list is irrelevant).  N = 0, the
+ * default, keeps the strict comparison; the two are OR-ed, so the
+ * setting only widens what is accepted.
+ *
  * Returns 0 when allowed (or the check is disabled / not applicable),
  * -EINVAL when the U-Boot is built for another board.
  */
