@@ -20,7 +20,10 @@
  *     FIP container ($(FIPTOOL) create --tb-fw bl2.bin preloader.bin),
  *     a FIP ToC check for the BL2 payload.
  *   - 'fip' is a UBI static volume holding a FIP (BL31 + U-Boot, or the
- *     legacy BL2+BL31+U-Boot single-FIP), validated as a FIP ToC.
+ *     legacy BL2+BL31+U-Boot single-FIP), validated as a FIP ToC.  The
+ *     U-Boot it ships is additionally checked against this board - the
+ *     'compatible' of the device tree U-Boot carries must match (env
+ *     'failsafe_strict_model', always on unless set to "0").
  *
  * The board independent FIP ToC walk and FIT check live in
  * failsafe/bootimg/ and are shared with the Airoha board code; this file
@@ -152,10 +155,18 @@ static int failsafe_validate_bl2(const void *data, size_t size)
 #if defined(CONFIG_MTK_FAILSAFE_VALIDATE_FIP)
 static int failsafe_validate_fip(const void *data, size_t size)
 {
+	int ret;
+
 	/* 'fip' = UBI volume with a FIP (BL31+U-Boot, or the legacy
 	 * BL2+BL31+U-Boot single-FIP).  Any non-empty ToC is accepted.
 	 */
-	return failsafe_fip_validate(data, size, 0, NULL, "fip");
+	ret = failsafe_fip_validate(data, size, 0, NULL, "fip");
+	if (ret)
+		return ret;
+
+	/* The U-Boot the FIP ships must be built for this board (env
+	 * 'failsafe_strict_model'). */
+	return failsafe_fip_check_model(data, size, 0, "fip");
 }
 #endif /* CONFIG_MTK_FAILSAFE_VALIDATE_FIP */
 

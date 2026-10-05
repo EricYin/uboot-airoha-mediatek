@@ -40,6 +40,14 @@ config MTK_FAILSAFE_VALIDATE_FIP
 	  Structurally validate uploaded 'fip' (UBI static volume) images
 	  before they are flashed.
 
+	  The U-Boot the FIP ships is also checked against this board (the
+	  'compatible' of the device tree U-Boot carries must match),
+	  unless the environment variable "failsafe_strict_model" is set
+	  to 0 on the running device.  A U-Boot stored compressed inside
+	  the FIP (XZ, when MediaTek FIP compression is enabled) is
+	  expanded first, which needs CONFIG_XZ; without the decoder the
+	  check is skipped.
+
 endif # ARM
 
 config MTK_FAILSAFE_VALIDATE_FIRMWARE
