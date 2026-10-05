@@ -9,6 +9,12 @@ Usage:
   python3 airoha_info_bl31.py <bl31.lzma>               # auto-decompress then show info
   python3 airoha_info_bl31.py <bl31.bin> --summary      # compact summary
   python3 airoha_info_bl31.py <bl31.bin> --raw          # dump all strings
+  python3 airoha_info_bl31.py <bl31.lzma> --validate    # structure check,
+                                                        # exit 0 = pass
+
+The --validate mode is the standalone build gate used by
+tools/build_airoha/Makefile: it runs validate_bl31() on the image and returns a
+non-zero exit status as soon as a structural check fails.
 """
 
 import argparse
@@ -115,6 +121,62 @@ def analyze_bl31(data, filename):
     results['bl31_strings'] = find_strings(data, bl31_pats)
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Structural validation
+# ---------------------------------------------------------------------------
+
+BL31_MIN_SIZE = 0x100   # TF-A payload must be >= 256 B
+
+
+def validate_bl31(data, filename):
+    """Validate a BL31 (ARM Trusted Firmware) image.
+
+    Both variants are accepted; the meaningful check for the build is that the
+    payload is intact:
+
+      - file length >= BL31_MIN_SIZE
+      - LZMA variant (bl31.lzma): props/header valid, the stream decompresses
+        and the payload length matches the uncompressed size declared in the
+        LZMA-Alone header (xz tolerates a mid-stream error and would otherwise
+        return a short, partially decoded buffer)
+      - raw variant (bl31.bin): layout parsed, build/version strings reported
+        (only a warning when absent)
+
+    Returns (ok, checks): *ok* is True when no check failed, *checks* is a list
+    of human readable lines prefixed with 'OK:', 'WARN:' or 'FAIL:'.
+    """
+    checks = []
+
+    if len(data) < BL31_MIN_SIZE:
+        return False, [f'FAIL: size {len(data)} bytes < min 0x{BL31_MIN_SIZE:x}']
+    checks.append(f'OK: file size {len(data)} bytes (>= 0x{BL31_MIN_SIZE:x})')
+
+    info = analyze_bl31(data, filename)
+    if info.get('error'):
+        return False, checks + [f'FAIL: {info["error"]}']
+
+    if info['compressed']:
+        # LZMA-Alone header: 1 byte props + 4 bytes dict size + 8 bytes
+        # uncompressed size; a short decode means the stream is damaged.
+        declared = struct.unpack_from('<Q', data, 5)[0]
+        actual = info['size']
+        if declared not in (0, 0xFFFFFFFFFFFFFFFF) and declared != actual:
+            checks.append(f'FAIL: decompressed size mismatch '
+                          f'(LZMA header declares {declared} bytes, got {actual})')
+        else:
+            checks.append(f'OK: LZMA stream (props=0x5D) decompressed '
+                          f'({actual} bytes)')
+    else:
+
+        n_str = len(info.get('build_strings') or [])
+        checks.append('OK: raw binary layout parsed')
+        checks.append(f'OK: {n_str} build/version strings' if n_str
+                      else 'WARN: no build/version strings')
+
+    ok = not any(c.startswith('FAIL') for c in checks)
+    return ok, checks
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +400,9 @@ def parse_args():
                        help='Show only build/version info')
     group.add_argument('--raw', action='store_true',
                        help='Dump all extracted strings')
+    group.add_argument('--validate', action='store_true',
+                       help='Validate the image structure and exit '
+                            '(0 = pass, non-zero = fail)')
     return parser.parse_args()
 
 
@@ -350,6 +415,19 @@ def main():
 
     with open(args.bl31_bin, 'rb') as f:
         data = f.read()
+
+    # Standalone structure check: report the individual checks and let the
+    # exit status carry the verdict (used as a build gate).
+    if args.validate:
+        ok, checks = validate_bl31(data, args.bl31_bin)
+        print(BORDER)
+        print("  BL31 STRUCTURE VALIDATION")
+        print(BORDER)
+        print(f"  File:              {args.bl31_bin}")
+        for c in checks:
+            print(f"  {c}")
+        print(f"\n  Result:            {'PASS' if ok else 'FAIL'}")
+        sys.exit(0 if ok else 1)
 
     if len(data) < 256:
         print(f"ERROR: file too small ({len(data)} bytes), not a valid BL31 binary",

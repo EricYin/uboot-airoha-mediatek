@@ -23,6 +23,12 @@ Usage:
   python3 airoha_info_preloader.py <bl2.bin> --flash      # flash table only
   python3 airoha_info_preloader.py <bl2.bin> --all        # full detail
   python3 airoha_info_preloader.py <bl2.bin> --raw        # dump all strings
+  python3 airoha_info_preloader.py <bl2.bin> --validate   # structure check,
+                                                          # exit 0 = pass
+
+The --validate mode is the standalone build gate used by
+tools/build_airoha/Makefile: it runs validate_bl2() on the image and returns a
+non-zero exit status as soon as one structural check fails.
 """
 
 import argparse
@@ -336,6 +342,92 @@ def analyze_lzma(data, filename, opt_hdr):
             results['chip'] = 'unknown'
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Structural validation
+# ---------------------------------------------------------------------------
+
+BL2_MIN_SIZE = 0x4000   # preloader must be >= 16 KB
+
+def validate_bl2(data, filename):
+    """Validate the binary structure of a BL2 preloader image.
+
+    Same checks as tools/build_airoha/gen_build_info_log.py, exposed here so a
+    build gate (tools/build_airoha/Makefile) can validate a single image:
+
+      - file length >= BL2_MIN_SIZE
+      - struct mode (en7523/en7562): layout parsed and build/version strings
+        present (only a warning, the string table is optional)
+      - LZMA mode (BL22 + BL23 + flash table + trailing CRC32):
+          * BL22 / BL23 / flash-table streams all decompress cleanly
+          * layout is continuous (no gap) and ends exactly at file_size - 4
+          * trailing CRC32 (no final XOR, covers data[:-4]) matches
+          * stage-1 (BL21) region is non-empty (not all zero/0xFF)
+
+    Returns (ok, checks): *ok* is True when no check failed, *checks* is a list
+    of human readable lines prefixed with 'OK:', 'WARN:' or 'FAIL:'.
+    """
+    checks = []
+
+    if len(data) < BL2_MIN_SIZE:
+        return False, [f'FAIL: size {len(data)} bytes < min 0x{BL2_MIN_SIZE:x}']
+    checks.append(f'OK: file size {len(data)} bytes (>= 0x{BL2_MIN_SIZE:x})')
+
+    mode, opt_hdr = detect_mode(data)
+    if mode == 'struct':
+        info = analyze_struct(data, filename)
+        n_str = len(info.get('build_strings') or [])
+        if n_str:
+            checks.append(f'OK: struct layout parsed, {n_str} build/version strings')
+        else:
+            checks.append('WARN: struct layout parsed but no build/version strings')
+    else:
+        info = analyze_lzma(data, filename, opt_hdr)
+
+        if info.get('bl22_error'):
+            checks.append(f'FAIL: BL22 LZMA decompression error: {info["bl22_error"]}')
+        else:
+            dsize = info.get('bl22_decomp_size') or info.get('size') or 0
+            checks.append(f'OK: BL22 stream decompressed ({dsize} bytes)')
+
+        if info.get('bl23_error'):
+            checks.append(f'FAIL: BL23 LZMA decompression error: {info["bl23_error"]}')
+        else:
+            checks.append(f'OK: BL23 stream decompressed '
+                          f'({info.get("bl23_decomp_size", 0)} bytes)')
+
+        if info.get('ft_error'):
+            checks.append(f'FAIL: flash table LZMA error: {info["ft_error"]}')
+        else:
+            checks.append(f'OK: flash table stream decompressed '
+                          f'({info.get("ft_decomp_size", 0)} bytes, '
+                          f'{info.get("ft_entries", 0)} entries)')
+
+        if info.get('layout_ok'):
+            checks.append('OK: layout continuous (stage1+hdr+BL22+BL23+ft ends at file_size-4)')
+        else:
+            checks.append(f'FAIL: layout not continuous '
+                          f'(ft ends at 0x{info.get("layout_end", 0):x}, '
+                          f'expected 0x{len(data) - 4:x})')
+
+        if info.get('crc_ok'):
+            checks.append(f'OK: trailing CRC32 (no-final-XOR) matches '
+                          f'({info.get("crc_calc")})')
+        else:
+            checks.append(f'FAIL: trailing CRC32 mismatch '
+                          f'(stored {info.get("crc_stored")}, '
+                          f'calc {info.get("crc_calc")})')
+
+        if info.get('stage1_ok'):
+            checks.append(f'OK: stage-1 BL21 region non-empty '
+                          f'({info.get("stage1_nonzero", 0)}/'
+                          f'{info.get("stage1_size", 0)} non-zero bytes)')
+        else:
+            checks.append('FAIL: stage-1 BL21 region empty or all-zero/0xFF')
+
+    ok = not any(c.startswith('FAIL') for c in checks)
+    return ok, checks
 
 
 # ---------------------------------------------------------------------------
@@ -755,6 +847,9 @@ def parse_args():
                        help='Show compact preloader summary')
     group.add_argument('--raw', action='store_true',
                        help='Dump all extracted strings by category')
+    group.add_argument('--validate', action='store_true',
+                       help='Validate the binary structure and exit '
+                            '(0 = pass, non-zero = fail)')
     return parser.parse_args()
 
 
@@ -767,6 +862,17 @@ def main():
 
     with open(args.bl2_bin, 'rb') as f:
         data = f.read()
+
+    # Standalone structure check: report the individual checks and let the
+    # exit status carry the verdict (used as a build gate).
+    if args.validate:
+        ok, checks = validate_bl2(data, args.bl2_bin)
+        print_header("BL2 STRUCTURE VALIDATION")
+        print(f"  File:              {args.bl2_bin}")
+        for c in checks:
+            print(f"  {c}")
+        print(f"\n  Result:            {'PASS' if ok else 'FAIL'}")
+        sys.exit(0 if ok else 1)
 
     if len(data) < 0x4000:
         print(f"ERROR: file too small ({len(data)} bytes), not a valid BL2 binary",
