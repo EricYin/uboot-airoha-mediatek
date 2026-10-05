@@ -19,6 +19,7 @@
 #include <asm/unaligned.h>
 
 #include <failsafe/fip.h>
+#include <failsafe/image.h>
 #include <failsafe/cprint.h>
 #include <failsafe/error.h>
 
@@ -30,6 +31,11 @@ const u8 failsafe_fip_uuid_tb_fw[16] = {
 const u8 failsafe_fip_uuid_soc_fw[16] = {
 	0x47, 0xd4, 0x08, 0x6d, 0x4c, 0xfe, 0x98, 0x46,
 	0x9b, 0x95, 0x29, 0x50, 0xcb, 0xbd, 0x5a, 0x00,
+};
+
+const u8 failsafe_fip_uuid_nt_fw[16] = {
+	0xd6, 0xd0, 0xee, 0xa7, 0xfc, 0xea, 0xd5, 0x4b,
+	0x97, 0x82, 0x99, 0x34, 0xf2, 0x34, 0xb6, 0xe4,
 };
 
 bool failsafe_fip_check(const void *data, size_t size, size_t fip_off)
@@ -180,4 +186,33 @@ int failsafe_fip_validate(const void *data, size_t size, size_t fip_off,
 	}
 
 	return 0;
+}
+
+int failsafe_fip_check_model(const void *data, size_t size, size_t fip_off,
+			     const char *what)
+{
+	const u8 *payload;
+	size_t payload_size;
+	int ret;
+
+	ret = failsafe_fip_find(data, size, fip_off, failsafe_fip_uuid_nt_fw,
+				&payload, &payload_size, NULL);
+
+	/*
+	 * -ENOENT covers both "no FIP here" and "a FIP without an nt-fw
+	 * entry" (a BL31-only FIP is a valid upload): nothing to compare
+	 * the board against, and the structural validator has already had
+	 * its say about the container itself.
+	 */
+	if (ret == -ENOENT)
+		return 0;
+
+	/* A matched entry that points outside the image is a defect the
+	 * structural validator reports as well, but it must not pass as a
+	 * silently skipped board check. */
+	if (ret)
+		return failsafe_error(-EINVAL, "'%s' FIP U-Boot (nt-fw) entry "
+			"is out of range", what);
+
+	return failsafe_uboot_check_model(payload, payload_size, what);
 }

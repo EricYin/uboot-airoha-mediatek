@@ -57,6 +57,31 @@ int failsafe_firmware_check_model(const void *data, size_t size,
 				  const char *what);
 
 /**
+ * failsafe_uboot_check_model() - strict board-model check on a U-Boot
+ * @data: U-Boot image (the "nt-fw" / BL33 payload of a FIP)
+ * @size: image size in bytes
+ * @what: image type name used in the diagnostics
+ *
+ * The U-Boot counterpart of failsafe_firmware_check_model(): the control
+ * device tree U-Boot carries - linked in or appended to the image - must
+ * declare a 'compatible' that matches the running U-Boot's control
+ * device tree.  The device tree is searched for from the end of the
+ * image, so anything that ends in (or contains) the U-Boot image can be
+ * passed, not only a FIP entry: a bare u-boot.bin, a composite SPL /
+ * TCBoot loader image, a padded flash image.  The payload may be stored
+ * compressed (LZMA-Alone on Airoha, .xz on MediaTek with FIP compression
+ * enabled) and is expanded transparently; a container this build has no
+ * decoder for (CONFIG_LZMA / CONFIG_XZ) makes the check skip.  Disabled
+ * only when the environment variable 'failsafe_strict_model' is set to
+ * "0".
+ *
+ * Returns 0 when allowed (or the check is disabled / not applicable),
+ * -EINVAL when the U-Boot is built for another board.
+ */
+int failsafe_uboot_check_model(const void *data, size_t size,
+			       const char *what);
+
+/**
  * failsafe_image_is_legacy() - does @data start with a legacy uImage?
  * @data: image contents
  * @size: image size in bytes

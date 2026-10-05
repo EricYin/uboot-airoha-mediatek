@@ -40,6 +40,13 @@ extern const u8 failsafe_fip_uuid_tb_fw[16];
  */
 extern const u8 failsafe_fip_uuid_soc_fw[16];
 
+/*
+ * FIP ToC UUID of the non-trusted firmware (BL33, i.e. U-Boot) payload:
+ * d6d0eea7-fcea-d54b-9782-9934f234b6e4, stored on disk in the canonical
+ * text byte order.
+ */
+extern const u8 failsafe_fip_uuid_nt_fw[16];
+
 /**
  * failsafe_fip_check() - does a FIP header start at data + fip_off?
  * @data: image contents
@@ -105,5 +112,25 @@ int failsafe_fip_find_at(const void *data, size_t size,
  */
 int failsafe_fip_validate(const void *data, size_t size, size_t fip_off,
 			  const u8 *want_uuid, const char *what);
+
+/**
+ * failsafe_fip_check_model() - strict board-model check on a FIP
+ * @data: image contents
+ * @size: image size in bytes
+ * @fip_off: offset of the FIP inside @data
+ * @what: image type name used in the diagnostics
+ *
+ * Runs the shared U-Boot board-model check on the "nt-fw" (BL33) entry:
+ * the control device tree that U-Boot carries must declare a 'compatible'
+ * matching the running board (env 'failsafe_strict_model', see
+ * failsafe_uboot_check_model()).  A FIP that holds no U-Boot entry, or
+ * whose U-Boot carries no usable device tree, is accepted - there is
+ * nothing to compare.
+ *
+ * Returns 0 when the FIP is accepted, -EINVAL when its U-Boot is built
+ * for another board.
+ */
+int failsafe_fip_check_model(const void *data, size_t size, size_t fip_off,
+			     const char *what);
 
 #endif /* _FAILSAFE_FIP_H_ */
