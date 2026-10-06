@@ -28,6 +28,7 @@
 #endif
 
 #include <failsafe/internal.h>
+#include <failsafe/image.h>
 #ifdef CONFIG_MMC
 #include <failsafe/mmc.h>
 #endif
@@ -206,13 +207,42 @@ static const char *sysinfo_soc_name(char *out, size_t out_sz)
 }
 #endif /* CONFIG_ARCH_ECONET */
 
+/*
+ * The 'compatible' entries reported to the Web UI: the same set the
+ * board-model check accepts (failsafe_board_names()), i.e. the variants
+ * declared through 'failsafe_compatible_num' when that window is on, the
+ * primary name otherwise.  Joined with ", " for the single line the UI
+ * prints; what does not fit is dropped.
+ */
+static void sysinfo_board_compat(char *out, size_t out_sz)
+{
+	const char *names[8];
+	size_t used = 0;
+	int count, i;
+
+	if (!out || !out_sz)
+		return;
+
+	out[0] = '\0';
+
+	count = failsafe_board_names(names, ARRAY_SIZE(names));
+	for (i = 0; i < count; i++) {
+		int n = snprintf(out + used, out_sz - used, "%s%s",
+				 i ? ", " : "", names[i]);
+
+		if (n < 0 || (size_t)n >= out_sz - used)
+			break;
+		used += n;
+	}
+}
+
 static int sysinfo_json_append_board(char *buf, int len, int left)
 {
 	ofnode root;
 	const char *board_model = NULL;
-	const char *board_compat = NULL;
 	const char *build_variant = NULL;
 	off_t ram_size = 0;
+	char board_compat[256];
 	char esc_board_model[256], esc_board_compat[256], esc_build_variant[256];
 #ifdef FAILSAFE_SOC_NAME_ENABLED
 	char soc_buf[128], esc_soc[128];
@@ -220,10 +250,8 @@ static int sysinfo_json_append_board(char *buf, int len, int left)
 #endif
 
 	root = ofnode_path("/");
-	if (ofnode_valid(root)) {
+	if (ofnode_valid(root))
 		board_model = ofnode_read_string(root, "model");
-		board_compat = ofnode_read_string(root, "compatible");
-	}
 
 	if (!board_model || !board_model[0]) {
 		board_model = env_get("model");
@@ -231,6 +259,17 @@ static int sysinfo_json_append_board(char *buf, int len, int left)
 			board_model = env_get("board_name");
 		if (!board_model || !board_model[0])
 			board_model = env_get("board");
+	}
+
+	sysinfo_board_compat(board_compat, sizeof(board_compat));
+	if (!board_compat[0]) {
+		/* No list available (e.g. the model helpers are not built
+		 * in): fall back to the primary 'compatible'. */
+		const char *one = ofnode_valid(root) ?
+			ofnode_read_string(root, "compatible") : NULL;
+
+		snprintf(board_compat, sizeof(board_compat), "%s",
+			 one ? one : "");
 	}
 
 	if (gd)
@@ -241,7 +280,7 @@ static int sysinfo_json_append_board(char *buf, int len, int left)
 		build_variant = NULL;
 
 	json_escape(esc_board_model, sizeof(esc_board_model), board_model ? board_model : "");
-	json_escape(esc_board_compat, sizeof(esc_board_compat), board_compat ? board_compat : "");
+	json_escape(esc_board_compat, sizeof(esc_board_compat), board_compat);
 	json_escape(esc_build_variant, sizeof(esc_build_variant), build_variant ? build_variant : "");
 #ifdef FAILSAFE_SOC_NAME_ENABLED
 	soc_name = sysinfo_soc_name(soc_buf, sizeof(soc_buf));

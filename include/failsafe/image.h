@@ -128,6 +128,22 @@ int failsafe_image_validate_uboot(const void *data, size_t size,
 				  const char *what);
 
 /**
+ * failsafe_board_names() - the board names this device accepts
+ * @names: receives pointers to the accepted 'compatible' entries
+ * @max: capacity of @names
+ *
+ * The set the strict board-model check works with, for callers that have
+ * to report or use it (the Web UI shows it next to the board model):
+ * with 'failsafe_compatible_num' = N the first N 'compatible' entries of
+ * the running board's device tree are returned - the variants this
+ * device declared it accepts - and the primary name alone otherwise.
+ * The pointers belong to the device tree and stay valid.
+ *
+ * Returns the number of entries written, 0 when the board DT has none.
+ */
+int failsafe_board_names(const char *names[], int max);
+
+/**
  * failsafe_image_is_legacy() - does @data start with a legacy uImage?
  * @data: image contents
  * @size: image size in bytes

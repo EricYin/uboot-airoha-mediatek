@@ -561,6 +561,35 @@ static bool failsafe_model_compat_match_any(const char *board[],
 	return false;
 }
 
+int failsafe_board_names(const char *names[], int max)
+{
+	DECLARE_GLOBAL_DATA_PTR;
+	const char *all[FAILSAFE_MODEL_COMPAT_MAX];
+	int count, num, i;
+
+	count = failsafe_model_read_compat(gd_fdt_blob(), all,
+					   (int)ARRAY_SIZE(all));
+	if (count < 0)
+		return 0;
+
+	/* The names the model check accepts: the window this device
+	 * declared through 'failsafe_compatible_num', or the primary
+	 * (board) name alone when no window is configured. */
+	num = failsafe_model_compat_num();
+	if (num <= 0)
+		num = 1;
+
+	if (num > count)
+		num = count;
+	if (num > max)
+		num = max;
+
+	for (i = 0; i < num; i++)
+		names[i] = all[i];
+
+	return num;
+}
+
 /*
  * Compare the 'compatible' of the U-Boot device tree @fdt with the board
  * this recovery runs on.  Returns 0 when they match (or when the board DT
@@ -682,6 +711,13 @@ int failsafe_image_validate_uboot(const void *data, size_t size,
 	(void)data;
 	(void)size;
 	(void)what;
+	return 0;
+}
+
+int failsafe_board_names(const char *names[], int max)
+{
+	(void)names;
+	(void)max;
 	return 0;
 }
 #endif /* CONFIG_IS_ENABLED(OF_LIBFDT) */
