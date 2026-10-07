@@ -39,6 +39,7 @@
 | MT7981 | sn_r1 |
 | MT7981 | zbt_z8103ax-ubi |
 | MT7986 | rfb-ubi |
+| MT7986 | asus_rt-ax59u-ubi |
 | MT7986 | ruijie_rg-x60-new-ubi |
 
 ## Mediatek MTMIPS
