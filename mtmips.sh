@@ -30,6 +30,9 @@
 #
 # Output:
 #   output_<soc>/<soc>-u-boot-<board>.bin
+#   For mt7621 this is the binman-composed u-boot-mt7621.bin (TPL + SPL/DDR
+#   stage + compressed U-Boot), i.e. the image that is written to the flash,
+#   not the u-boot-lzma.img payload embedded in it.
 #
 # Note: Toolchain should be placed in the parent directory (sibling of u-boot),
 #       NOT inside the u-boot source tree. This avoids LTO plugin issues that
@@ -287,7 +290,8 @@ echo "======================================================================"
 echo "Building U-Boot..."
 echo "======================================================================"
 
-rm -f "$UBOOT_DIR/u-boot.bin" "$UBOOT_DIR/u-boot-with-spl.bin"
+rm -f "$UBOOT_DIR/u-boot.bin" "$UBOOT_DIR/u-boot-with-spl.bin" \
+	"$UBOOT_DIR/u-boot-mt7621.bin"
 cp -f "$UBOOT_DIR/configs/$UBOOT_CFG" "$UBOOT_DIR/.config"
 make -C "$UBOOT_DIR" olddefconfig
 make -C "$UBOOT_DIR" clean
@@ -364,10 +368,14 @@ fi
 
 make -C "$UBOOT_DIR" CROSS_COMPILE="${TOOLCHAIN}" STAGING_DIR="${STAGING_DIR}" -j "$JOBS" all
 
-# Determine output image: respect CONFIG_BUILD_TARGET (e.g. u-boot-with-spl.bin for SPL builds)
-UBOOT_BIN=$(get_config "BUILD_TARGET")
-UBOOT_BIN=$(echo "$UBOOT_BIN" | tr -d '"')
-[ -n "$UBOOT_BIN" ] || UBOOT_BIN="u-boot.bin"
+# Determine the flashable image.
+if [ "$SOC" = "mt7621" ]; then
+	UBOOT_BIN="u-boot-mt7621.bin"
+else
+	UBOOT_BIN=$(get_config "BUILD_TARGET")
+	UBOOT_BIN=$(echo "$UBOOT_BIN" | tr -d '"')
+	[ -n "$UBOOT_BIN" ] || UBOOT_BIN="u-boot.bin"
+fi
 
 [ -f "$UBOOT_DIR/$UBOOT_BIN" ] || die "U-Boot build failed! $UBOOT_BIN not generated."
 echo "U-Boot build done! (image: $UBOOT_BIN)"
