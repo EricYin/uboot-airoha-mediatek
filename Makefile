@@ -2687,7 +2687,7 @@ mrproper: clean $(mrproper-dirs)
 PHONY += distclean
 
 distclean: mrproper
-	@find . $(RCS_FIND_IGNORE) \
+	@find . $(RCS_FIND_IGNORE) -path ./.github -prune -o \
 		\( -name '*.orig' -o -name '*.rej' -o -name '*~' \
 		-o -name '*.bak' -o -name '#*#' -o -name '*%' \
 		-o -name 'core' -o -name tags -o -name TAGS -o -name 'cscope*' \
