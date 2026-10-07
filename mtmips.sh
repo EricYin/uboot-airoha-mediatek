@@ -53,8 +53,10 @@ Usage: SOC=<mt7620|mt7621|mt7628|mt7688> BOARD=<board_name> [OPTIONS] ./mtmips.s
 
 Build U-Boot for MediaTek MTMIPS (MT7620 / MT7621 / MT7628 & MT7688) platform.
 
-MT7628 and MT7688 share the same toolchain (ramips/mt76x8) and use
-"mt7628_" as the defconfig prefix. Output uses the actual SOC name.
+MT7628 and MT7688 share the same defconfig prefix ("mt7628_"); the output
+name uses the actual SOC name.  All four SoCs are built with one OpenWrt
+ramips (mipsel, 24kc) toolchain: any ../openwrt*ramips*/ already present is
+reused, the mt7621 one is downloaded when there is none.
 
 Required:
   SOC=<mt7620|mt7621|mt7628|mt7688>   Target SoC
@@ -122,26 +124,18 @@ fi
 
 case "$SOC" in
 	mt7620)
-		TOOLCHAIN_SUBPATH="ramips/mt7620"
-		TOOLCHAIN_PATTERN="openwrt*mt7620*"
 		SOC_ID="mt7620"
 		SOC_DEFCONFIG="mt7620"
 		;;
 	mt7621)
-		TOOLCHAIN_SUBPATH="ramips/mt7621"
-		TOOLCHAIN_PATTERN="openwrt*mt7621*"
 		SOC_ID="mt7621"
 		SOC_DEFCONFIG="mt7621"
 		;;
 	mt7628)
-		TOOLCHAIN_SUBPATH="ramips/mt76x8"
-		TOOLCHAIN_PATTERN="openwrt*mt76x8*"
 		SOC_ID="mt7628"
 		SOC_DEFCONFIG="mt7628"
 		;;
 	mt7688)
-		TOOLCHAIN_SUBPATH="ramips/mt76x8"
-		TOOLCHAIN_PATTERN="openwrt*mt76x8*"
 		SOC_ID="mt7688"
 		SOC_DEFCONFIG="mt7688"
 		;;
@@ -150,6 +144,20 @@ case "$SOC" in
 		exit 1
 		;;
 esac
+
+# ---------------------------------------------------------------------------
+# Toolchain: one for the whole ramips family
+#
+# OpenWrt builds all three ramips subtargets (mt7620, mt7621, mt76x8) with the
+# same CPU type (24kc), the same GCC and musl, and the same "mipsel-openwrt-linux-"
+# prefix (toolchain-mipsel_24kc_gcc-*), so mt7620/mt7621/mt7628/mt7688 are all
+# served by one toolchain - U-Boot supplies its own -march=mips32r2 -mtune=24kc
+# from arch/mips/Makefile, not the toolchain defaults.  Any ramips toolchain
+# already unpacked in the parent directory is reused, whichever subtarget it
+# came from; the mt7621 one is downloaded when none is present.
+# ---------------------------------------------------------------------------
+TOOLCHAIN_SUBPATH="ramips/mt7621"
+TOOLCHAIN_PATTERN="openwrt*ramips*"
 
 if [ -z "$BOARD" ]; then
 	echo "Usage: SOC=${SOC} BOARD=<board_name> $0"
