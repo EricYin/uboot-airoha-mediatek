@@ -1663,7 +1663,7 @@ endif # CMD_NAND
 config CMD_NAND_EXT
 	bool "nand - extended nand utility for debugging"
 	depends on !CMD_NAND
-	default y if MTK_SPI_NAND || AIROHA_PARALLEL_NAND
+	default y if MTK_SPI_NAND || AIROHA_PARALLEL_NAND || MTD_RAW_NAND || MTD_SPI_NAND
 	select MTD_PARTITIONS
 	help
 	  NAND flash R/W and debugging support.
