@@ -36,7 +36,8 @@
 #                       econet.sh (all|uboot|dramc)
 #   AUTO_DL=<0|1>       Let the platform scripts download a missing toolchain
 #                       without prompting (default: 1; mtmips/econet only)
-#   LOGS_DIR=<path>     Per-configuration logs (default: build-logs)
+#   LOGS_DIR=<path>     Per-configuration logs and configurations
+#                       (default: build-logs)
 #
 # Switches:
 #   -h, --help              Show this help
@@ -49,6 +50,11 @@
 #
 # Output:
 #   build-logs/<platform>_<soc>_<board>.log   full log of one configuration
+#   build-logs/<platform>_<soc>_<board>.config
+#                                             the .config that configuration
+#                                             actually built, plus
+#                                             ...-atf.config when a TF-A tree
+#                                             was involved (ATF_DIR exported)
 #   build-logs/summary.txt                    result of every configuration
 #
 # Exit status: 0 when every configuration built, 1 when at least one failed.
@@ -334,7 +340,7 @@ run_config() {
 	local script="${UBOOT_DIR}/${plat}.sh"
 	local label="${plat} ${soc} ${board}"
 	local log="${LOGS_DIR}/${plat}_${soc}_${board}.log"
-	local rc=0 t0 t1 secs arts
+	local rc=0 t0 t1 secs arts cfg
 
 	soc="${soc,,}"   # SOC is lowercase for every platform script
 
@@ -369,6 +375,23 @@ run_config() {
 	) > "${log}" 2>&1 || rc=$?
 	t1=$(date +%s)
 	secs=$(( t1 - t0 ))
+
+	# Keep the configuration this build actually used next to its log: the
+	# effective U-Boot .config, plus the TF-A one for the platforms that pair
+	# with a TF-A tree (CI exports ATF_DIR; the path only exists for mediatek).
+	# A file that is not newer than this configuration's log belongs to the
+	# previous configuration - this one failed before it configured the tree -
+	# and is skipped, so the copies always describe the build they sit next to.
+	# They travel with the logs into the build-logs-<platform> artifact and the
+	# release archive, which is what makes a released image reproducible.
+	cfg="${LOGS_DIR}/${plat}_${soc}_${board}"
+	if [ -f "${UBOOT_DIR}/.config" ] && [ "${UBOOT_DIR}/.config" -nt "${log}" ]; then
+		cp -f "${UBOOT_DIR}/.config" "${cfg}.config"
+	fi
+	if [ -n "${ATF_DIR}" ] && [ -f "${ATF_DIR}/build/.config" ] && \
+	   [ "${ATF_DIR}/build/.config" -nt "${log}" ]; then
+		cp -f "${ATF_DIR}/build/.config" "${cfg}-atf.config"
+	fi
 
 	if [ "${rc}" -eq 0 ]; then
 		arts=$(count_artifacts "${log}")
