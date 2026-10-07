@@ -1,0 +1,242 @@
+name: MediaTek Build and Release
+
+# MediaTek Filogic (MT798x) cannot be built from this repository alone: the
+# boot chain is split over two trees, so this workflow checks out the TF-A
+# tree (arm-trusted-firmware-mtksoc) as well and hands it this tree's
+# u-boot.bin as BL33.  mediatek.sh drives both builds and produces
+# preloader.bin / bl31-uboot.fip; see mediatek-boards.cfg for the
+# U-Boot defconfig <-> TF-A defconfig pairing.
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch/ref of this repository to build'
+        required: true
+        # Keep these in sync with the branches that exist in the repository:
+        # a dispatch run checks out the selected ref directly and fails if the
+        # default points at a branch that is not there.
+        default: v2026.10
+        type: choice
+        options:
+          - v2026.10
+      atf_ref:
+        description: 'Branch/ref of arm-trusted-firmware-mtksoc to pair with'
+        required: true
+        # The dated line carries the UBI/spim-nand defconfigs that
+        # mediatek-boards.cfg pairs with; plain "mtksoc" does not.
+        default: mtksoc-20260817
+        type: string
+      SOC:
+        description: 'SOC type (e.g., mt7981/mt7986/mt7987/mt7988)'
+        required: true
+        type: string
+      BOARD:
+        description: 'Board name from mediatek-boards.cfg (e.g., qihoo-360t7-ubi/rfb-ubi)'
+        required: true
+        type: string
+      public_release:
+        description: 'Public artifacts'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # required to create releases in this repository
+    steps:
+      # 1. Install necessary dependencies for cross-compilation, for U-Boot,
+      #    and for the TF-A build (its Kconfig front-end needs "python", its
+      #    fiptool needs OpenSSL, its embedded BL2 device tree needs dtc).
+      #    libgnutls28-dev is needed by the host tool tools/mkeficapsule, which
+      #    includes <gnutls/gnutls.h> unconditionally and is built for every
+      #    board whose config ends up with EFI_LOADER=y (e.g. the CMCC RAX3000M
+      #    eMMC/SATA variants, which get it via BLK <- SCSI); it is listed as a
+      #    U-Boot build dependency in doc/build/gcc.rst.
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            build-essential flex bison libssl-dev libgnutls28-dev \
+            device-tree-compiler python-is-python3 \
+            nodejs npm zip
+
+      # 2. Show the effective ref/commit this run will use (for diagnostics)
+      - name: Show run context
+        run: |
+          echo "Dropdown ref   = ${{ github.ref }}"
+          echo "Dropdown sha   = ${{ github.sha }}"
+          echo "Ref name       = ${{ github.ref_name }}"
+          echo "Branch input   = ${{ inputs.branch }}"
+          echo "ATF ref input  = ${{ inputs.atf_ref }}"
+
+      # 3. Checkout the repository to access the build scripts and source code.
+      #    The `branch` input is required, so the built ref is deterministic.
+      #    The `|| github.ref` fallback only matters for future non-dispatch
+      #    triggers (e.g. push / pull_request) where `inputs` is unavailable.
+      #    IMPORTANT: the "Run workflow" dropdown defaults to the repository
+      #    default branch and is independent of the branch shown in the repo
+      #    browser; without an explicit `ref` (or branch input) runs silently
+      #    build that default branch.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref }}
+
+      # 3b. Checkout the TF-A tree and put it where mediatek.sh (and the README)
+      #     expect it: as a *sibling* of the U-Boot tree (../atf-mtksoc).  The
+      #     action refuses a path outside the workspace ("Repository path ...
+      #     is not under ..."), so it is checked out to ./atf-mtksoc and moved
+      #     one level up afterwards.
+      #     This is not cosmetic: the U-Boot tree *is* the workspace, and its
+      #     `make clean` deletes every '*.[aios]' file found below the tree
+      #     (Makefile, clean rule).  With the TF-A tree nested inside it, that
+      #     sweep also wipes TF-A's prebuilt DRAM/efuse libraries
+      #     (plat/mediatek/*/drivers/{dram,efuse}/release/*.a), which have no
+      #     build rule of their own, and the TF-A build then dies with
+      #     "No rule to make target 'plat/mediatek/mt7981/drivers/dram/release/dram.a'".
+      #     Submodules (mbed-tls, libtl, ...) are only needed for secure boot
+      #     and stay uninitialised, exactly like in the local build.
+      - name: Checkout arm-trusted-firmware-mtksoc
+        uses: actions/checkout@v4
+        with:
+          repository: Yuzhii0718/arm-trusted-firmware-mtksoc
+          ref: ${{ inputs.atf_ref }}
+          path: atf-mtksoc
+
+      - name: Move the TF-A tree next to the U-Boot tree
+        run: mv "${GITHUB_WORKSPACE}/atf-mtksoc" "${GITHUB_WORKSPACE}/../atf-mtksoc"
+
+      # 4. Collect build metadata (U-Boot version, both repositories' commits,
+      #    branch, build time).  The TF-A side is recorded too, because the two
+      #    trees are only meaningful together.
+      - name: Generate build info
+        run: |
+          mkdir -p output_mediatek
+
+          # U-Boot version parsed from the top of the Makefile
+          UBOOT_VERSION=$(awk -F'= ' '
+            /^VERSION =/      {v=$2}
+            /^PATCHLEVEL =/   {p=$2}
+            /^SUBLEVEL =/     {s=$2}
+            /^EXTRAVERSION =/ {e=$2}
+            /^NAME =/         {n=$2}
+            END {
+                ver = v "." p
+                if (s != "") ver = ver "." s
+                ver = ver e "-" n
+                print ver
+            }' Makefile)
+
+          # Repository / branch / commit / build time metadata.
+          # These are read from the checked-out trees (git rev-parse) so they
+          # always reflect what was actually built, regardless of the event.
+          BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+          COMMIT="$(git rev-parse HEAD)"
+          COMMIT_SHORT="${COMMIT:0:7}"
+          BUILD_TIME="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+
+          # The TF-A tree lives next to the workspace (see step 3b).
+          ATF_DIR="$(cd "${GITHUB_WORKSPACE}/../atf-mtksoc" && pwd)"
+          ATF_BRANCH="$(git -C "${ATF_DIR}" rev-parse --abbrev-ref HEAD)"
+          ATF_COMMIT="$(git -C "${ATF_DIR}" rev-parse HEAD)"
+          ATF_COMMIT_SHORT="${ATF_COMMIT:0:7}"
+
+          {
+            echo "MediaTek U-Boot Build Information"
+            echo "================================="
+            echo ""
+            echo "U-Boot Version : ${UBOOT_VERSION}"
+            echo "Repository     : ${GITHUB_REPOSITORY}"
+            echo "Branch         : ${BRANCH}"
+            echo "Commit         : ${COMMIT_SHORT} (${COMMIT})"
+            echo "TF-A Repo      : Yuzhii0718/arm-trusted-firmware-mtksoc"
+            echo "TF-A Branch    : ${ATF_BRANCH}"
+            echo "TF-A Commit    : ${ATF_COMMIT_SHORT} (${ATF_COMMIT})"
+            echo "Build Time     : ${BUILD_TIME}"
+            echo "SOC            : ${{ inputs.SOC }}"
+            echo "BOARD          : ${{ inputs.BOARD }}"
+          } > output_mediatek/build-info.txt
+          cat output_mediatek/build-info.txt
+
+          # Persist the metadata for later steps (release notes)
+          echo "UBOOT_VERSION=${UBOOT_VERSION}"           >> "$GITHUB_ENV"
+          echo "BRANCH=${BRANCH}"                         >> "$GITHUB_ENV"
+          echo "COMMIT=${COMMIT}"                         >> "$GITHUB_ENV"
+          echo "COMMIT_SHORT=${COMMIT_SHORT}"             >> "$GITHUB_ENV"
+          echo "ATF_BRANCH=${ATF_BRANCH}"                 >> "$GITHUB_ENV"
+          echo "ATF_COMMIT=${ATF_COMMIT}"                 >> "$GITHUB_ENV"
+          echo "ATF_COMMIT_SHORT=${ATF_COMMIT_SHORT}"     >> "$GITHUB_ENV"
+          echo "BUILD_TIME=${BUILD_TIME}"                 >> "$GITHUB_ENV"
+
+      # 5. Execute the build script with the provided SOC and BOARD inputs, and
+      #    capture the full build log into the output directory.  The script
+      #    resolves the matching TF-A defconfig from mediatek-boards.cfg, builds
+      #    U-Boot, then builds TF-A with that U-Boot as BL33.
+      - name: Run build script
+        run: |
+          set -o pipefail
+          chmod +x mediatek.sh
+          LOG_FILE="output_mediatek/build.log"
+          # The TF-A tree sits next to the workspace (step 3b), as in a local
+          # build where it is cloned as ../atf-mtksoc.
+          ATF_DIR="${GITHUB_WORKSPACE}/../atf-mtksoc" \
+            SOC=${{ inputs.SOC }} BOARD=${{ inputs.BOARD }} ./mediatek.sh 2>&1 | tee "${LOG_FILE}"
+          cp .config output_mediatek/.config
+          cp "${GITHUB_WORKSPACE}/../atf-mtksoc/build/.config" output_mediatek/atf.config
+
+      # 6. Upload the build artifacts (firmware + build-info.txt + build.log)
+      #    to the workflow for later use or download
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: output_mediatek/
+
+      # 7. [Optional] Package the build artifacts into a zip file for release if public_release is true
+      - name: Package artifacts for Release
+        if: inputs.public_release == true
+        run: |
+          zip -r artifacts.zip output_mediatek/
+
+      - name: Create Release in this repository
+        if: inputs.public_release == true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # default token with contents: write permission
+        run: |
+          # Tag: <UTC date>-<UTC time>-<platform>, e.g. 2026.10.07-1345-mediatek:
+          # one fixed suffix per workflow, readable from the tag alone and sorted
+          # by build order, unlike the run id it replaces.  Which board it was is
+          # in the notes below and in the artifact names; no --title, so GitHub
+          # names the release after the tag.
+          TAG_NAME="$(date -u '+%Y.%m.%d-%H%M')-mediatek"
+
+          # Build metadata only; GitHub appends its own "What's Changed" /
+          # "New Contributors" sections for the tag (see --generate-notes below).
+          cat > RELEASE_NOTES.md <<EOF
+          ## Build Information
+
+          - **U-Boot version**: ${UBOOT_VERSION}
+          - **Repository**: ${GITHUB_REPOSITORY}
+          - **Ref**: \`${{ inputs.branch }}\`
+          - **Branch / commit**: ${BRANCH} / \`${COMMIT_SHORT}\`
+          - **TF-A (mediatek)**: Yuzhii0718/arm-trusted-firmware-mtksoc @ \`${ATF_BRANCH}\` (\`${ATF_COMMIT_SHORT}\`)
+          - **Build time**: ${BUILD_TIME}
+          - **SOC / BOARD**: ${{ inputs.SOC }} / ${{ inputs.BOARD }}
+          EOF
+          cat RELEASE_NOTES.md
+
+          # Create a new release in this repository using the GitHub CLI.  The
+          # tag points at the commit that was actually built (the checked-out
+          # ref), not at whatever the default branch is at release time, and
+          # --generate-notes appends GitHub's own "What's Changed" /
+          # "New Contributors" sections below the notes file.
+          gh release create "$TAG_NAME" artifacts.zip \
+            --repo "${{ github.repository }}" \
+            --target "${COMMIT:-${{ github.sha }}}" \
+            --notes-file RELEASE_NOTES.md \
+            --generate-notes \
+            --draft=false \
+            --prerelease=false
