@@ -1,0 +1,435 @@
+name: Batch Build and Release
+
+# One workflow_dispatch run batch-builds by architecture or by individual platform
+# family, by fanning the selected value out into one or more platforms and
+# calling the tree's own batch driver, build.sh <platform>:
+#
+# Architecture groups (the two SoC families that share a toolchain/ISA):
+#   arm   -> airoha  + mediatek      (32/64-bit ARM)
+#   mips  -> econet  + mtmips        (MIPS big-endian / ramips)
+#
+#   airoha    -> airoha.sh    ARM, FIP/BROM images packed in-tree
+#   econet    -> econet.sh    MIPS, needs airoha_mips_dramc (DRAMC + TCBoot)
+#   mediatek  -> mediatek.sh  Filogic, needs arm-trusted-firmware-mtksoc (BL2/FIP)
+#   mtmips    -> mtmips.sh    ramips, OpenWrt musl toolchain downloaded on demand
+#
+# build.sh runs the configurations of one platform strictly one after another
+# (they all reconfigure and rebuild the same source tree), so the platform is
+# the natural unit of parallelism: the matrix below hands each selected platform
+# its own runner and keeps build.sh's serial order inside it.  "all" fans out
+# into the four platforms, an architecture group fans out into its two, and a
+# single platform yields a one-element matrix, so all cases share one job def.
+#
+# build.sh reads its device list from document/support-devices.md, so a board
+# added there is built here too, without touching this file.
+#
+# When public_release is on, the firmware images of the selected platforms land
+# in ONE release and are attached as individual files - no zip - so the image of
+# a model is picked from the release page by its <soc>_<board> name (and, for the
+# platforms that tag it, by its embedded md5).
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch/ref of this repository to build (must carry build.sh)'
+        required: true
+        default: v2026.10
+        type: string
+      platform:
+        description: 'Platform(s) or architecture to batch build (arm = airoha+mediatek, mips = econet+mtmips)'
+        required: true
+        default: arm
+        type: choice
+        options:
+          - all
+          - arm
+          - mips
+          - airoha
+          - econet
+          - mediatek
+          - mtmips
+      atf_ref:
+        description: 'Branch/ref of arm-trusted-firmware-mtksoc (mediatek only)'
+        required: true
+        default: mtksoc-20260817
+        type: string
+      dramc_ref:
+        description: 'Branch/ref of airoha_mips_dramc (econet only)'
+        required: true
+        default: main
+        type: string
+      public_release:
+        description: 'Create a release with the firmware files attached individually'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      # Every platform is reported: one failing must not cancel the others, and
+      # the release job decides afterwards which images are worth publishing.
+      fail-fast: false
+      matrix:
+        # Each selection expands into the platform(s) it covers:
+        #   all  -> the four platforms
+        #   arm  -> airoha + mediatek   (both ARM)
+        #   mips -> econet + mtmips     (both MIPS)
+        #   any other platform name -> a one-element matrix.
+        platform: ${{ fromJSON(inputs.platform == 'all' && '["airoha","econet","mediatek","mtmips"]' || inputs.platform == 'arm' && '["airoha","mediatek"]' || inputs.platform == 'mips' && '["econet","mtmips"]' || format('["{0}"]', inputs.platform)) }}
+    steps:
+      # 1. Toolchains and build prerequisites:
+      #    - gcc-arm-linux-gnueabi   : airoha en7523/en7562/an7563 (32-bit ARM)
+      #    - gcc-aarch64-linux-gnu   : airoha an7581/an7583, all mediatek
+      #    - gcc-mips-linux-gnu      : econet big endian (en751221/en751627)
+      #    - zstd                    : mtmips/econet fetch an OpenWrt .tar.zst
+      #    - nodejs/npm              : airoha.sh/mediatek.sh embed the failsafe UI
+      #    - device-tree-compiler    : U-Boot and TF-A device trees
+      #    - libgnutls28-dev         : host tool tools/mkeficapsule includes
+      #                                <gnutls/gnutls.h> unconditionally; it is
+      #                                built for every board whose config ends
+      #                                up with EFI_LOADER=y (e.g. the CMCC
+      #                                RAX3000M eMMC/SATA variants, which get
+      #                                it through BLK <- SCSI).  doc/build/gcc.rst
+      #                                lists the package as a build dependency.
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential flex bison libssl-dev device-tree-compiler \
+            python-is-python3 \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi gcc-mips-linux-gnu \
+            zstd \
+            libgnutls28-dev \
+            nodejs npm
+
+      # 2. Show the effective context of this run (for diagnostics)
+      - name: Show run context
+        run: |
+          echo "Dropdown ref = ${{ github.ref }}"
+          echo "Dropdown sha = ${{ github.sha }}"
+          echo "Ref input    = ${{ inputs.branch }}"
+          echo "Platform     = ${{ inputs.platform }}"
+          echo "This job     = ${{ matrix.platform }}"
+
+      # 3. Checkout the repository to access the build scripts and source code.
+      #    The ref is taken from the input, not from the dispatch dropdown: the
+      #    "Run workflow" dropdown defaults to the repository default branch and
+      #    an explicit ref makes the built revision deterministic.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      # 3b. TF-A tree, only needed by the MediaTek Filogic boot chain: mediatek.sh
+      #     builds U-Boot, then TF-A with that u-boot.bin as BL33, and emits
+      #     preloader.bin + bl31-uboot.fip.
+      #     Both paired trees (this one and 3c) belong *next to* the U-Boot tree,
+      #     as the README clones them (<parent>/atf-mtksoc), not inside it: the
+      #     U-Boot tree is the workspace and its `make clean` deletes every
+      #     '*.[aios]' file below it (Makefile, clean rule), which would wipe
+      #     TF-A's prebuilt DRAM/efuse libraries (plat/mediatek/*/drivers/
+      #     {dram,efuse}/release/*.a) - they have no build rule, so TF-A then
+      #     fails with "No rule to make target .../dram/release/dram.a".  A
+      #     checkout cannot be placed outside the workspace ("Repository path
+      #     ... is not under ..."), so it is checked out inside and moved one
+      #     level up right afterwards.
+      #     Submodules (mbed-tls, libtl, ...) are only needed for secure boot
+      #     and stay uninitialised, as in the local build.
+      - name: Checkout arm-trusted-firmware-mtksoc
+        if: matrix.platform == 'mediatek'
+        uses: actions/checkout@v4
+        with:
+          repository: Yuzhii0718/arm-trusted-firmware-mtksoc
+          ref: ${{ inputs.atf_ref }}
+          path: atf-mtksoc
+
+      # 3c. Early-boot tree, only needed by EcoNet: econet.sh builds the DRAMC
+      #     stages there and composes tcboot.bin (TCBoot loader + u-boot.bin).
+      #     It is moved out of the workspace for the same reason as 3b (its
+      #     build products under out/ would be swept away as well).
+      - name: Checkout airoha_mips_dramc
+        if: matrix.platform == 'econet'
+        uses: actions/checkout@v4
+        with:
+          repository: Sirherobrine23/airoha_mips_dramc
+          ref: ${{ inputs.dramc_ref }}
+          path: airoha_mips_dramc
+
+      # 3d. Give the paired trees the layout the platform scripts (and the
+      #     README) assume: siblings of the U-Boot tree, one level above the
+      #     workspace.  Their .git/config still carries the checkout token, but
+      #     only the firmware under output_<platform>/ is ever uploaded, so the
+      #     tree itself never leaves the runner.
+      - name: Move the paired trees next to the U-Boot tree
+        run: |
+          mv "${GITHUB_WORKSPACE}/atf-mtksoc" "${GITHUB_WORKSPACE}/../atf-mtksoc" 2>/dev/null || true
+          mv "${GITHUB_WORKSPACE}/airoha_mips_dramc" "${GITHUB_WORKSPACE}/../airoha_mips_dramc" 2>/dev/null || true
+
+      # 4. Pre-flight: build.sh carries the platform list, so a too-old ref is
+      #    reported here instead of failing in the middle of the batch.
+      - name: Verify build.sh and list the configurations
+        run: |
+          if [ ! -f build.sh ]; then
+            echo "::error::build.sh is missing at ref '${{ inputs.branch }}'."
+            echo "Pick a ref that carries it (v2026.10-rc5 or newer)."
+            exit 1
+          fi
+          chmod +x ./*.sh
+          ./build.sh "${{ matrix.platform }}" --list
+
+      # 5. Record what was built: the batch release needs version/commit, and the
+      #    paired second-repo revision belongs in the notes of a Filogic/EcoNet
+      #    image.  One file per platform so the release job can merge them.
+      - name: Generate build info
+        run: |
+          mkdir -p build-logs
+
+          UBOOT_VERSION=$(awk -F'= ' '
+            /^VERSION =/      {v=$2}
+            /^PATCHLEVEL =/   {p=$2}
+            /^SUBLEVEL =/     {s=$2}
+            /^EXTRAVERSION =/ {e=$2}
+            /^NAME =/         {n=$2}
+            END {
+                ver = v "." p
+                if (s != "") ver = ver "." s
+                ver = ver e "-" n
+                print ver
+            }' Makefile)
+
+          BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+          COMMIT="$(git rev-parse HEAD)"
+          BUILD_TIME="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          INFO="build-logs/build-info-${{ matrix.platform }}.txt"
+
+          {
+            echo "U-Boot Version : ${UBOOT_VERSION}"
+            echo "Repository     : ${GITHUB_REPOSITORY}"
+            echo "Ref            : ${{ inputs.branch }}"
+            echo "Branch         : ${BRANCH}"
+            echo "Commit         : ${COMMIT:0:7}"
+            echo "Commit Full    : ${COMMIT}"
+            echo "Platform       : ${{ matrix.platform }}"
+            echo "Build Time     : ${BUILD_TIME}"
+          } > "${INFO}"
+
+          # The paired trees sit next to the workspace (step 3d).
+          if [ "${{ matrix.platform }}" = "mediatek" ]; then
+            echo "TF-A           : Yuzhii0718/arm-trusted-firmware-mtksoc" \
+                 "@ ${{ inputs.atf_ref }} ($(git -C "${GITHUB_WORKSPACE}/../atf-mtksoc" rev-parse HEAD | cut -c1-7))" >> "${INFO}"
+          fi
+          if [ "${{ matrix.platform }}" = "econet" ]; then
+            echo "DRAMC          : Sirherobrine23/airoha_mips_dramc" \
+                 "@ ${{ inputs.dramc_ref }} ($(git -C "${GITHUB_WORKSPACE}/../airoha_mips_dramc" rev-parse HEAD | cut -c1-7))" >> "${INFO}"
+          fi
+
+          cat "${INFO}"
+
+      # 6. Run the batch of one platform.  Everything below the driver is
+      #    automatic: build.sh resolves each device from
+      #    document/support-devices.md, calls the platform script once per
+      #    configuration and keeps one log per configuration.  Its exit status is
+      #    recorded rather than raised, so the images and logs of the
+      #    configurations that did build are still collected and released.
+      - name: Run build.sh (batch)
+        env:
+          # Passed through by build.sh to the platform scripts:
+          AUTO_DL: '1'                                    # download missing toolchains (mtmips/econet)
+          STAGE: 'all'                                    # full flashable images, not just u-boot.bin
+          ATF_DIR: ${{ github.workspace }}/../atf-mtksoc
+          DRAMC_DIR: ${{ github.workspace }}/../airoha_mips_dramc
+          LOGS_DIR: ${{ github.workspace }}/build-logs
+        run: |
+          set +e
+          ./build.sh "${{ matrix.platform }}"
+          rc=$?
+          set -e
+          echo "BUILD_RC=${rc}" >> "$GITHUB_ENV"
+
+      # 7. Surface the per-configuration result on the run page
+      - name: Add batch result to job summary
+        if: always()
+        run: |
+          {
+            echo "## Batch build: ${{ matrix.platform }}"
+            echo ""
+            echo '```'
+            cat build-logs/summary.txt 2>/dev/null || echo "no summary was produced"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # 8. Firmware images of this platform.  Only the flashable files are
+      #    uploaded here - the per-configuration logs and configurations travel
+      #    as the separate build-logs-<platform> artifact (step 9) and end up in
+      #    the release archive.  The extensions below are everything the four
+      #    platform scripts copy into output_<platform>/ (airoha: .fip .bin .ram
+      #    .itb .lzma, mediatek: .bin .fip, econet: .bin, mtmips: .bin).
+      - name: Upload firmware images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.platform }}
+          path: |
+            output_${{ matrix.platform }}/*.bin
+            output_${{ matrix.platform }}/*.fip
+            output_${{ matrix.platform }}/*.itb
+            output_${{ matrix.platform }}/*.ram
+            output_${{ matrix.platform }}/*.lzma
+          if-no-files-found: warn
+
+      # 9. Per-configuration logs, the .config every configuration built, and
+      #    build-info-<platform>.txt: what a bug report needs, and what the
+      #    release job packs into build-logs.zip.
+      - name: Upload build logs and configurations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ matrix.platform }}
+          path: build-logs/
+          if-no-files-found: warn
+
+      # 10. A failed configuration keeps the job red, but only after the artifacts
+      #     have been collected and (optionally) released.
+      - name: Report batch result
+        if: env.BUILD_RC != '' && env.BUILD_RC != '0'
+        run: |
+          echo "::error::build.sh exited ${BUILD_RC}: $(grep -c '^FAIL' build-logs/summary.txt 2>/dev/null || echo '?') configuration(s) failed on ${{ matrix.platform }} (see the build-logs-${{ matrix.platform }} artifact)."
+          exit 1
+
+  release:
+    name: Release
+    needs: build
+    # Whatever was built is published, even when one platform failed: the release
+    # page is the download surface and a partial batch is still useful.  The
+    # failing platform is visible in the run summary.
+    if: always() && !cancelled() && inputs.public_release == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # required to create releases in this repository
+    steps:
+      # 1. Collect the firmware of every platform that produced something.  No
+      #    merge-multiple: the artifact name keeps the platform, so the notes can
+      #    group the files as release/firmware-<platform>/<file>.
+      - name: Download firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: firmware-*
+          path: release
+
+      # 2. Per-configuration logs, the .config each configuration built, and
+      #    build-info-<platform>.txt: used for the release notes and packed into
+      #    the release archive.
+      - name: Download build logs and configurations
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-logs-*
+          path: logs
+
+      - name: List collected firmware
+        run: find release -type f | sort
+
+      # 3. The logs and configurations go out as ONE archive: a release page
+      #    lists firmware, not a hundred .log files, but the log and the .config
+      #    of every configuration are what make a released image traceable.
+      #    download-artifact keeps the artifact name as a directory
+      #    (logs/build-logs-<platform>/...), which is dropped here so the zip
+      #    reads <platform>/<log>|<config>|<build-info>.  The firmware itself
+      #    stays unarchived (step 4).
+      - name: Package the build logs and configurations
+        run: |
+          mkdir -p trace
+          for d in logs/*/; do
+            [ -d "${d}" ] || continue
+            platform="$(basename "${d}")"
+            platform="${platform#build-logs-}"
+            mkdir -p "trace/${platform}"
+            cp -a "${d}." "trace/${platform}/"
+          done
+          if [ -z "$(ls -A trace 2>/dev/null)" ]; then
+            echo "::warning::no logs were collected; releasing the images alone"
+            exit 0
+          fi
+          ( cd trace && zip -r ../build-logs.zip . )
+          unzip -l build-logs.zip
+
+      # 4. One release per run: the images go out as individual files (no
+      #    archive, so <soc>_<board> is readable straight from the asset list,
+      #    and the names already carry the md5), the logs/configuration archive
+      #    rides along, and the note is the build metadata followed by the notes
+      #    GitHub generates for the tag (What's Changed / New Contributors):
+      #    gh sends both, and the API prepends the metadata to the generated
+      #    ones.  No --title either, so the release is named after its tag.
+      - name: Create release with the firmware files attached individually
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          meta() { sed -n "s/^$1 *: *//p" logs/*/build-info-*.txt 2>/dev/null | head -1 || true; }
+          UBOOT_VERSION="$(meta 'U-Boot Version')"
+          BRANCH="$(meta 'Branch')"
+          COMMIT="$(meta 'Commit')"
+          COMMIT_FULL="$(meta 'Commit Full')"
+          BUILD_TIME="$(meta 'Build Time')"
+          # Only the paired trees this run actually built: build-info-<platform>.txt
+          # records TF-A for mediatek and DRAMC for econet, so a batch that
+          # selects one of them does not name the other's revision.
+          TF_A="$(meta 'TF-A')"
+          DRAMC="$(meta 'DRAMC')"
+
+          mapfile -t FILES < <(find release -type f | sort)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "::error::no firmware image was collected; nothing to release."
+            exit 1
+          fi
+          printf 'Releasing %s file(s):\n' "${#FILES[@]}"
+          printf '  %s\n' "${FILES[@]}"
+
+          # Tag: <UTC date>-<UTC time>-<what was built>, e.g. 2026.10.07-1345-arm:
+          # readable from the tag alone, sorts by build order, and stays unique
+          # per minute (the run id it replaces said nothing about the contents).
+          # No --title below: GitHub then names the release after the tag, so the
+          # heading of the page is the same string as the tag.
+          TAG_NAME="$(date -u '+%Y.%m.%d-%H%M')-${{ inputs.platform }}"
+
+          {
+            echo "## Batch build: \`${{ inputs.platform }}\`"
+            echo ""
+            echo "- **U-Boot version**: ${UBOOT_VERSION:-unknown}"
+            echo "- **Repository**: ${GITHUB_REPOSITORY}"
+            echo "- **Ref**: \`${{ inputs.branch }}\`"
+            echo "- **Branch / commit**: ${BRANCH:-unknown} / \`${COMMIT:-unknown}\`"
+            if [ -n "${TF_A}" ]; then
+              echo "- **TF-A (mediatek)**: ${TF_A}"
+            fi
+            if [ -n "${DRAMC}" ]; then
+              echo "- **DRAMC (econet)**: ${DRAMC}"
+            fi
+            echo "- **Build time**: ${BUILD_TIME:-unknown}"
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+          ASSETS=("${FILES[@]}")
+          if [ -f build-logs.zip ]; then
+            ASSETS+=(build-logs.zip)
+          fi
+
+          # --generate-notes: GitHub appends its own "What's Changed" /
+          # "New Contributors" sections, and (REST behaviour) prepends the
+          # --notes-file body to them, so the release reads as the build
+          # metadata followed by the changelog of what the tag contains.
+          gh release create "${TAG_NAME}" "${ASSETS[@]}" \
+            --repo "${{ github.repository }}" \
+            --target "${COMMIT_FULL:-${{ github.sha }}}" \
+            --notes-file RELEASE_NOTES.md \
+            --generate-notes \
+            --draft=false \
+            --prerelease=false
