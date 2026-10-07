@@ -36,7 +36,11 @@
 #                       econet.sh (all|uboot|dramc)
 #   AUTO_DL=<0|1>       Let the platform scripts download a missing toolchain
 #                       without prompting (default: 1; mtmips/econet only)
-#   LOGS_DIR=<path>     Per-configuration logs (default: build-logs)
+#   LOGS_DIR=<path>     Per-configuration logs and configurations
+#                       (default: build-logs)
+#   ATF_DIR=<path>      TF-A tree of the mediatek platform; its build/.config is
+#                       copied next to the logs (default: ../atf-mtksoc, passed
+#                       through to mediatek.sh as well)
 #
 # Switches:
 #   -h, --help              Show this help
@@ -49,6 +53,11 @@
 #
 # Output:
 #   build-logs/<platform>_<soc>_<board>.log   full log of one configuration
+#   build-logs/<platform>_<soc>_<board>.config
+#                                             the .config that configuration
+#                                             actually built, plus
+#                                             ...-atf.config when a TF-A tree
+#                                             was involved (ATF_DIR exported)
 #   build-logs/summary.txt                    result of every configuration
 #
 # Exit status: 0 when every configuration built, 1 when at least one failed.
@@ -145,6 +154,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 UBOOT_DIR="${SCRIPT_DIR}"
 DEVICES_FILE="${DEVICES:-${UBOOT_DIR}/document/support-devices.md}"
 LOGS_DIR="${LOGS_DIR:-${UBOOT_DIR}/build-logs}"
+ATF_DIR="${ATF_DIR:-${UBOOT_DIR}/../atf-mtksoc}"
 
 [ -f "${DEVICES_FILE}" ] || die "Device list not found: ${DEVICES_FILE}"
 
@@ -334,7 +344,7 @@ run_config() {
 	local script="${UBOOT_DIR}/${plat}.sh"
 	local label="${plat} ${soc} ${board}"
 	local log="${LOGS_DIR}/${plat}_${soc}_${board}.log"
-	local rc=0 t0 t1 secs arts
+	local rc=0 t0 t1 secs arts cfg
 
 	soc="${soc,,}"   # SOC is lowercase for every platform script
 
@@ -369,6 +379,16 @@ run_config() {
 	) > "${log}" 2>&1 || rc=$?
 	t1=$(date +%s)
 	secs=$(( t1 - t0 ))
+
+	cfg="${log%.log}"    # <plat>_<soc>_<board>, exactly like its log
+	if [ -f "${UBOOT_DIR}/.config" ] && \
+	   [ "$(stat -c %Y "${UBOOT_DIR}/.config")" -ge "${t0}" ]; then
+		cp -f "${UBOOT_DIR}/.config" "${cfg}.config"
+	fi
+	if [ -f "${ATF_DIR}/build/.config" ] && \
+	   [ "$(stat -c %Y "${ATF_DIR}/build/.config")" -ge "${t0}" ]; then
+		cp -f "${ATF_DIR}/build/.config" "${cfg}-atf.config"
+	fi
 
 	if [ "${rc}" -eq 0 ]; then
 		arts=$(count_artifacts "${log}")
