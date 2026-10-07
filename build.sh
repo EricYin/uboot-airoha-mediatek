@@ -148,6 +148,19 @@ while [ $# -gt 0 ]; do
 done
 
 #------------------------------------------------------------------------------
+# Hand over the options the platform scripts read from the environment
+#
+# The platform scripts run as children and look AUTO_DL / JOBS up in their
+# environment; "AUTO_DL=1 ./build.sh mtmips" exports it for free, but the
+# switches (-j/--jobs, --no-auto-download) and the AUTO_DL default below only
+# set a shell variable, which a child never sees.  Without this, a plain
+# "./build.sh mtmips" reaches mtmips.sh with AUTO_DL unset: it then asks on
+# stdin "Download it now? [Y/n]" - a prompt written into the configuration's
+# log file, where nobody can see or answer it, so the batch looks hung.
+#------------------------------------------------------------------------------
+export AUTO_DL JOBS
+
+#------------------------------------------------------------------------------
 # Paths
 #------------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
