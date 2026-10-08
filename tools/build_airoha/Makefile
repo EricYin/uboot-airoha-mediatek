@@ -121,6 +121,7 @@ LZMA_E := $(shell \
 # blobs use, which xz cannot).
 LZMA_SDK_BIN := lzma-sdk
 LZMA_SDK_DIR := ../lzma432/7zip/Compress/LZMA_Alone
+LZMA_VERIFY ?= ../airoha_verify_lzma.py
 
 # ---- BL31 / U-Boot path setup -------------------------------------------
 # BL31 is always pre-compressed (bl31.lzma); u-boot.bin is always
@@ -210,16 +211,17 @@ $(LZMA_SDK_BIN):
 # BL2 (preloader) decompressor requires the *real* value: xz-family encoders
 # write -1 ("unknown size") there and BL2 then aborts the boot with
 # "Failed to decompress image (err=1)" / "Stored BL31 + U-Boot FIP failed".
-# tools/lzma_wrapper.sh guarantees this for every encoder; the unconditional
-# rewrite below is the belt to that suspenders, so it also repairs a build that
-# went through the bare-tool fallback (no wrapper, no 'lzma' package).  Same
-# helper, same reason: tools/airoha_pack_tcboot_legacy.py:fix_lzma_uncomp_size().
+# tools/lzma_wrapper.sh already guarantees it for every encoder, and
+# $(LZMA_VERIFY) is the independent last word: it repairs a header that still
+# carries something else (bare-tool fallback, a foreign image, ...), then
+# decodes the payload with BL2's semantics and compares it byte for byte with
+# u-boot.bin - a stream that fails that check never reaches the FIP.
 $(UBOOT_BIN).lzma: $(LZMA_SDK_BIN)
 	@test -f $(UBOOT_BIN) || { echo "ERROR: $(UBOOT_BIN) not found (build u-boot.bin first)"; exit 1; }
 	@if [ -x "$(LZMA_WRAPPER)" ]; then $(LZMA_WRAPPER) --version 2>&1 | sed 's/^/  [LZMA]   /'; fi
 	@echo "  [LZMA]   Compressing u-boot.bin -> u-boot.bin.lzma..."
 	$(LZMA_E) $(UBOOT_BIN) > $@
-	@python3 -c "import struct,os; p='$@'; s='$(UBOOT_BIN)'; d=open(p,'rb').read(); n=struct.pack('<Q',os.path.getsize(s)); open(p,'wb').write(d[:5]+n+d[13:]) if d[5:13]!=b'\xff'*8 and d[5:13]!=n else None"
+	@python3 $(LZMA_VERIFY) --repair --expect $(UBOOT_BIN) $@
 
 # ----- preloader.bin (standalone BL2 FIP) ------------------------------------
 # Built for both boot image layouts (modern/split and legacy/512 KiB) and
