@@ -27,6 +27,7 @@
 #include <linux/mtd/spinand.h>
 #endif
 
+#include <failsafe/boot_mode.h>
 #include <failsafe/internal.h>
 #include <failsafe/image.h>
 #ifdef CONFIG_MMC
@@ -307,6 +308,15 @@ static int sysinfo_json_append_board(char *buf, int len, int left)
 #else
 	len = buf_appendf(buf, left, len, ",\"atf\":false");
 #endif
+
+	/*
+	 * Boot mode of this session, see <failsafe/boot_mode.h>: "ram" means
+	 * the bootloader was obtained over the console and lives in DRAM
+	 * only, so nothing has reached the flash yet - the Web UI warns the
+	 * user about it and points at the bootloader pages.
+	 */
+	len = buf_appendf(buf, left, len, ",\"boot\":{\"mode\":\"%s\"}",
+			  failsafe_boot_mode_name(failsafe_boot_mode()));
 
 #if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_LAYOUT_FIP)
 	/* Size of the storage holding the FIP - a build time value, 1 MiB on
