@@ -40,6 +40,7 @@
 #include <failsafe/led.h>
 
 #include <failsafe/internal.h>
+#include <failsafe/boot_mode.h>
 #include <failsafe/cprint.h>
 
 /* ------------------------------------------------------------------ */
@@ -275,6 +276,14 @@ int start_web_failsafe(void)
 			 (ip >> 8) & 0xff, ip & 0xff);
 		cprintln(PROMPT, "Press Ctrl+C to exit");
 	}
+
+	/*
+	 * Which boot chain the device came up with: the flash, or a volatile
+	 * RAM (console recovery) session. Reported next to the banner so the
+	 * handoff can be checked without opening the Web UI - see
+	 * failsafe/boot_mode.c.
+	 */
+	failsafe_boot_mode_print();
 
 	failsafe_httpd_running = true;
 	mtk_tcp_done_flag = false;

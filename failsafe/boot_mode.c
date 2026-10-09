@@ -37,6 +37,7 @@
 #include <linux/string.h>
 #include <linux/types.h>
 #include <failsafe/boot_mode.h>
+#include <failsafe/cprint.h>
 
 #if (defined(CONFIG_ARCH_AIROHA) && \
 	(defined(CONFIG_ARM) || defined(CONFIG_ARM64))) || \
@@ -129,5 +130,26 @@ const char *failsafe_boot_mode_name(enum failsafe_boot_mode mode)
 		return "flash";
 	default:
 		return "unknown";
+	}
+}
+
+void failsafe_boot_mode_print(void)
+{
+	switch (failsafe_boot_mode()) {
+	case FAILSAFE_BOOT_RAM:
+		/*
+		 * The state the Web UI warns about: everything uploaded in
+		 * this session stays in DRAM, so it is the one that ends in a
+		 * brick when the flash does not receive a bootloader.
+		 */
+		cprintln(CAUTION,
+			 "Boot source: RAM (volatile session)");
+		break;
+	case FAILSAFE_BOOT_FLASH:
+		cprintln(PROMPT, "Boot source: flash");
+		break;
+	default:
+		cprintln(PROMPT, "Boot source: unknown");
+		break;
 	}
 }

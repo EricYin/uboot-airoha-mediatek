@@ -55,6 +55,15 @@ enum failsafe_boot_mode failsafe_boot_mode(void);
  */
 const char *failsafe_boot_mode_name(enum failsafe_boot_mode mode);
 
+/**
+ * failsafe_boot_mode_print() - report the boot mode on the console
+ *
+ * One line, printed next to the "Web failsafe UI started" banner: it is what
+ * makes the report of the boot chain readable without opening the Web UI, and
+ * what a new platform's handoff is brought up with.
+ */
+void failsafe_boot_mode_print(void);
+
 #ifdef __cplusplus
 }
 #endif
