@@ -5,19 +5,23 @@
  * Failsafe Web UI - boot mode of the running session.
  *
  * Where the boot chain can report how the running U-Boot was obtained, the
- * answer comes from the platform (see <soc/airoha/bootsrc.h>):
+ * answer comes from the platform (see <soc/airoha/bootsrc.h> and
+ * <soc/mediatek/bootsrc.h>):
  *
  *   - ARM Airoha (EN7523 / AN7581 / AN7583 / AN7552): BL2 of the TF-A port
  *     publishes the storage the FIP came from in a NP-SCU scratch register,
  *     so a RAM (XMODEM) recovery session is distinguishable from a flash
  *     boot.  This is read on demand, i.e. only when something asks, which
  *     keeps it out of the boot path entirely.
+ *   - MediaTek Filogic (mt7981 / mt7986 / mt7987 / mt7988): BL2 of the TF-A
+ *     port publishes it in the arguments BL33 is entered with, which the
+ *     startup code captures in save_boot_params(); read on demand as well.
  *   - EcoNet MIPS (EN751221): the BootROM latches its XMODEM recovery path
  *     in the CHIP-SCU; the latch is sampled and cleared very early, so the
  *     value is already cached here.
- *   - Everything else (MediaTek, MIPS mtmips, ...): unknown.  The Web UI
- *     then shows no warning; a platform is added by reporting the mode from
- *     its own arch code.
+ *   - Everything else (MIPS mtmips, ...): unknown.  The Web UI then shows no
+ *     warning; a platform is added by reporting the mode from its own arch
+ *     code.
  *
  * The environment variable 'failsafe_boot_mode' (auto|ram|flash, default
  * "auto") overrides the report.  It is deliberately a plain runtime variable
@@ -38,6 +42,10 @@
 	(defined(CONFIG_ARM) || defined(CONFIG_ARM64))) || \
 	defined(CONFIG_ARCH_ECONET)
 #include <soc/airoha/bootsrc.h>
+#endif
+
+#if defined(CONFIG_ARCH_MEDIATEK) && defined(CONFIG_ARM64)
+#include <soc/mediatek/bootsrc.h>
 #endif
 
 #if defined(CONFIG_ARCH_ECONET)
@@ -90,6 +98,16 @@ enum failsafe_boot_mode failsafe_boot_mode(void)
 
 		if (!airoha_get_boot_source(&src))
 			return (src == AIROHA_BOOT_SOURCE_XMODEM) ?
+				FAILSAFE_BOOT_RAM : FAILSAFE_BOOT_FLASH;
+	}
+#endif
+
+#if defined(CONFIG_ARCH_MEDIATEK) && defined(CONFIG_ARM64)
+	{
+		enum mtk_boot_source src;
+
+		if (!mtk_get_boot_source(&src))
+			return (src == MTK_BOOT_SOURCE_RAM) ?
 				FAILSAFE_BOOT_RAM : FAILSAFE_BOOT_FLASH;
 	}
 #endif
