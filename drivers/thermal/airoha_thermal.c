@@ -50,6 +50,14 @@
 #define   AN7583_MUX_TADC_MASK			GENMASK(3, 1)
 #define AN7583_DOUT_TADC			0x2f0
 
+/*
+ * AN7563 (AN7552) belongs to the AN7552 package family and reuses the
+ * AN7583 ADC mux / DOUT register layout. It has no dedicated MUX_SENSOR
+ * register: the diode/BJT sensor is selected through MUX_TADC itself.
+ */
+#define AN7563_MUX_TADC				AN7583_MUX_TADC
+#define AN7563_DOUT_TADC			AN7583_DOUT_TADC
+
 #define EN7523_PLLRG_PROTECT		0x264
 #define EN7523_MUX_TADC				0x2ec
 #define EN7523_DOUT_TADC			0x2f0
@@ -228,6 +236,22 @@
 #define AN7583_SCU_THERMAL_PROTECT_KEY		0x80
 #define AN7583_NUM_SENSOR			3
 
+/*
+ * AN7563 (AN7552/EN7552) calibration.
+ * The PTP spare register holds two 16 bit 30C ADC codes (diode in the low
+ * half, BJT in the high half) and each sensor has its own slope.
+ */
+#define AN7563_SCU_THERMAL_PROTECT_KEY		0x80
+#define AN7563_NUM_SENSORS			2
+#define AN7563_SENSOR_DIODE			0
+#define AN7563_SENSOR_BJT			1
+#define AN7563_MUX_DIODE			0x7
+#define AN7563_MUX_BJT				0x6
+#define AN7563_SLOPE_DIODE_X100			5565
+#define AN7563_SLOPE_BJT_X100			6059
+#define AN7563_INIT_TEMP_CPK_X10		300
+#define AN7563_INIT_TEMP_NONK_X10		550
+
 #define AIROHA_THERMAL_NO_MUX_SENSOR		-1
 
 /* Convert temp (in milliC) to raw value as read from ADC
@@ -306,6 +330,10 @@ struct airoha_thermal_priv {
 	int init_temp;
 	int default_slope;
 	int default_offset;
+
+
+	int an7563_offset[AN7563_NUM_SENSORS];
+	const int *an7563_init_temp;
 };
 
 struct airoha_thermal_soc_data {
@@ -636,6 +664,74 @@ static int en7523_thermal_get_temp(struct udevice *dev, int *temp)
 	return 0;
 }
 
+/* ---------- AN7563 (AN7552/EN7552) ---------- */
+
+/* AN7563 SCU field descriptors */
+static const struct airoha_scu_field_desc an7563_chip_scu_fields_tmpl[AIROHA_THERMAL_FIELD_MAX] = {
+	[AIROHA_THERMAL_DOUT_TADC]  = { AN7563_DOUT_TADC,  0, 15 },
+	[AIROHA_THERMAL_MUX_SENSOR] = { 0, 0, 0 },	/* not supported */
+	[AIROHA_THERMAL_MUX_TADC]   = { AN7563_MUX_TADC,   1,  3 },
+};
+
+/* AN7563 per-sensor calibration constants (diode / BJT) */
+static const int an7563_thermal_slope[AN7563_NUM_SENSORS] = {
+	[AN7563_SENSOR_DIODE] = AN7563_SLOPE_DIODE_X100,
+	[AN7563_SENSOR_BJT] = AN7563_SLOPE_BJT_X100,
+};
+
+static const int an7563_thermal_init_temp_cpk[AN7563_NUM_SENSORS] = {
+	[AN7563_SENSOR_DIODE] = AN7563_INIT_TEMP_CPK_X10,
+	[AN7563_SENSOR_BJT] = AN7563_INIT_TEMP_CPK_X10,
+};
+
+static const int an7563_thermal_init_temp_nonk[AN7563_NUM_SENSORS] = {
+	[AN7563_SENSOR_DIODE] = AN7563_INIT_TEMP_NONK_X10,
+	[AN7563_SENSOR_BJT] = AN7563_INIT_TEMP_NONK_X10,
+};
+
+/*
+ * Read one AN7563 sensor (diode or BJT). The vendor driver takes six
+ * samples, drops the min and the max and averages the remaining four.
+ */
+static int an7563_thermal_read_sensor(struct airoha_thermal_priv *priv,
+				      int sensor)
+{
+	int mux = (sensor == AN7563_SENSOR_DIODE) ?
+		  AN7563_MUX_DIODE : AN7563_MUX_BJT;
+	int min_value = INT_MAX, max_value = INT_MIN, avg_value = 0, value;
+	int i;
+
+	airoha_set_thermal_mux(priv, mux, AIROHA_THERMAL_NO_MUX_SENSOR);
+
+	for (i = 0; i < AIROHA_MAX_SAMPLES; i++) {
+		value = airoha_get_thermal_ADC(priv);
+		min_value = min(value, min_value);
+		max_value = max(value, max_value);
+		avg_value += value;
+	}
+
+	avg_value -= (min_value + max_value);
+	avg_value /= AIROHA_MAX_SAMPLES - 2;
+
+	/* Return milliCelsius, same as the vendor/Linux driver */
+	return ((avg_value - priv->an7563_offset[sensor]) * 1000 /
+		an7563_thermal_slope[sensor] +
+		priv->an7563_init_temp[sensor]) * 100;
+}
+
+static int an7563_thermal_get_temp(struct udevice *dev, int *temp)
+{
+	struct airoha_thermal_priv *priv = dev_get_priv(dev);
+	int diode_temp, bjt_temp;
+
+	/* The vendor driver reports the hotter of the two sensors */
+	diode_temp = an7563_thermal_read_sensor(priv, AN7563_SENSOR_DIODE);
+	bjt_temp = an7563_thermal_read_sensor(priv, AN7563_SENSOR_BJT);
+
+	*temp = max(diode_temp, bjt_temp);
+	return 0;
+}
+
 /* ---------- Per-SoC probe functions ---------- */
 
 static int airoha_get_chip_scu_from_phandle(struct udevice *dev,
@@ -819,6 +915,51 @@ static int en7523_thermal_probe(struct udevice *dev,
 	return 0;
 }
 
+static int an7563_thermal_probe(struct udevice *dev,
+				struct airoha_thermal_priv *priv)
+{
+	u32 efuse;
+	int ret;
+
+	priv->base = dev_read_addr_ptr(dev);
+	if (!priv->base)
+		return -EINVAL;
+
+	ret = airoha_get_chip_scu_from_phandle(dev, priv);
+	if (ret)
+		return ret;
+
+	airoha_install_scu_fields(priv, an7563_chip_scu_fields_tmpl, false);
+
+	/* PTPSPARE0: [15:0] diode 30C code, [31:16] BJT 30C code */
+	efuse = airoha_base_read(priv, EN7581_EFUSE_TEMP_OFFSET_REG);
+
+	if (efuse) {
+		priv->an7563_offset[AN7563_SENSOR_DIODE] = efuse & 0xffff;
+		priv->an7563_offset[AN7563_SENSOR_BJT] = (efuse >> 16) & 0xffff;
+		priv->an7563_init_temp = an7563_thermal_init_temp_cpk;
+	} else {
+		/*
+		 * Not calibrated: use the current ADC reading as the 30C
+		 * code for each sensor, as the vendor driver does.
+		 */
+		airoha_set_thermal_mux(priv, AN7563_MUX_DIODE,
+				       AIROHA_THERMAL_NO_MUX_SENSOR);
+		priv->an7563_offset[AN7563_SENSOR_DIODE] =
+			airoha_get_thermal_ADC(priv);
+
+		airoha_set_thermal_mux(priv, AN7563_MUX_BJT,
+				       AIROHA_THERMAL_NO_MUX_SENSOR);
+		priv->an7563_offset[AN7563_SENSOR_BJT] =
+			airoha_get_thermal_ADC(priv);
+
+		priv->an7563_init_temp = an7563_thermal_init_temp_nonk;
+		dev_info(dev, "missing thermal calibration EFUSE, using non calibrated value\n");
+	}
+
+	return 0;
+}
+
 /* ---------- Common DM probe / ops ---------- */
 
 static int airoha_thermal_probe(struct udevice *dev)
@@ -876,6 +1017,15 @@ static const struct airoha_thermal_soc_data en7523_data = {
 	.get_temp = &en7523_thermal_get_temp,
 };
 
+static const struct airoha_thermal_soc_data an7563_data = {
+	.pllrg_protect_key = AN7563_SCU_THERMAL_PROTECT_KEY,
+	.pllrg_protect = EN7581_PLLRG_PROTECT,
+	.has_monitor = false,
+	.mfd_child = false,
+	.probe = &an7563_thermal_probe,
+	.get_temp = &an7563_thermal_get_temp,
+};
+
 static int airoha_thermal_wrapper_get_temp(struct udevice *dev, int *temp)
 {
 	const struct airoha_thermal_soc_data *soc_data =
@@ -903,6 +1053,10 @@ static const struct udevice_id airoha_thermal_ids[] = {
 	{
 		.compatible = "airoha,en7523-thermal",
 		.data = (ulong)&en7523_data,
+	},
+	{
+		.compatible = "airoha,an7563-thermal",
+		.data = (ulong)&an7563_data,
 	},
 	{ /* sentinel */ }
 };
