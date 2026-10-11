@@ -25,6 +25,10 @@
  * @cpu_time_us: Total CPU time of this function
  * @run_cnt: Counter of executions occurances
  * @next_call: Next time in us, when the function shall be executed again
+ * @run_gen: Pass of cyclic_run() this entry was last serviced in.  An entry
+ *           carrying the current value is skipped, which is what makes it
+ *           safe for a callback to (un)register cyclics while the list is
+ *           being walked (see common/cyclic.c)
  * @list: List node
  * @already_warned: Flag that we've warned about exceeding CPU time usage
  *
@@ -39,6 +43,7 @@ struct cyclic_info {
 	uint64_t cpu_time_us;
 	uint64_t run_cnt;
 	uint64_t next_call;
+	uint32_t run_gen;
 	struct hlist_node list;
 	bool already_warned;
 #endif
