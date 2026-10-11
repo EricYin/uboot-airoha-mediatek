@@ -1851,6 +1851,17 @@ config CMD_AIROHA_THERMAL
 	  (en7581 / an7583 / en7523). With an optional argument it samples
 	  the sensor several times and reports the average.
 
+config CMD_APBTIMER
+	bool "apbtimer - inspect the Airoha APB timer used as the U-Boot tick"
+	depends on AIROHA_TIMER
+	help
+	  Inspect the Airoha APB timer run by the airoha-timer driver and
+	  validate it from the shell. "apbtimer info" shows the clock the
+	  driver derived and the raw registers, "apbtimer dump" dumps the
+	  whole register block and "apbtimer check" measures the frequency
+	  against the Arm generic timer, the only independent reference
+	  available in U-Boot.
+
 config CMD_UFS
 	bool "ufs - Universal Flash Storage commands"
 	depends on UFS
