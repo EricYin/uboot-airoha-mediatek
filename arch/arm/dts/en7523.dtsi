@@ -190,6 +190,11 @@
 			     <GIC_PPI 10 IRQ_TYPE_LEVEL_LOW>;
 	};
 
+	apb_timer: timer@1fbf0100 {
+		compatible = "airoha,airoha-timer";
+		reg = <0x1fbf0100 0x40>;
+	};
+
 	clk20m: clock-20000000 {
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
