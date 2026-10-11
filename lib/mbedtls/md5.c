@@ -41,6 +41,10 @@ void md5_wd(const unsigned char *input, unsigned int len,
 		const unsigned char *end = input + len;
 		int chunk;
 
+		/* chunk_sz == 0 means "no chunking": see lib/md5.c */
+		if (!chunk_sz)
+			chunk_sz = len;
+
 		while (curr < end) {
 			chunk = end - curr;
 			if (chunk > chunk_sz)

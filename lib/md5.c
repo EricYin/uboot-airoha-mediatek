@@ -282,6 +282,17 @@ md5_wd(const unsigned char *input, unsigned int len, unsigned char output[16],
 
 #if !defined(USE_HOSTCC) && \
     (defined(CONFIG_HW_WATCHDOG) || defined(CONFIG_WATCHDOG))
+	/*
+	 * A chunk size of 0 means "no chunking": without this the loop below
+	 * would never make progress (chunk is clamped to chunk_sz, so it
+	 * would stay 0 and curr would never advance) and spin here forever,
+	 * calling schedule() over and over - the system then looks hung
+	 * while the cyclic framework keeps running.  One chunk covering the
+	 * whole input is also what the non-watchdog build does.
+	 */
+	if (!chunk_sz)
+		chunk_sz = len;
+
 	curr = input;
 	end = input + len;
 	while (curr < end) {

@@ -46,6 +46,10 @@ void sha1_csum_wd(const unsigned char *input, unsigned int ilen,
 		const unsigned char *end = input + ilen;
 		int chunk;
 
+		/* chunk_sz == 0 means "no chunking": see lib/md5.c */
+		if (!chunk_sz)
+			chunk_sz = ilen;
+
 		while (curr < end) {
 			chunk = end - curr;
 			if (chunk > chunk_sz)

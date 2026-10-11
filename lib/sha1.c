@@ -322,6 +322,12 @@ void sha1_csum_wd(const unsigned char *input, unsigned int ilen,
 
 #if !defined(USE_HOSTCC) && \
     (defined(CONFIG_HW_WATCHDOG) || defined(CONFIG_WATCHDOG))
+	/* A chunk size of 0 means "no chunking": see md5_wd() in lib/md5.c -
+	 * the loop below would otherwise never make progress.
+	 */
+	if (!chunk_sz)
+		chunk_sz = ilen;
+
 	curr = input;
 	end = input + ilen;
 	while (curr < end) {

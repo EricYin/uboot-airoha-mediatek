@@ -245,6 +245,12 @@ uint32_t crc32_wd(uint32_t crc, const unsigned char *buf, uInt len,
 	const unsigned char *end, *curr;
 	int chunk;
 
+	/* A chunk size of 0 means "no chunking": see md5_wd() in lib/md5.c -
+	 * the loop below would otherwise never make progress.
+	 */
+	if (!chunk_sz)
+		chunk_sz = len;
+
 	curr = buf;
 	end = buf + len;
 	while (curr < end) {
