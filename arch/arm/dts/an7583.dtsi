@@ -142,6 +142,11 @@
 			interrupts = <GIC_PPI 9 IRQ_TYPE_LEVEL_LOW>;
 		};
 
+		apb_timer: timer@1fbf0100 {
+			compatible = "airoha,airoha-timer";
+			reg = <0x0 0x1fbf0100 0x0 0x40>;
+		};
+
 		chip_scu: syscon@1fa20000 {
 			compatible = "airoha,en7581-chip-scu", "syscon";
 			reg = <0x0 0x1fa20000 0x0 0x388>;
