@@ -174,6 +174,11 @@
 			interrupts = <GIC_PPI 9 IRQ_TYPE_LEVEL_LOW>;
 		};
 
+		apb_timer: timer@1fbf0100 {
+			compatible = "airoha,airoha-timer";
+			reg = <0x0 0x1fbf0100 0x0 0x40>;
+		};
+
 		snfi: spi@1fa10000 {
 			compatible = "airoha,en7581-snand";
 			reg = <0x0 0x1fa10000 0x0 0x140>,
