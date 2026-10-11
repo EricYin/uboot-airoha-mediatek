@@ -56,6 +56,13 @@
  * the board are silently ignored and one environment works on several
  * boards.  An unset or empty variable means "no LED activity for this
  * phase"; nothing is blinking unless it was asked for.
+ *
+ * While a phase is active the effect is advanced by the cyclic framework
+ * as well, so that rotating effects keep running inside blocking flash
+ * operations.  Starting or stopping a blink makes a LED driver touch the
+ * cyclic list, which must not happen from inside that walk: such a
+ * transition is postponed to the next poll from a normal context (see
+ * fsled_program() and failsafe_led_poll()).
  */
 
 #include <cyclic.h>
@@ -64,11 +71,14 @@
 #include <led.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
+#include <asm/global_data.h>
 #include <time.h>
 #include <vsprintf.h>
 
 #include <failsafe/led.h>
 #include <cprint.h>
+
+DECLARE_GLOBAL_DATA_PTR;
 
 /*
  * This file is only built when CONFIG_WEBUI_FAILSAFE_LED is enabled, which
@@ -123,6 +133,7 @@ static struct {
 	u8 frame;
 	ulong next_tick;
 	bool cyclic_done;
+	bool pending;		/* a blink transition was postponed */
 	struct cyclic_info cyclic;
 	struct failsafe_led_dev leds[LED_MAX];
 	struct failsafe_led_frame frames[FRAME_MAX];
@@ -341,6 +352,33 @@ static void fsled_parse(enum failsafe_led_phase phase)
 }
 
 /*
+ * Starting to blink - or stopping a blink - makes a software blink driver
+ * register resp. unregister a cyclic of its own.  Done from inside a cyclic
+ * callback that modifies the very list the cyclic framework is walking, and
+ * the entry it removes may even be freed while the walk is running.
+ *
+ * Such a transition is therefore postponed to the next poll from a normal
+ * context.  This is the second line of defence: the framework itself
+ * tolerates a callback that changes the list, and the SW blink driver keeps
+ * its entry registered instead of dropping it.  GD_FLG_CYCLIC_RUNNING is
+ * never set without CONFIG_CYCLIC, so nothing changes on a build without
+ * the cyclic framework.
+ */
+static bool fsled_defer_blink(struct failsafe_led_dev *ld,
+			      enum led_state_t state)
+{
+	if ((ld->applied == LEDST_BLINK) == (state == LEDST_BLINK))
+		return false;
+
+	if (!(gd->flags & GD_FLG_CYCLIC_RUNNING))
+		return false;
+
+	fsled.pending = true;
+
+	return true;
+}
+
+/*
  * Program one LED to the requested state.  Re-programming a LED that is
  * already in the requested state is skipped: a software blink is
  * restarted (and loses its phase) by each redundant
@@ -355,6 +393,14 @@ static bool fsled_program(struct failsafe_led_dev *ld,
 {
 	if (!ld->dev)
 		return false;
+
+	/*
+	 * Leave the LED as it is for now and retry from a safe context; it
+	 * counts as usable, so a postponed transition is not mistaken for a
+	 * LED that does not exist.
+	 */
+	if (fsled_defer_blink(ld, state))
+		return true;
 
 	if (state == LEDST_BLINK) {
 		if (ld->applied == LEDST_BLINK &&
@@ -510,6 +556,17 @@ void failsafe_led_poll(void)
 	if (!fsled.active || !fsled.n_frames)
 		return;
 
+	/*
+	 * Retry a blink transition that had to wait for a context outside
+	 * the cyclic walk: both the button polling and the httpd poll loop
+	 * end up here, so the LED catches up as soon as one of them runs
+	 * again - which is also the case right after a flash operation.
+	 */
+	if (fsled.pending && !(gd->flags & GD_FLG_CYCLIC_RUNNING)) {
+		fsled.pending = false;
+		fsled_apply();
+	}
+
 	if (!time_after_eq(get_timer(0), fsled.next_tick))
 		return;
 
@@ -545,4 +602,5 @@ void failsafe_led_off(void)
 	fsled.n_leds = 0;
 	fsled.n_frames = 0;
 	fsled.frame = 0;
+	fsled.pending = false;
 }
