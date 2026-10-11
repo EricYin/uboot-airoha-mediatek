@@ -7,12 +7,14 @@
 /* #define	DEBUG	*/
 
 #include <autoboot.h>
+#include <boot_mode.h>
 #include <button.h>
 #include <bootstage.h>
 #include <bootstd.h>
 #include <cli.h>
 #include <command.h>
 #include <console.h>
+#include <cprint.h>
 #include <env.h>
 #include <fdtdec.h>
 #include <init.h>
@@ -139,6 +141,12 @@ void main_loop(void)
 		printf("Boot aborted (env abort), entering command line\n");
 		cli_loop();
 		panic("No CLI available");
+	}
+
+	if (IS_ENABLED(CONFIG_WEB_FAILSAFE_ON_RAM_BOOT) &&
+	    boot_mode_get() == BOOT_MODE_RAM) {
+		cprintln(CAUTION, "Running from RAM, starting web failsafe");
+		run_command("httpd", 0);
 	}
 
 	if (IS_ENABLED(CONFIG_CMD_BTNCHK))

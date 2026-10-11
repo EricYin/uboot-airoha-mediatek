@@ -37,6 +37,31 @@ config WEB_FAILSAFE_AFTER_BOOT_FAILURE
 	  run before their TFTP recovery fallback so that a failed boot has
 	  priority over the (endless) TFTP recovery loop.
 
+config WEB_FAILSAFE_ON_RAM_BOOT
+	bool "Start failsafe when this U-Boot was loaded into RAM"
+	depends on BOOT_MODE
+	default y
+	help
+	  When U-Boot detects that the running image came from RAM instead
+	  of the flash (the volatile XMODEM recovery session left by the
+	  boot chain - see the boot mode report in common/boot_mode.c), it
+	  starts the failsafe web UI instead of running the boot command.
+
+	  A RAM session is volatile: everything uploaded so far lives only
+	  in DRAM, so booting from flash (or finding nothing to boot) is
+	  exactly the brick condition the web failsafe exists to prevent.
+	  Handing control to the web UI lets the user upload and write a
+	  bootloader / firmware to the flash before the next reset.
+
+	  The check runs in main_loop() (common/main.c) in front of the boot
+	  command, because with CONFIG_AUTOBOOT_MENU_SHOW the boot menu
+	  executes the selected entry itself and leaves autoboot_command()
+	  with stored_bootdelay == -1, i.e. with its autoboot block skipped.
+
+	  The environment variable 'boot_mode' (auto|ram|flash) overrides
+	  the boot chain report; setting it to "ram" forces this behaviour
+	  while "flash" disables it.
+
 config WEBUI_FAILSAFE_LED
 	bool "LED status indication"
 	depends on LED
