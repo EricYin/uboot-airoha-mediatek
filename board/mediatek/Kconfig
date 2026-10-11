@@ -109,6 +109,26 @@ config MTK_DEFAULT_FIT_BOOT_CONF
 	  FIT image to be used on multiple boards.
 	  If left empty, the default one specified in FIT will be used.
 
+config MTK_EFUSE
+	bool "Enable MediaTek eFuse support (SMC to secure monitor)"
+	depends on ARM
+	select ARM_SMCCC
+	default n
+	help
+	  Provide the MediaTek eFuse library (mtk_efuse.c) that talks to
+	  the secure monitor through an SMC (ARM SMC Calling Convention) to
+	  read / write / disable eFuse fields.  Disabled by default; enable
+	  only when the secure monitor exposes the MTK eFuse SMC services.
+
+config MTK_EFUSE_CMD
+	bool "Enable 'efuse' U-Boot command (MTK eFuse read/write)"
+	depends on MTK_EFUSE
+	default n
+	help
+	  Provide the 'efuse' U-Boot command (read / write sub-commands)
+	  built on top of the MediaTek eFuse library.  Disabled by default;
+	  enable together with MTK_EFUSE.
+
 endmenu # Mediatek specific configurations
 
 endif # ARCH_MEDIATEK || ARCH_MTMIPS
