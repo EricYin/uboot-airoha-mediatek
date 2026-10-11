@@ -86,7 +86,10 @@ void failsafe_led_set_phase(enum failsafe_led_phase phase);
  * Must be called periodically; long running loops (button polling, the
  * httpd poll loop) call it directly, and, when CONFIG_CYCLIC is enabled,
  * it is additionally driven from the cyclic framework so that rotating
- * effects keep running even inside blocking flash operations.
+ * effects keep running even inside blocking flash operations.  A change
+ * between blinking and not blinking is only programmed from a call that
+ * is not made inside the cyclic framework itself, so such a transition is
+ * retried by the next call from one of those loops.
  */
 void failsafe_led_poll(void);
 

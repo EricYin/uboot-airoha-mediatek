@@ -70,6 +70,13 @@ int led_sw_set_period(struct udevice *dev, int period_ms)
 		uc_plat->sw_blink = sw_blink;
 	}
 
+	/*
+	 * Only a blink that never ran needs a cyclic: once registered the
+	 * entry stays with the LED for good (see led_sw_on_state_change())
+	 * and a new period is applied in place.  Registering again here
+	 * could change the cyclic list while the cyclic framework is walking
+	 * it, which is exactly what this file must not do.
+	 */
 	if (sw_blink->state == LED_SW_BLINK_ST_DISABLED) {
 		cyclic_register(&sw_blink->cyclic, led_sw_blink,
 				half_period_us, sw_blink->cyclic_name);
@@ -124,10 +131,21 @@ bool led_sw_on_state_change(struct udevice *dev, enum led_state_t state)
 		return true;
 	}
 
-	/* stop blinking */
-	uc_plat->sw_blink = NULL;
-	cyclic_unregister(&sw_blink->cyclic);
-	free(sw_blink);
+	/*
+	 * Stop blinking, but keep the object and its registered cyclic in
+	 * place.  This runs from within a cyclic callback as well - a LED
+	 * animation alternating blinking and non-blinking frames does
+	 * exactly that - and a cyclic must never be unregistered, let alone
+	 * freed, while the framework walks its list.
+	 *
+	 * NOT_READY means "registered, but not blinking": led_sw_blink()
+	 * ignores it, led_sw_is_blinking() reports "not blinking" and a
+	 * following led_set_period() updates the period in place instead of
+	 * registering a second time.  Keeping the object also keeps the
+	 * period of the last blink, so resuming an animation does not have
+	 * to reallocate anything.
+	 */
+	sw_blink->state = LED_SW_BLINK_ST_NOT_READY;
 
 	return false;
 }
