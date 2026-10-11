@@ -65,6 +65,19 @@ config ALTERA_TIMER
 	  Select this to enable a timer for Altera devices. Please find
 	  details on the "Embedded Peripherals IP User Guide" of Altera.
 
+config AIROHA_TIMER
+	bool "Airoha APB timer support"
+	depends on TIMER && ARCH_AIROHA
+	help
+	  Select this to enable the APB timer found on the Airoha ARM SoCs
+	  (EN7523, AN7563, AN7581, AN7583).  One of its 32-bit down counters
+	  is run as a free running counter and used as the U-Boot tick.
+
+	  The APB timer replaces the Arm generic timer: enabling CONFIG_TIMER
+	  makes arch/arm/cpu/armv8/Makefile leave out generic_timer.o, and on
+	  the 32-bit SoCs (EN7523, AN7563) CONFIG_SYS_ARCH_TIMER must be
+	  turned off as well.
+
 config ANDES_PLMT_TIMER
 	bool
 	depends on RISCV_MMODE

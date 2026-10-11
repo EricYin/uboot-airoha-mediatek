@@ -5,6 +5,7 @@
 obj-y += timer-uclass.o
 obj-$(CONFIG_ADI_SC5XX_TIMER) += adi_sc5xx_timer.o
 obj-$(CONFIG_ALTERA_TIMER)	+= altera_timer.o
+obj-$(CONFIG_AIROHA_TIMER)	+= airoha-timer.o
 obj-$(CONFIG_$(PHASE_)ANDES_PLMT_TIMER) += andes_plmt_timer.o
 obj-$(CONFIG_ARC_TIMER)	+= arc_timer.o
 obj-$(CONFIG_ARM_TWD_TIMER)	+= arm_twd_timer.o
