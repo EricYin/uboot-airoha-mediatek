@@ -444,6 +444,17 @@ config AIROHA_DEFAULT_FIT_BOOT_CONF
 	  FIT image to be used on multiple boards.
 	  If left empty, the default one specified in FIT will be used.
 
+config CMD_AIROHA_EFUSE
+	bool "Enable efuse / phy_efuse commands (SMC to secure monitor)"
+	depends on ARCH_AIROHA
+	select ARM_SMCCC
+	default n
+	help
+	  Provide the 'efuse' and 'phy_efuse' U-Boot commands that forward
+	  their arguments to the Airoha secure monitor through an SMC
+	  (ARM SMC Calling Convention).  Disabled by default; enable only
+	  when the secure monitor exposes these debug / efuse services.
+
 endmenu # Airoha specific configurations
 
 endif # ARCH_AIROHA || ARCH_ECONET
