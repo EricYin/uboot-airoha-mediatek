@@ -91,6 +91,15 @@ config WDT
 	  What exactly happens when the timer expires is up to a particular
 	  device/driver.
 
+config WDT_AIROHA
+	bool "Airoha watchdog timer support"
+	depends on WDT && ARCH_AIROHA
+	help
+	  Select this to enable the watchdog timer embedded in the Airoha ARM
+	  SoCs (EN7523, AN7563, AN7581, AN7583).  It is counter 5 of the APB
+	  timer block and resets the SoC when it expires.  The watchdog is
+	  stopped when the driver is probed.
+
 config WDT_APPLE
 	bool "Apple watchdog timer support"
 	depends on WDT

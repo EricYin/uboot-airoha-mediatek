@@ -34,6 +34,10 @@
  * configuration bit.  U-Boot takes no timer interrupt, and the counter runs
  * with the bit either way, so the driver leaves it alone and "apbtimer info"
  * reports it.
+ *
+ * The vendor driver names it AIROHA_TIMER_CTRL_INT_ACK(n): writing a 1 to it
+ * clears the pending interrupt, which fits the flag behaviour described above
+ * (and is why the vendor sets it, rather than clears it, to acknowledge).
  */
 #define AIROHA_APB_TIMER_INT(n)		BIT((n) + 16)
 
@@ -43,6 +47,36 @@
  * that to 64 bits.
  */
 #define AIROHA_APB_TIMER_LOAD		0xffffffff
+
+/*
+ * The watchdog is counter 5.  It uses the load and current value registers of
+ * timer 5, while the two registers the next counter would own are repurposed
+ * as its pretimeout threshold and its reload trigger.
+ */
+#define AIROHA_APB_TIMER_WDT		5
+#define AIROHA_APB_TIMER_WDT_LDV	AIROHA_APB_TIMER_LDV(AIROHA_APB_TIMER_WDT)
+#define AIROHA_APB_TIMER_WDT_VLR	AIROHA_APB_TIMER_VLR(AIROHA_APB_TIMER_WDT)
+#define AIROHA_APB_TIMER_WDT_THSLD	0x34	/* pretimeout threshold */
+#define AIROHA_APB_TIMER_WDT_RLD	0x38	/* reload trigger */
+/* Writing this to AIROHA_APB_TIMER_WDT_RLD reloads the counter */
+#define AIROHA_APB_TIMER_WDT_RELOAD	BIT(0)
+
+/* Enable bit of the watchdog counter inside AIROHA_APB_TIMER_CTL */
+#define AIROHA_APB_TIMER_WDT_TIMER_EN	BIT(AIROHA_APB_TIMER_WDT)
+/* Reset the SoC when the counter reaches zero */
+#define AIROHA_APB_TIMER_WDT_EN		BIT(25)
+/*
+ * Pending interrupt of the watchdog counter (the vendor's INT_ACK bit).
+ * Writing a 1 clears it; U-Boot takes no timer interrupt but clears a stale
+ * one when it arms the watchdog.
+ */
+#define AIROHA_APB_TIMER_WDT_INT_ACK	AIROHA_APB_TIMER_INT(AIROHA_APB_TIMER_WDT)
+
+/*
+ * The load register is 32 bits wide, so the longest timeout a single count
+ * fits in is AIROHA_APB_TIMER_WDT_LOAD_MAX ticks of the watchdog clock.
+ */
+#define AIROHA_APB_TIMER_WDT_LOAD_MAX	0xffffffff
 
 /*
  * NP-SCU global parameter register (SYS_GLOBAL_PARM) written by BL2, see the
