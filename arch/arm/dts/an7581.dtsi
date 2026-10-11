@@ -179,6 +179,19 @@
 			reg = <0x0 0x1fbf0100 0x0 0x40>;
 		};
 
+		/*
+		 * The watchdog is counter 5 of the same block and resets the SoC
+		 * when it expires.  U-Boot takes no interrupt, so the pretimeout
+		 * the interrupt would announce is not used.
+		 */
+		watchdog: watchdog@1fbf0100 {
+			compatible = "airoha,en7581-wdt";
+			reg = <0x0 0x1fbf0100 0x0 0x40>;
+			timeout-sec = <27>;
+			interrupts = <GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>;
+			airoha,scu = <&scuclk>;
+		};
+
 		snfi: spi@1fa10000 {
 			compatible = "airoha,en7581-snand";
 			reg = <0x0 0x1fa10000 0x0 0x140>,
