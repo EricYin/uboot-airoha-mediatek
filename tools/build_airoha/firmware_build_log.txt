@@ -1,9 +1,9 @@
 ========================================================================================================================
   Airoha SoC BL2/BL31 Firmware Build Information Log
 ========================================================================================================================
-  Generated:    2026-10-05 23:37:39
+  Generated:    2026-10-12 15:34:46
   Scanned dir:  tools/build_airoha
-  BL2 files:    10   BL31 files: 10   (legacy: 6/6, opensource: 4/4)
+  BL2 files:    11   BL31 files: 11   (legacy: 7/7, opensource: 4/4)
 
 ========================================================================================================================
   [OVERVIEW] BL2 (Preloader) Build Information - Legacy (SDK)
@@ -14,6 +14,7 @@
   an7581_default             v2.3           16:38:10, Apr  8 2024    AN7581DRAMC V0.9       lzma     115093 bytes (0x1c195) VALID   
   an7583_default             v2.3           20:29:59, Dec  2 2024    AN7583DRAMC V0.6       lzma     115117 bytes (0x1c1ad) VALID   
   en7523_default             v2.3           23:10:14, Feb 22 2023    EN7523DRAMC V0.2       struct   119714 bytes (0x1d3a2) VALID   
+  en7529_default             v2.3           19:17:43, Aug 15 2025    EN7523DRAMC V0.6       struct   120782 bytes (0x1d7ce) VALID   
   en7562_default             v2.3           13:16:51, Oct 18 2023    EN7523DRAMC V0.6       struct   119478 bytes (0x1d2b6) VALID   
   fsl61167_default           v2.3           15:48:35, Oct 10 2023    FSL61167DRAMC V0.8     lzma     115320 bytes (0x1c278) VALID   
 
@@ -26,6 +27,7 @@
   an7581_default             v2.3():                      16:38:47, Apr  8 2024    LZMA compressed 40960 bytes (0xa000) -> 95235 bytes (0x17403) VALID   
   an7583_default             v2.3():                      12:04:54, Nov  7 2024    LZMA compressed 43008 bytes (0xa800) -> 99905 bytes (0x18641) VALID   
   en7523_default             v2.1(release):               09:55:09, Dec  8 2021    LZMA compressed 13312 bytes (0x3400) -> 28800 bytes (0x7080) VALID   
+  en7529_default             v2.3():                      22:44:57, Jul  6 2023    LZMA compressed 39936 bytes (0x9c00) -> 95235 bytes (0x17403) VALID   
   en7562_default             v2.3():V7_3_283_650_verify_20220426_v002-dirty 16:31:55, Jun  2 2022    LZMA compressed 39936 bytes (0x9c00) -> 91139 bytes (0x16403) VALID   
   fsl61167_default           v2.3():                      15:49:16, Oct 10 2023    LZMA compressed 41984 bytes (0xa400) -> 95775 bytes (0x1761f) VALID   
 
@@ -245,6 +247,49 @@
     Validation:
       OK: file size 13312 bytes (>= 0x100)
       OK: LZMA stream (props=0x5D) decompressed (28800 bytes)
+    Status:     VALID
+
+------------------------------------------------------------------------------------------------------------------------
+  Platform: en7529_default
+------------------------------------------------------------------------------------------------------------------------
+
+  --- BL2: bl2.bin ---
+    File path:  legacy/en7529_default/bl2.bin
+    Version:    v2.3
+    Build Date: 19:17:43, Aug 15 2025
+    Detected Chip: en7523
+    Mode:       struct
+    File Size:  120782 bytes (0x1d7ce)
+    DRAMC:      EN7523DRAMC V0.6
+    Supported DRAM Types:
+      - dram_type = 
+    Hashes:
+      MD5:    2f996cbea2f524b3fef7775262935566
+      SHA256: 4a89247cf24bdd6b6432107f7ca4e2ba26f7e24db2ef62fc5b3ba1a9a0f8e21a
+      CRC32:  0xFFFFFFFF
+    Validation:
+      OK: file size 120782 bytes (>= 0x4000)
+      OK: struct layout parsed, 7 build/version strings
+    Status:     VALID
+
+  --- BL31: bl31.lzma ---
+    File path:  legacy/en7529_default/bl31.lzma
+    Version:    v2.3():
+    Build Date: 22:44:57, Jul  6 2023
+    Format:     LZMA compressed
+    Compressed: 39936 bytes (0x9c00)
+    Decompressed: 95235 bytes (0x17403)
+    Hashes:
+      MD5:    3d6ecef506b908b83565ae0b47eb68b7
+      SHA256: 8fb1bbe2f8a0084ea2fd51b47d333af033a34287d3f749e9cbbc61a8592381e6
+      CRC32:  0xE4067569
+    Decompressed Hashes:
+      MD5:    6d62188c5af3475aec71930cfd697cf4
+      SHA256: 86665e76380f5a53d3bf9dcdd46568f8ffe1af3187cbce468013f6dcd28f0752
+      CRC32:  0x98CC128B
+    Validation:
+      OK: file size 39936 bytes (>= 0x100)
+      OK: LZMA stream (props=0x5D) decompressed (95235 bytes)
     Status:     VALID
 
 ------------------------------------------------------------------------------------------------------------------------
