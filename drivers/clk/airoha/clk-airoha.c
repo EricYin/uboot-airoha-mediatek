@@ -33,10 +33,13 @@
 #define REG_PCIE_XSI0_SEL_MASK		GENMASK(14, 13)
 #define REG_PCIE_XSI1_SEL_MASK		GENMASK(12, 11)
 #define REG_CRYPTO_CLKSRC2		0x20c
+/* AN7589 only: PM / UPS (packet switch) clock source selection */
+#define REG_PM_UPS_CLKSRC		0x210
 
 #define EN7523_MAX_CLKS			8
 #define EN7581_MAX_CLKS			9
 #define EN7583_MAX_CLKS			11
+#define AN7589_MAX_CLKS			25
 
 struct airoha_clk_desc {
 	int id;
@@ -87,6 +90,28 @@ static const u32 spi7583_base[] = { 400000000, 12500000 };
 static const u32 npu7583_base[] = { 666000000, 800000000, 720000000, 600000000 };
 static const u32 crypto7583_base[] = { 540672000, 400000000 };
 static const u32 emmc7583_base[] = { 150000000, 200000000 };
+/* AN7589 */
+static const u32 emi7589_base[] = { 400000000, 540672000, 480000000, 600000000,
+				    685000000, 720000000, 800000000, 800000000 };
+static const u32 bus7589_base[] = { 540672000, 600000000, 720000000, 800000000,
+				    850000000, 960000000, 960000000, 960000000 };
+static const u32 sbus_spim7589_base[] = { 100000000, 200000000 };
+static const u32 spim7589_base[] = { 40000000, 180000000, 200000000, 200000000 };
+static const u32 npu7589_base[] = { 540000000, 685000000, 720000000, 800000000,
+				    850000000, 600000000, 960000000, 960000000 };
+static const u32 crypto7589_base[] = { 480000000, 720000000, 960000000, 850000000 };
+static const u32 emmc7589_base[] = { 360000000, 400000000 };
+static const u32 soe7589_base[] = { 425000000, 600000000, 720000000, 800000000,
+				    850000000, 850000000, 850000000, 850000000 };
+static const u32 todgen7589_base[] = { 600000000, 300000000 };
+static const u32 efuse7589_base[] = { 200000000, 100000000 };
+static const u32 tinynpu7589_base[] = { 425000000, 480000000, 540000000, 720000000 };
+static const u32 ecc7589_base[] = { 300000000, 600000000 };
+static const u32 pm_ups7589_base[] = { 400000000, 480000000 };
+static const u32 dq_ups7589_base[] = { 200000000, 270000000, 480000000, 540000000 };
+static const u32 tm_ups7589_base[] = { 400000000, 540000000, 720000000, 800000000,
+				       720000000, 850000000, 600000000, 685000000 };
+static const u32 acp7589_base[] = { 480000000, 720000000 };
 
 static const struct airoha_clk_desc en7523_base_clks[EN7523_MAX_CLKS] = {
 	[EN7523_CLK_GSW] = {
@@ -443,6 +468,293 @@ static const struct airoha_clk_desc an7583_base_clks[EN7583_MAX_CLKS] = {
 	}
 };
 
+/*
+ * AN7589.  Same SCU clock registers as AN7583 (0x1b4..0x1c8, 0x20c), plus
+ * REG_PM_UPS_CLKSRC (0x210) for the PM / UPS / tiny NPU / SPI2 sources.
+ */
+static const struct airoha_clk_desc an7589_base_clks[AN7589_MAX_CLKS] = {
+	[EN7523_CLK_GSW] = {
+		.id = EN7523_CLK_GSW,
+		.name = "gsw",
+
+		.base_reg = REG_GSW_CLK_DIV_SEL,
+		.base_value = 400000000,
+	},
+	[EN7523_CLK_EMI] = {
+		.id = EN7523_CLK_EMI,
+		.name = "emi",
+
+		.base_reg = REG_EMI_CLK_DIV_SEL,
+		.base_bits = 3,
+		.base_shift = 8,
+		.base_values = emi7589_base,
+		.n_base_values = ARRAY_SIZE(emi7589_base),
+
+		.div_bits = 3,
+		.div_shift = 0,
+		.div_step = 1,
+		.div_offset = 1,
+	},
+	[EN7523_CLK_BUS] = {
+		.id = EN7523_CLK_BUS,
+		.name = "bus",
+
+		.base_reg = REG_BUS_CLK_DIV_SEL,
+		.base_bits = 3,
+		.base_shift = 8,
+		.base_values = bus7589_base,
+		.n_base_values = ARRAY_SIZE(bus7589_base),
+
+		.div_bits = 3,
+		.div_shift = 0,
+		.div_step = 1,
+		.div_offset = 1,
+	},
+	[EN7523_CLK_SLIC] = {
+		.id = EN7523_CLK_SLIC,
+		.name = "slic",
+
+		.base_reg = REG_SPI_CLK_FREQ_SEL,
+		.base_bits = 1,
+		.base_shift = 0,
+		.base_values = slic_base,
+		.n_base_values = ARRAY_SIZE(slic_base),
+
+		.div_reg = REG_SPI_CLK_DIV_SEL,
+		.div_bits = 5,
+		.div_shift = 24,
+		.div_val0 = 20,
+		.div_step = 2,
+	},
+	[EN7523_CLK_SPI] = {
+		.id = EN7523_CLK_SPI,
+		.name = "spi",
+
+		.base_reg = REG_SPI_CLK_FREQ_SEL,
+		.base_bits = 1,
+		.base_shift = 1,
+		.base_values = spi7583_base,
+		.n_base_values = ARRAY_SIZE(spi7583_base),
+
+		.div_reg = REG_SPI_CLK_DIV_SEL,
+		.div_bits = 5,
+		.div_shift = 8,
+		.div_val0 = 40,
+		.div_step = 2,
+	},
+	[EN7523_CLK_NPU] = {
+		.id = EN7523_CLK_NPU,
+		.name = "npu",
+
+		.base_reg = REG_NPU_CLK_DIV_SEL,
+		.base_bits = 3,
+		.base_shift = 9,
+		.base_values = npu7589_base,
+		.n_base_values = ARRAY_SIZE(npu7589_base),
+
+		.div_bits = 3,
+		.div_shift = 0,
+		.div_step = 1,
+		.div_offset = 1,
+	},
+	[EN7523_CLK_CRYPTO] = {
+		.id = EN7523_CLK_CRYPTO,
+		.name = "crypto",
+
+		.base_reg = REG_CRYPTO_CLKSRC2,
+		.base_bits = 2,
+		.base_shift = 0,
+		.base_values = crypto7589_base,
+		.n_base_values = ARRAY_SIZE(crypto7589_base),
+	},
+	[EN7581_CLK_EMMC] = {
+		.id = EN7581_CLK_EMMC,
+		.name = "emmc",
+
+		.base_reg = REG_CRYPTO_CLKSRC2,
+		.base_bits = 1,
+		.base_shift = 16,
+		.base_values = emmc7589_base,
+		.n_base_values = ARRAY_SIZE(emmc7589_base),
+	},
+	[AN7583_CLK_MDIO0] = {
+		.id = AN7583_CLK_MDIO0,
+		.name = "mdio0",
+
+		.base_reg = REG_CRYPTO_CLKSRC2,
+
+		.base_value = 25000000,
+
+		.div_bits = 4,
+		.div_shift = 18,
+		.div_step = 1,
+		.div_offset = 1,
+	},
+	[AN7583_CLK_MDIO1] = {
+		.id = AN7583_CLK_MDIO1,
+		.name = "mdio1",
+
+		.base_reg = REG_CRYPTO_CLKSRC2,
+
+		.base_value = 25000000,
+
+		.div_bits = 4,
+		.div_shift = 22,
+		.div_step = 1,
+		.div_offset = 1,
+	},
+	[AN7589_CLK_SOE] = {
+		.id = AN7589_CLK_SOE,
+		.name = "soe",
+
+		.base_reg = REG_CRYPTO_CLKSRC2,
+		.base_bits = 2,
+		.base_shift = 9,
+		.base_values = soe7589_base,
+		.n_base_values = ARRAY_SIZE(soe7589_base),
+
+		.div_bits = 3,
+		.div_shift = 0,
+		.div_step = 1,
+		.div_offset = 1,
+	},
+	[AN7589_CLK_TODGEN] = {
+		.id = AN7589_CLK_TODGEN,
+		.name = "todgen",
+
+		.base_reg = REG_CRYPTO_CLKSRC2,
+		.base_bits = 2,
+		.base_shift = 7,
+		.base_values = todgen7589_base,
+		.n_base_values = ARRAY_SIZE(todgen7589_base),
+
+		.div_bits = 4,
+		.div_shift = 26,
+		.div_step = 1,
+		.div_offset = 1,
+	},
+	[AN7589_CLK_EFUSE] = {
+		.id = AN7589_CLK_EFUSE,
+		.name = "efuse",
+
+		.base_reg = REG_CRYPTO_CLKSRC2,
+		.base_bits = 1,
+		.base_shift = 6,
+		.base_values = efuse7589_base,
+		.n_base_values = ARRAY_SIZE(efuse7589_base),
+	},
+	[AN7589_CLK_TINY_NPU] = {
+		.id = AN7589_CLK_TINY_NPU,
+		.name = "tinynpu",
+
+		.base_reg = REG_PM_UPS_CLKSRC,
+		.base_bits = 2,
+		.base_shift = 14,
+		.base_values = tinynpu7589_base,
+		.n_base_values = ARRAY_SIZE(tinynpu7589_base),
+	},
+	[AN7589_CLK_ECC] = {
+		.id = AN7589_CLK_ECC,
+		.name = "ecc",
+
+		.base_reg = REG_PM_UPS_CLKSRC,
+		.base_bits = 1,
+		.base_shift = 8,
+		.base_values = ecc7589_base,
+		.n_base_values = ARRAY_SIZE(ecc7589_base),
+	},
+	[AN7589_CLK_PM_UPS] = {
+		.id = AN7589_CLK_PM_UPS,
+		.name = "pm_ups",
+
+		.base_reg = REG_PM_UPS_CLKSRC,
+		.base_bits = 1,
+		.base_shift = 0,
+		.base_values = pm_ups7589_base,
+		.n_base_values = ARRAY_SIZE(pm_ups7589_base),
+	},
+	[AN7589_CLK_DQ_UPS] = {
+		.id = AN7589_CLK_DQ_UPS,
+		.name = "dq_ups",
+
+		.base_reg = REG_PM_UPS_CLKSRC,
+		.base_bits = 2,
+		.base_shift = 1,
+		.base_values = dq_ups7589_base,
+		.n_base_values = ARRAY_SIZE(dq_ups7589_base),
+	},
+	[AN7589_CLK_TM_UPS] = {
+		.id = AN7589_CLK_TM_UPS,
+		.name = "tm_ups",
+
+		.base_reg = REG_PM_UPS_CLKSRC,
+		.base_bits = 3,
+		.base_shift = 3,
+		.base_values = tm_ups7589_base,
+		.n_base_values = ARRAY_SIZE(tm_ups7589_base),
+	},
+	[AN7589_CLK_ACP] = {
+		.id = AN7589_CLK_ACP,
+		.name = "acp",
+
+		.base_reg = REG_PM_UPS_CLKSRC,
+		.base_bits = 1,
+		.base_shift = 7,
+		.base_values = acp7589_base,
+		.n_base_values = ARRAY_SIZE(acp7589_base),
+	},
+	[AN7589_CLK_MDIO2] = {
+		.id = AN7589_CLK_MDIO2,
+		.name = "mdio2",
+
+		.base_reg = REG_NPU_CLK_DIV_SEL,
+
+		.base_value = 25000000,
+
+		.div_bits = 4,
+		.div_shift = 16,
+		.div_step = 1,
+		.div_offset = 1,
+	},
+	[AN7589_CLK_TOP_CB_M_D2] = {
+		.id = AN7589_CLK_TOP_CB_M_D2,
+		.name = "clk_top_cb_m_d2",
+
+		.base_reg = REG_PM_UPS_CLKSRC,
+		.base_value = 200000000,
+	},
+	[AN7589_CLK_TOP_SPI2_SEL] = {
+		.id = AN7589_CLK_TOP_SPI2_SEL,
+		.name = "spi2_sel",
+
+		.base_reg = REG_PM_UPS_CLKSRC,
+		.base_bits = 2,
+		.base_shift = 20,
+		.base_values = spim7589_base,
+		.n_base_values = ARRAY_SIZE(spim7589_base),
+	},
+	[AN7589_CLK_INFRA_104M_SPI2] = {
+		.id = AN7589_CLK_INFRA_104M_SPI2,
+		.name = "spi2",
+
+		.base_reg = REG_PM_UPS_CLKSRC,
+		.base_bits = 2,
+		.base_shift = 20,
+		.base_values = spim7589_base,
+		.n_base_values = ARRAY_SIZE(spim7589_base),
+	},
+	[AN7589_CLK_INFRA_66M_SPI2_HCK] = {
+		.id = AN7589_CLK_INFRA_66M_SPI2_HCK,
+		.name = "spi2_hclk",
+
+		.base_reg = REG_PM_UPS_CLKSRC,
+		.base_bits = 1,
+		.base_shift = 24,
+		.base_values = sbus_spim7589_base,
+		.n_base_values = ARRAY_SIZE(sbus_spim7589_base),
+	},
+};
+
 static u32 airoha_clk_get_base_rate(const struct airoha_clk_desc *desc, u32 val)
 {
 	if (!desc->base_bits)
@@ -697,6 +1009,11 @@ static const struct airoha_clk_soc_data an7583_data = {
 	.descs = an7583_base_clks,
 };
 
+static const struct airoha_clk_soc_data an7589_data = {
+	.num_clocks = ARRAY_SIZE(an7589_base_clks),
+	.descs = an7589_base_clks,
+};
+
 static const struct udevice_id airoha_clk_ids[] = {
 	{ .compatible = "airoha,en7523-scu",
 	  .data = (ulong)&en7523_data,
@@ -706,6 +1023,9 @@ static const struct udevice_id airoha_clk_ids[] = {
 	},
 	{ .compatible = "airoha,an7583-scu",
 	  .data = (ulong)&an7583_data,
+	},
+	{ .compatible = "airoha,an7589-scu",
+	  .data = (ulong)&an7589_data,
 	},
 	{ }
 };
