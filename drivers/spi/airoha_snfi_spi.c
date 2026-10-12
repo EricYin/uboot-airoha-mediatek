@@ -1357,11 +1357,16 @@ static const struct airoha_snand_soc_data en7523_spi_data = {
 	.has_boot_trp = true,
 };
 
+static const struct airoha_snand_soc_data airoha_snor_spi_data = {
+	.has_boot_trp = true,
+};
+
 static const struct udevice_id airoha_snand_ids[] = {
 	{ .compatible = "econet,en751221-spi", .data = (ulong)&en751221_spi_data },
 	{ .compatible = "econet,en75xx-spi", .data = (ulong)&en7523_spi_data },
 	{ .compatible = "airoha,en7523-snand", .data = (ulong)&en7523_spi_data },
 	{ .compatible = "airoha,en7581-snand", .data = (ulong)&en7523_spi_data },
+	{ .compatible = "airoha,airoha-snor", .data = (ulong)&airoha_snor_spi_data },
 	{ }
 };
 
