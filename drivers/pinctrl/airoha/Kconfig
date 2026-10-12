@@ -45,3 +45,16 @@ config PINCTRL_AIROHA_AN7583
 	bool "Airoha AN7583 pin controller and gpio driver"
 	depends on TARGET_AN7583
 	select PINCTRL_AIROHA
+
+config PINCTRL_AIROHA_AN7589
+	bool "Airoha AN7589 pin controller and gpio driver"
+	depends on TARGET_AN7589
+	select PINCTRL_AIROHA
+	help
+	  Enable the AN7589 GPIO controller.
+
+	  The AN7589 pin multiplexing ("IOMUX") register description is not
+	  available yet, so this driver provides GPIO (and the pinconf
+	  plumbing) only and registers no pinmux group or function.  Pin
+	  multiplexing has to be set up by the boot chain until the vendor
+	  pin map is ported.
