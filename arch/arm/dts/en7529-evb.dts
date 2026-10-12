@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/dts-v1/;
+
+#include "en7523-evb.dts"
+
+/ {
+	model = "Airoha EN7529 Evaluation Board";
+	compatible = "airoha,en7529-evb", "airoha,en7529-evb",
+		     "airoha,en7529", "airoha,en7523";
+};
