@@ -325,6 +325,11 @@
 			#phy-cells = <0>;
 		};
 
+		/*
+		 * TODO: The PCIe controller is not yet supported in U-Boot, so the PCIe nodes 
+		 * are disabled for now.  Once the driver is implemented, the status property
+		 * can be changed to "okay" to enable the PCIe controller.
+		 */
 		pcie0: pcie@1fc00000 {
 			compatible = "airoha,en7581-pcie";
 			device_type = "pci";

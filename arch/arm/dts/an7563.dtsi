@@ -397,10 +397,10 @@
 	};
 
 	/*
-		* Parallel NAND mode of the same NFI block: mutually
-		* exclusive with spi@1fa10000 above, only one of them may
-		* be enabled at a time.
-		*/
+	 * Parallel NAND mode of the same NFI block: mutually
+	 * exclusive with spi@1fa10000 above, only one of them may
+	 * be enabled at a time.
+	 */
 	nand: nand@1fa11000 {
 		compatible = "airoha,en7581-nand";
 		reg = <0x0 0x1fa11000 0x0 0x600>,
@@ -420,6 +420,12 @@
 		status = "disabled";
 	};
 
+
+   /*
+	* TODO: The PCIe controller is not yet supported in U-Boot, so the PCIe nodes 
+	* are disabled for now.  Once the driver is implemented, the status property
+	* can be changed to "okay" to enable the PCIe controller.
+	*/
 	pcie0: pcie@1fa91000 {
 		compatible = "airoha,en7523-pcie", "mediatek,mt7622-pcie";
 		device_type = "pci";
