@@ -124,6 +124,14 @@
 		};
 	};
 
+	pwm: pwm@1fbf0234 {
+		compatible = "airoha,airoha-pwm";
+		reg = <0x1fbf0234 0x20>,
+		      <0x1fbf0268 0x4>,
+		      <0x1fbf0298 0x24>;
+		#pwm-cells = <3>;
+	};
+
 	usb0: usb@1fab0000 {
 		compatible = "mediatek,mtk-xhci";
 		reg = <0x1fab0000 0x3e00>,
