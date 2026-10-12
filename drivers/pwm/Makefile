@@ -10,6 +10,7 @@
 
 obj-$(CONFIG_DM_PWM)		+= pwm-uclass.o
 
+obj-$(CONFIG_PWM_AIROHA)	+= pwm-airoha.o
 obj-$(CONFIG_PWM_ASPEED)	+= pwm-aspeed.o
 obj-$(CONFIG_PWM_AT91)		+= pwm-at91.o
 obj-$(CONFIG_PWM_CADENCE_TTC)	+= pwm-cadence-ttc.o

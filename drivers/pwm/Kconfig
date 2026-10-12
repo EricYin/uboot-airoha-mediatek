@@ -11,6 +11,16 @@ config DM_PWM
 	  frequency/period can be controlled along with the proportion of that
 	  time that the signal is high.
 
+config PWM_AIROHA
+	bool "Enable support for the Airoha GPIO flash/RSP wave generator"
+	depends on ARCH_AIROHA
+	help
+	  PWM channels of the EN7523/AN7563/AN7581/AN7583 SoCs are the
+	  GPIO pins, driven by the "flash/RSP" wave generators inside the
+	  GPIO controller (compatible "airoha,airoha-pwm").  A channel is the
+	  pin number, periods from 4 ms to 1 s are supported and several pins
+	  that map onto the same wave generator share one period/duty cycle.
+
 config PWM_IMX
 	bool "Enable support for i.MX27 and later PWM"
 	depends on MACH_IMX
