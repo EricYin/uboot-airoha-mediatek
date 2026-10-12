@@ -410,9 +410,11 @@
 		compatible = "mediatek,mt7621-i2c";
 		reg = <0x1fbf8000 0x100>;
 
-		reseets = <&scu EN7523_I2C2RBUS_RST>;
+		resets = <&scu EN7523_I2C2RBUS_RST>;
+		reset-names = "i2c_reset";
 
 		clocks = <&clk20m>;
+		clock-names = "sys_clock";
 		clock-frequency = <100000>;
 		#address-cells = <1>;
 		#size-cells = <0>;
