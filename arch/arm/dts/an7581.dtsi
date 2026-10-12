@@ -507,8 +507,10 @@
 			reg = <0x0 0x1fbf8000 0x0 0x100>;
 
 			resets = <&scuclk EN7581_I2C2_RST>;
+			reset-names = "i2c_reset";
 
 			clocks = <&clk20m>;
+			clock-names = "sys_clock";
 			clock-frequency = <100000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -521,8 +523,10 @@
 			reg = <0x0 0x1fbf8100 0x0 0x100>;
 
 			resets = <&scuclk EN7581_I2C_MASTER_RST>;
+			reset-names = "i2c_reset";
 
 			clocks = <&clk20m>;
+			clock-names = "sys_clock";
 			clock-frequency = <100000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
