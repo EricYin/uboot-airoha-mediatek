@@ -440,6 +440,14 @@
 			interrupts = <GIC_SPI 35 IRQ_TYPE_LEVEL_HIGH>;
 		};
 
+		pwm: pwm@1fbf0234 {
+			compatible = "airoha,airoha-pwm";
+			reg = <0x0 0x1fbf0234 0x0 0x20>,
+			      <0x0 0x1fbf0268 0x0 0x4>,
+			      <0x0 0x1fbf0298 0x0 0x24>;
+			#pwm-cells = <3>;
+		};
+
 		system-controller@1fbf0200 {
 			compatible = "airoha,en7581-gpio-sysctl", "syscon",
 				     "simple-mfd";
