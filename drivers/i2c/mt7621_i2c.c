@@ -53,6 +53,33 @@
 #define TIMEOUT_1SEC                  1000
 #define I2C_MAX_STD_MODE_FREQ         100000
 
+/*
+ * The original MT7621 driver clamped the clock divider to a fixed minimum of
+ * 99.  With the 50 MHz clock source of that SoC this works out to "SCL is never
+ * faster than 500 kHz", so the same limit is expressed here as a frequency:
+ * MT7621 is unaffected, while on the Airoha SoCs - whose SIF clock is 20 MHz -
+ * the 400 kHz that the Airoha vendor driver and its DT use is reachable again.
+ * The fixed floor of 99 used to cap those boards at 200 kHz.
+ */
+#define I2C_MAX_SCL_FREQ              500000
+
+/*
+ * Known limitations of this driver:
+ *
+ *  - SM0CTL0_CLK_DIV is handled as 11 bit wide, like the original MT7621
+ *    driver does.  The Airoha vendor driver treats the field as 12 bit
+ *    (0xfff << 16), so one of the two is wrong.  It only makes a difference
+ *    below ~9.8 kHz SCL with a 20 MHz clock (bit 27 is never set for the
+ *    speeds programmed here), so the field is left as it is instead of
+ *    guessing which description the silicon follows.
+ *
+ *  - 400 kHz is what the Airoha vendor driver programs from its DT, so the
+ *    controller is expected to support it, but the resulting SCL has not been
+ *    measured on Airoha hardware with this driver yet.  Check it with a scope
+ *    (or against a device that is known to be strict about timing) before
+ *    relying on fast mode.
+ */
+
 struct mt7621_i2c_priv {
 	void __iomem *base;
 	uint speed;
@@ -78,20 +105,30 @@ static int mt7621_i2c_wait_idle(struct udevice *dev)
 	return -ETIMEDOUT;
 }
 
-static int mt7621_i2c_reset(struct udevice *dev)
+/* Program the divider of the current speed and keep the controller enabled */
+static void mt7621_i2c_apply_clk_div(struct udevice *dev)
 {
 	struct mt7621_i2c_priv *priv = dev_get_priv(dev);
-	u32 value;
+	u32 value = readl(priv->base + REG_SM0CTL0);
 
-	reset_assert(&priv->reset_ctl);
-	udelay(100);
-	reset_deassert(&priv->reset_ctl);
-
-	value = readl(priv->base + REG_SM0CTL0);
 	value &= ~SM0CTL0_CLK_DIV_MASK;
 	value |= (priv->clk_div << 16) & SM0CTL0_CLK_DIV_MASK;
 	value |= SM0CTL0_EN | SM0CTL0_SCL_STRETCH;
 	writel(value, priv->base + REG_SM0CTL0);
+}
+
+static int mt7621_i2c_reset(struct udevice *dev)
+{
+	struct mt7621_i2c_priv *priv = dev_get_priv(dev);
+
+	/* the reset control is optional, the registers are set up either way */
+	if (priv->reset_ctl.dev) {
+		reset_assert(&priv->reset_ctl);
+		udelay(100);
+		reset_deassert(&priv->reset_ctl);
+	}
+
+	mt7621_i2c_apply_clk_div(dev);
 
 	writel(SM0CFG2_MODE_MANUAL, priv->base + REG_SM0CFG2);
 	return 0;
@@ -296,15 +333,26 @@ static int mt7621_i2c_set_speed(struct udevice *dev, uint speed)
 {
 	struct mt7621_i2c_priv *priv = dev_get_priv(dev);
 	ulong clk_rate = clk_get_rate(&priv->clk);
+	u32 clk_div, min_div;
+
+	if (!speed || !clk_rate)
+		return -EINVAL;
+
+	clk_div = clk_rate / speed - 1;
+
+	/* keep SCL at or below I2C_MAX_SCL_FREQ, see the comment at the top */
+	min_div = clk_rate / I2C_MAX_SCL_FREQ - 1;
+	if (clk_div < min_div)
+		clk_div = min_div;
+
+	if (clk_div > SM0CTL0_CLK_DIV_MAX)
+		clk_div = SM0CTL0_CLK_DIV_MAX;
 
 	priv->speed = speed;
-	priv->clk_div = clk_rate / priv->speed - 1;
+	priv->clk_div = clk_div;
 
-	if (priv->clk_div < 99)
-		priv->clk_div = 99;
-
-	if (priv->clk_div > SM0CTL0_CLK_DIV_MAX)
-		priv->clk_div = SM0CTL0_CLK_DIV_MAX;
+	/* apply it now, so a runtime speed change takes effect immediately */
+	mt7621_i2c_apply_clk_div(dev);
 
 	return 0;
 }
@@ -326,6 +374,7 @@ static int mt7621_i2c_of_to_plat(struct udevice *dev)
 int mt7621_i2c_probe(struct udevice *dev)
 {
 	struct mt7621_i2c_priv *priv = dev_get_priv(dev);
+	u32 speed = I2C_MAX_STD_MODE_FREQ;
 	int ret;
 
 	priv->base = dev_remap_addr(dev);
@@ -334,17 +383,33 @@ int mt7621_i2c_probe(struct udevice *dev)
 		return -EINVAL;
 	}
 
+	/*
+	 * The source clock is needed to compute the divider, so it is required.
+	 * Accept the name used by the Airoha DTs, the one from the upstream
+	 * MT7621 binding, and finally the first entry, so a DT without
+	 * clock-names is usable as well.
+	 */
 	ret = clk_get_by_name(dev, "sys_clock", &priv->clk);
+	if (ret)
+		ret = clk_get_by_name(dev, "i2c", &priv->clk);
+	if (ret)
+		ret = clk_get_by_index(dev, 0, &priv->clk);
 	if (ret) {
 		dev_err(dev, "failed to get clock source\n");
 		return ret;
 	}
 
+	/*
+	 * A reset is only used to put the controller into a known state before
+	 * the registers are programmed, so a DT without one still works.  Note
+	 * that a failed lookup leaves reset_ctl zeroed, which is what
+	 * mt7621_i2c_reset() tests for.
+	 */
 	ret = reset_get_by_name(dev, "i2c_reset", &priv->reset_ctl);
-	if (ret) {
-		dev_err(dev, "failed to get reset control\n");
-		return ret;
-	}
+	if (ret)
+		ret = reset_get_by_name(dev, "i2c", &priv->reset_ctl);
+	if (ret)
+		reset_get_by_index(dev, 0, &priv->reset_ctl);
 
 	ret = clk_enable(&priv->clk);
 	if (ret) {
@@ -352,7 +417,9 @@ int mt7621_i2c_probe(struct udevice *dev)
 		return ret;
 	}
 
-	mt7621_i2c_set_speed(dev, I2C_MAX_STD_MODE_FREQ);
+	/* clock-frequency is the standard way to request a bus speed */
+	dev_read_u32(dev, "clock-frequency", &speed);
+	mt7621_i2c_set_speed(dev, speed);
 	mt7621_i2c_reset(dev);
 
 	return 0;
