@@ -358,6 +358,33 @@
 		};
 	};
 
+	/*
+	 * SPI-NOR shares the SFC block with the SPI-NAND interface below:
+	 * mutually exclusive, only one of the two may be enabled per board.
+	 */
+	spi_nor: spi_nor@1fa10000 {
+		compatible = "airoha,airoha-snor";
+		reg = <0x1fa10000 0x140>,
+		      <0x1fa11000 0x160>;
+
+		clocks = <&scu EN7523_CLK_SPI>;
+		clock-names = "spi";
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		status = "disabled";
+
+		flash@0 {
+			compatible = "jedec,spi-nor";
+			reg = <0>;
+
+			spi-max-frequency = <50000000>;
+			spi-tx-bus-width = <1>;
+			spi-rx-bus-width = <2>;
+		};
+	};
+
 	snfi: spi@1fa10000 {
 		compatible = "airoha,en7523-snand", "airoha,en7581-snand";
 		reg = <0x1fa10000 0x140>,
