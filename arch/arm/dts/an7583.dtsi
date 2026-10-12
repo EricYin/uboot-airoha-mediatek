@@ -352,28 +352,36 @@
 			compatible = "mediatek,mt7621-i2c";
 			reg = <0x0 0x1fbf8000 0x0 0x100>;
 
+			resets = <&scuclk AN7583_I2C2_RST>;
+			reset-names = "i2c_reset";
+
 			clocks = <&i2cclock>;
+			clock-names = "sys_clock";
 
 			/* 100 kHz */
 			clock-frequency = <100000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			status = "disable";
+			status = "disabled";
 		};
 
 		i2c1: i2c1@1fbf8100 {
 			compatible = "mediatek,mt7621-i2c";
 			reg = <0x0 0x1fbf8100 0x0 0x100>;
 
+			resets = <&scuclk AN7583_I2C_MASTER_RST>;
+			reset-names = "i2c_reset";
+
 			clocks = <&i2cclock>;
+			clock-names = "sys_clock";
 
 			/* 100 kHz */
 			clock-frequency = <100000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			status = "disable";
+			status = "disabled";
 		};
 
 		/*
