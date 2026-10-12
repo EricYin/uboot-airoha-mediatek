@@ -16,11 +16,14 @@
 #include <dt-bindings/reset/airoha,en7523-reset.h>
 #include <dt-bindings/reset/airoha,en7581-reset.h>
 #include <dt-bindings/reset/airoha,an7583-reset.h>
+#include <dt-bindings/reset/airoha,an7589-reset.h>
 
 #define RST_NR_PER_BANK			32
 
 #define REG_RESET_CONTROL2		0x830
 #define REG_RESET_CONTROL1		0x834
+#define REG_RESET_CONTROL3		0x838
+#define REG_RESET_CONTROL4		0x83c
 
 struct airoha_reset_priv {
 	const u16 *bank_ofs;
@@ -32,6 +35,17 @@ struct airoha_reset_priv {
 static const u16 en7581_rst_ofs[] = {
 	REG_RESET_CONTROL2,
 	REG_RESET_CONTROL1,
+};
+
+/*
+ * AN7589 keeps the EN7581/AN7583 reset banks at the very same offsets and
+ * appends two more.
+ */
+static const u16 an7589_rst_ofs[] = {
+	REG_RESET_CONTROL2,
+	REG_RESET_CONTROL1,
+	REG_RESET_CONTROL3,
+	REG_RESET_CONTROL4,
 };
 
 static const u16 en7523_rst_map[] = {
@@ -193,6 +207,73 @@ static const u16 an7583_rst_map[] = {
 	[AN7583_XPON_MAC_RST]		= RST_NR_PER_BANK + 31,
 };
 
+/*
+ * AN7589.  The bit layout of RST_CTRL2 / RST_CTRL1 is identical to AN7583
+ * AN7589 only adds RST_CTRL2 bit 10 (I2S, not present on AN7583) and bit
+ * 27 (PCIE2), plus the whole RST_CTRL3 bank at 0x838.
+ */
+static const u16 an7589_rst_map[] = {
+	/* RST_CTRL2 */
+	[AN7589_XPON_PHY_RST]		= 0,
+	[AN7589_GPON_OLT_RST]		= 1,
+	[AN7589_CPU_TIMER2_RST]		= 2,
+	[AN7589_HSUART_RST]		= 3,
+	[AN7589_UART4_RST]		= 4,
+	[AN7589_UART5_RST]		= 5,
+	[AN7589_I2C2_RST]		= 6,
+	[AN7589_XSI_MAC_RST]		= 7,
+	[AN7589_XSI_PHY_RST]		= 8,
+	[AN7589_NPU_RST]		= 9,
+	[AN7589_I2S_RST]		= 10,
+	[AN7589_TRNG_MSTART_RST]	= 12,
+	[AN7589_DUAL_HSI0_RST]		= 13,
+	[AN7589_DUAL_HSI1_RST]		= 14,
+	[AN7589_DUAL_HSI0_MAC_RST]	= 16,
+	[AN7589_DUAL_HSI1_MAC_RST]	= 17,
+	[AN7589_XPON_XFI_RST]		= 18,
+	[AN7589_WDMA_RST]		= 19,
+	[AN7589_WOE0_RST]		= 20,
+	[AN7589_HSDMA_RST]		= 22,
+	[AN7589_TDMA_RST]		= 24,
+	[AN7589_EMMC_RST]		= 25,
+	[AN7589_SOE_RST]		= 26,
+	[AN7589_PCIE2_RST]		= 27,
+	[AN7589_XFP_MAC_RST]		= 28,
+	[AN7589_MDIO0]			= 30,
+	[AN7589_MDIO1]			= 31,
+	/* RST_CTRL1 */
+	[AN7589_PCM1_ZSI_ISI_RST]	= RST_NR_PER_BANK + 0,
+	[AN7589_FE_PDMA_RST]		= RST_NR_PER_BANK + 1,
+	[AN7589_FE_QDMA_RST]		= RST_NR_PER_BANK + 2,
+	[AN7589_PCM_SPIWP_RST]		= RST_NR_PER_BANK + 4,
+	[AN7589_CRYPTO_RST]		= RST_NR_PER_BANK + 6,
+	[AN7589_TIMER_RST]		= RST_NR_PER_BANK + 8,
+	[AN7589_PCM1_RST]		= RST_NR_PER_BANK + 11,
+	[AN7589_UART_RST]		= RST_NR_PER_BANK + 12,
+	[AN7589_GPIO_RST]		= RST_NR_PER_BANK + 13,
+	[AN7589_GDMA_RST]		= RST_NR_PER_BANK + 14,
+	[AN7589_I2C_MASTER_RST]		= RST_NR_PER_BANK + 16,
+	[AN7589_PCM2_ZSI_ISI_RST]	= RST_NR_PER_BANK + 17,
+	[AN7589_SFC_RST]		= RST_NR_PER_BANK + 18,
+	[AN7589_UART2_RST]		= RST_NR_PER_BANK + 19,
+	[AN7589_GDMP_RST]		= RST_NR_PER_BANK + 20,
+	[AN7589_FE_RST]			= RST_NR_PER_BANK + 21,
+	[AN7589_USB_HOST_P0_RST]	= RST_NR_PER_BANK + 22,
+	[AN7589_GSW_RST]		= RST_NR_PER_BANK + 23,
+	[AN7589_SFC2_PCM_RST]		= RST_NR_PER_BANK + 25,
+	[AN7589_PCIE0_RST]		= RST_NR_PER_BANK + 26,
+	[AN7589_PCIE1_RST]		= RST_NR_PER_BANK + 27,
+	[AN7589_CPU_TIMER_RST]		= RST_NR_PER_BANK + 28,
+	[AN7589_PCIE_HB_RST]		= RST_NR_PER_BANK + 29,
+	[AN7589_XPON_MAC_RST]		= RST_NR_PER_BANK + 31,
+	/* RST_CTRL3 */
+	[AN7589_I2C3_RST]		= (RST_NR_PER_BANK * 2) + 0,
+	[AN7589_I2C4_RST]		= (RST_NR_PER_BANK * 2) + 1,
+	[AN7589_I2C5_RST]		= (RST_NR_PER_BANK * 2) + 2,
+	[AN7589_OPTL_SYS_RST]		= (RST_NR_PER_BANK * 2) + 3,
+	[AN7589_MDIO2]			= (RST_NR_PER_BANK * 2) + 13,
+};
+
 static int airoha_reset_update(struct airoha_reset_priv *priv,
 			       unsigned long id, bool assert)
 {
@@ -255,7 +336,8 @@ static struct reset_ops airoha_reset_ops = {
 	.rst_status = airoha_reset_status,
 };
 
-static int reset_init(struct udevice *dev, const u16 *rst_map, int num_rsts)
+static int reset_init(struct udevice *dev, const u16 *rst_map, int num_rsts,
+		      const u16 *bank_ofs)
 {
 	struct airoha_reset_priv *priv = dev_get_priv(dev);
 
@@ -263,7 +345,7 @@ static int reset_init(struct udevice *dev, const u16 *rst_map, int num_rsts)
 	if (IS_ERR(priv->map))
 		return PTR_ERR(priv->map);
 
-	priv->bank_ofs = en7581_rst_ofs;
+	priv->bank_ofs = bank_ofs;
 	priv->idx_map = rst_map;
 	priv->num_rsts = num_rsts;
 
@@ -275,17 +357,26 @@ static int airoha_reset_probe(struct udevice *dev)
 	if (ofnode_device_is_compatible(dev_ofnode(dev),
 					"airoha,en7523-scu"))
 		return reset_init(dev, en7523_rst_map,
-				  ARRAY_SIZE(en7523_rst_map));
+				  ARRAY_SIZE(en7523_rst_map),
+				  en7581_rst_ofs);
 
 	if (ofnode_device_is_compatible(dev_ofnode(dev),
 					"airoha,en7581-scu"))
 		return reset_init(dev, en7581_rst_map,
-				  ARRAY_SIZE(en7581_rst_map));
+				  ARRAY_SIZE(en7581_rst_map),
+				  en7581_rst_ofs);
 
 	if (ofnode_device_is_compatible(dev_ofnode(dev),
 					"airoha,an7583-scu"))
 		return reset_init(dev, an7583_rst_map,
-				 ARRAY_SIZE(an7583_rst_map));
+				  ARRAY_SIZE(an7583_rst_map),
+				  en7581_rst_ofs);
+
+	if (ofnode_device_is_compatible(dev_ofnode(dev),
+					"airoha,an7589-scu"))
+		return reset_init(dev, an7589_rst_map,
+				  ARRAY_SIZE(an7589_rst_map),
+				  an7589_rst_ofs);
 
 	return -ENODEV;
 }
