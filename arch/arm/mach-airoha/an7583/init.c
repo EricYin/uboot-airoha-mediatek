@@ -53,6 +53,7 @@ int print_cpuinfo(void)
 	} else {
 		printf("SoC:   Airoha AN7583\n");
 	}
+	printf("DRAM:  %s\n", airoha_dram_type_name());
 
 	return 0;
 }

@@ -60,6 +60,7 @@ int print_cpuinfo(void)
 	 */
 	printf("SoC:   Airoha AN7589\n");
 	printf("       package ID %#x, die ID %#x\n", get_pkgid(), get_pdidr());
+	printf("DRAM:  %s\n", airoha_dram_type_name());
 
 	return 0;
 }

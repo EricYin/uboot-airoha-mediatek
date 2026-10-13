@@ -4,6 +4,7 @@
 #define __AIROHA_CHIP_ID_H_
 
 #include <linux/bitfield.h>
+#include <linux/err.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/regmap.h>
@@ -20,6 +21,8 @@
 #define AIROHA_NP_SCU_PDIDR_MASK	GENMASK(15, 0)
 #define AIROHA_NP_SCU_PACKAGE_ID_MASK	GENMASK(3, 0)
 #define AIROHA_NP_SCU_PACKAGE_ID_EXT	BIT(7)
+#define AIROHA_NP_SCU_DRAM_HW_CONF	0x08c
+#define AIROHA_NP_SCU_DRAM_HW_CONF_DDR4	BIT(5)
 
 /*
  * SoC family identifiers for the ARM-based Airoha platforms
@@ -340,6 +343,26 @@ static inline u32 get_pkgid(void)
 		return END_PACKAGE_ID;
 
 	return airoha_pkgid_from_screg(value);
+}
+
+/*
+ * DRAM generation as published by the first-stage bootloader in the NP-SCU
+ * DRAM hardware configuration register.
+ *
+ * Return: "DDR4", "DDR3", or "unknown" when the register is not reachable.
+ */
+static inline const char *airoha_dram_type_name(void)
+{
+	struct regmap *np_scu = airoha_get_scu_regmap();
+	u32 value;
+
+	if (IS_ERR_OR_NULL(np_scu))
+		return "unknown";
+
+	if (regmap_read(np_scu, AIROHA_NP_SCU_DRAM_HW_CONF, &value))
+		return "unknown";
+
+	return (value & AIROHA_NP_SCU_DRAM_HW_CONF_DDR4) ? "DDR4" : "DDR3";
 }
 
 /* HIR identifies the SoC family, for example EN7523_PKG (0x0c). */

@@ -34,6 +34,7 @@ int print_cpuinfo(void)
 	} else {
 		printf("SoC:   Airoha EN7523/EN7529/EN7562\n");
 	}
+	printf("DRAM:  %s\n", airoha_dram_type_name());
 
 	return 0;
 }
