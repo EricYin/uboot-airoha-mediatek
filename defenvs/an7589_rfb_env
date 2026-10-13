@@ -1,0 +1,9 @@
+ipaddr=192.168.1.1
+netmask=255.255.255.0
+serverip=192.168.1.254
+
+loadaddr=0x96000000
+
+bootdelay=3
+bootcmd=run boot_default
+boot_default=echo AN7589 U-Boot is up: no boot medium configured yet

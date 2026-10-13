@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/dts-v1/;
+
+#include "an7589.dtsi"
+
+/ {
+	model = "Airoha AN7589 Evaluation Board";
+	compatible = "airoha,an7589-evb", "airoha,an7589";
+
+	aliases {
+		serial0 = &uart1;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200 earlycon";
+		stdout-path = "serial0:115200n8";
+		linux,usable-memory-range = <0x0 0x80200000 0x0 0x7fe00000>;
+	};
+
+	/*
+	 * Fallback only: with a chainloader boot the first-stage loader does
+	 * not fill this in, and dram_init() publishes the size it detects via
+	 * ft_system_setup() anyway.  The value matches what the vendor
+	 * description exposes to the OS (usable-memory-range above).
+	 */
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x80000000>;
+	};
+};
+
+&snfi {
+	status = "okay";
+};
+
+&spi_nand {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		/* Same layout as the vendor AN7589 description. */
+		bl2@0 {
+			label = "bl2";
+			reg = <0x0 0x200000>;
+		};
+
+		ubi@200000 {
+			label = "ubi";
+			reg = <0x200000 0x0>;
+		};
+	};
+};
+
+&i2c0 {
+	status = "okay";
+};

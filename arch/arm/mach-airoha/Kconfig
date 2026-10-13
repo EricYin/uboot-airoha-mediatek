@@ -46,6 +46,23 @@ config TARGET_AN7583
 	  Peripherals include Gigabit Ethernet, switch, USB3.0 and OTG, PCIe,
 	  I2S, PCM, S/PDIF, UART, SPI, I2C, IR TX/RX, and PWM.
 
+config TARGET_AN7589
+	bool "Airoha AN7589 SoC"
+	select ARM64
+	select OF_SYSTEM_SETUP
+	select ARCH_FIXUP_FDT_MEMORY
+	help
+	  The Airoha AN7589 (a.k.a. AN9550 / AN9520) is an ARM-based SoC
+	  with a quad-core Cortex-A73 cluster, a NPU, three PCIe
+	  controllers and a 10G capable switch. Peripherals include
+	  Ethernet, switch, USB3.0 and OTG, PCIe, I2S, PCM, UART, SPI,
+	  I2C, PWM and an eMMC/SPI-NAND boot path.
+
+	  AN7589 reuses the SCU clock and reset schema of the EN7523
+	  family: the SCU blocks sit at the very same offsets, AN7589
+	  only adds two more reset banks and a couple of additional
+	  clock sources.
+
 config TARGET_AN7563
 	bool "Airoha AN7563 SoC"
 	select CPU_V7A
@@ -81,24 +98,27 @@ config AIROHA_DRAM_SIZE_PROBE
 	  N unless you have a reason to doubt the register content.
 
 	  On the 32-bit SoCs (EN7523, AN7563) probing is capped at 1 GiB,
-	  on the 64-bit ones (AN7581, AN7583) at 8 GiB.
+	  on the 64-bit ones (AN7581, AN7583, AN7589) at 8 GiB.
 
 config SYS_SOC
 	default "en7523" if TARGET_EN7523
 	default "an7581" if TARGET_AN7581
 	default "an7583" if TARGET_AN7583
+	default "an7589" if TARGET_AN7589
 	default "an7563" if TARGET_AN7563
 
 config SYS_BOARD
 	default "en7523" if TARGET_EN7523
 	default "an7581" if TARGET_AN7581
 	default "an7583" if TARGET_AN7583
+	default "an7589" if TARGET_AN7589
 	default "an7563" if TARGET_AN7563
 
 config SYS_CONFIG_NAME
 	default "en7523" if TARGET_EN7523
 	default "an7581" if TARGET_AN7581
 	default "an7583" if TARGET_AN7583
+	default "an7589" if TARGET_AN7589
 	default "an7563" if TARGET_AN7563
 
 endif # ARCH_AIROHA

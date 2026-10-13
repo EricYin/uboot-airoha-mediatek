@@ -1,0 +1,368 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/*
+ * Airoha AN7589 (a.k.a. AN9550 / AN9520) SoC
+ *
+ * Note that separate register regions for the pin multiplexing
+ * block (0x1fa30000) and for the UART4/HSUART instances; the
+ * pinmux region is not described here, see pinctrl-an7589.c.
+ */
+
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/clock/en7523-clk.h>
+#include <dt-bindings/reset/airoha,an7589-reset.h>
+#include <dt-bindings/leds/common.h>
+
+/ {
+	interrupt-parent = <&gic>;
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		atf-reserved-memory@80000000 {
+			no-map;
+			reg = <0x0 0x80000000 0x0 0x200000>;
+		};
+
+		npu_binary: npu-binary@84000000 {
+			no-map;
+			reg = <0x0 0x84000000 0x0 0xa00000>;
+		};
+
+		dq0_buf: dq0-buf@87000000 {
+			no-map;
+			reg = <0x0 0x87000000 0x0 0x2000000>;
+		};
+
+		dq1_buf: dq1-buf@89000000 {
+			no-map;
+			reg = <0x0 0x89000000 0x0 0x1000000>;
+		};
+
+		npu_pkt: npu-pkt@8a000000 {
+			no-map;
+			reg = <0x0 0x8a000000 0x0 0x2c00000>;
+		};
+
+		npu_txpkt: npu-txpkt@8cc00000 {
+			no-map;
+			reg = <0x0 0x8cc00000 0x0 0x8900000>;
+		};
+
+		npu_txbufid: npu-txbufid@95500000 {
+			no-map;
+			reg = <0x0 0x95500000 0x0 0x6800>;
+		};
+	};
+
+	psci {
+		compatible = "arm,psci-1.0";
+		method = "smc";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu-map {
+			cluster0 {
+				core0 {
+					cpu = <&cpu0>;
+				};
+
+				core1 {
+					cpu = <&cpu1>;
+				};
+
+				core2 {
+					cpu = <&cpu2>;
+				};
+
+				core3 {
+					cpu = <&cpu3>;
+				};
+			};
+		};
+
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a73";
+			reg = <0x0>;
+			enable-method = "psci";
+			next-level-cache = <&l2>;
+			#cooling-cells = <2>;
+		};
+
+		cpu1: cpu@1 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a73";
+			reg = <0x1>;
+			enable-method = "psci";
+			next-level-cache = <&l2>;
+			#cooling-cells = <2>;
+		};
+
+		cpu2: cpu@2 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a73";
+			reg = <0x2>;
+			enable-method = "psci";
+			next-level-cache = <&l2>;
+			#cooling-cells = <2>;
+		};
+
+		cpu3: cpu@3 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a73";
+			reg = <0x3>;
+			enable-method = "psci";
+			next-level-cache = <&l2>;
+			#cooling-cells = <2>;
+		};
+
+		l2: l2-cache {
+			compatible = "cache";
+			cache-size = <0x80000>;
+			cache-line-size = <64>;
+			cache-level = <2>;
+			cache-unified;
+		};
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_PPI 13 IRQ_TYPE_LEVEL_LOW>,
+			     <GIC_PPI 14 IRQ_TYPE_LEVEL_LOW>,
+			     <GIC_PPI 11 IRQ_TYPE_LEVEL_LOW>,
+			     <GIC_PPI 10 IRQ_TYPE_LEVEL_LOW>;
+	};
+
+	clk25m: oscillator {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <25000000>;
+		clock-output-names = "clkxtal";
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		gic: interrupt-controller@c000000 {
+			compatible = "arm,gic-v3";
+			interrupt-controller;
+			#interrupt-cells = <3>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0x0 0x0c000000 0x0 0x40000>,
+			      <0x0 0x0c080000 0x0 0x200000>,
+			      <0x0 0x0c400000 0x0 0x2000>,
+			      <0x0 0x0c410000 0x0 0x1000>,
+			      <0x0 0x0c420000 0x0 0x1000>;
+			interrupts = <GIC_PPI 9 IRQ_TYPE_LEVEL_LOW>;
+		};
+
+		apb_timer: timer@1fbf0100 {
+			compatible = "airoha,airoha-timer";
+			reg = <0x0 0x1fbf0100 0x0 0x40>;
+		};
+
+		/*
+		 * The watchdog is counter 5 of the same block and resets the SoC
+		 * when it expires.  U-Boot takes no interrupt, so the pretimeout
+		 * the interrupt would announce is not used.
+		 *
+		 * Both the APB timer and the watchdog derive their input clock
+		 * from the NP-SCU global parameter register the first-stage
+		 * bootloader fills in - the whole family does (they share
+		 * airoha_apb_timer_sys_clk()).  A clock-frequency property would
+		 * have to be added here only if a boot chain leaves that
+		 * register unpopulated.
+		 */
+		watchdog: watchdog@1fbf0100 {
+			compatible = "airoha,en7581-wdt";
+			reg = <0x0 0x1fbf0100 0x0 0x40>;
+			timeout-sec = <27>;
+		};
+
+		/*
+		 * The AN7589 chip SCU keeps the EN7581 register layout, so the
+		 * EN7581 compatible is declared as a fallback: the shared
+		 * clock / pinctrl / RNG code looks the chip SCU up by that
+		 * name (airoha_get_chip_scu_regmap()).
+		 */
+		chip_scu: syscon@1fa20000 {
+			compatible = "airoha,an7589-chip-scu", "airoha,en7581-chip-scu",
+				     "syscon";
+			reg = <0x0 0x1fa20000 0x0 0x410>;
+		};
+
+		/*
+		 * Clock and reset controller.  The consumers of
+		 * airoha_get_scu_regmap() (the reset driver) take the regmap
+		 * of this node's parent, which is where the SCU registers live.
+		 */
+		system-controller@1fb00000 {
+			compatible = "syscon", "simple-mfd";
+			reg = <0x0 0x1fb00000 0x0 0x9fc>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			scuclk: scuclk {
+				compatible = "airoha,an7589-scu";
+				#clock-cells = <1>;
+				#reset-cells = <1>;
+			};
+		};
+
+		/*
+		 * GPIO control block.  The AN7589 pin multiplexing registers
+		 * live in a separate region (0x1fa30000) that is not described
+		 * here: pinctrl-an7589.c intentionally carries no pinmux tables
+		 * yet, so only the GPIO interface below is functional.
+		 */
+		system-controller@1fbf0200 {
+			compatible = "syscon", "simple-mfd";
+			reg = <0x0 0x1fbf0200 0x0 0xc0>;
+
+			pinctrl: pinctrl {
+				compatible = "airoha,an7589-pinctrl";
+
+				interrupt-parent = <&gic>;
+				interrupts = <GIC_SPI 82 IRQ_TYPE_LEVEL_HIGH>;
+
+				gpio-controller;
+				#gpio-cells = <2>;
+
+				interrupt-controller;
+				#interrupt-cells = <2>;
+			};
+		};
+
+		i2cclock: i2cclock@0 {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+
+			/*
+			 * 160 MHz for the FPGA and 200 MHz for the ASIC.
+			 */
+			clock-frequency = <200000000>;
+		};
+
+		i2c0: i2c0@1fbf8000 {
+			compatible = "mediatek,mt7621-i2c";
+			reg = <0x0 0x1fbf8000 0x0 0x100>;
+
+			clocks = <&i2cclock>;
+			clock-names = "sys_clock";
+
+			clock-frequency = <100000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			status = "disabled";
+		};
+
+		i2c1: i2c1@1fbf8100 {
+			compatible = "mediatek,mt7621-i2c";
+			reg = <0x0 0x1fbf8100 0x0 0x100>;
+
+			clocks = <&i2cclock>;
+			clock-names = "sys_clock";
+
+			clock-frequency = <100000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			status = "disabled";
+		};
+
+		/*
+		 * SPI-NAND interface of the SFC block.  The SPI-NOR and the
+		 * parallel NAND modes of the same block are mutually exclusive
+		 * with it and are not described yet.
+		 */
+		snfi: spi@1fa10000 {
+			compatible = "airoha,en7581-snand";
+			reg = <0x0 0x1fa10000 0x0 0x140>,
+			      <0x0 0x1fa11000 0x0 0x600>;
+
+			clocks = <&scuclk EN7523_CLK_SPI>;
+			clock-names = "spi";
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			status = "disabled";
+
+			spi_nand: nand@0 {
+				compatible = "spi-nand";
+				reg = <0>;
+				spi-max-frequency = <50000000>;
+				spi-tx-bus-width = <1>;
+				spi-rx-bus-width = <2>;
+			};
+		};
+
+		uart1: serial@1fbf0000 {
+			compatible = "ns16550";
+			reg = <0x0 0x1fbf0000 0x0 0x30>;
+			reg-io-width = <4>;
+			reg-shift = <2>;
+			interrupts = <GIC_SPI 74 IRQ_TYPE_LEVEL_HIGH>;
+			clock-frequency = <1843200>;
+			bootph-all;
+		};
+
+		uart2: serial@1fbf0300 {
+			compatible = "ns16550";
+			reg = <0x0 0x1fbf0300 0x0 0x30>;
+			reg-io-width = <4>;
+			reg-shift = <2>;
+			interrupts = <GIC_SPI 88 IRQ_TYPE_LEVEL_HIGH>;
+			clock-frequency = <1843200>;
+
+			status = "disabled";
+		};
+
+		uart3: serial@1fbf0600 {
+			compatible = "ns16550";
+			reg = <0x0 0x1fbf0600 0x0 0x30>;
+			reg-io-width = <4>;
+			reg-shift = <2>;
+			interrupts = <GIC_SPI 110 IRQ_TYPE_LEVEL_HIGH>;
+			clock-frequency = <1843200>;
+
+			status = "disabled";
+		};
+
+		uart4: serial@1ec10000 {
+			compatible = "ns16550";
+			reg = <0x0 0x1ec10000 0x0 0x30>;
+			reg-io-width = <4>;
+			reg-shift = <2>;
+			interrupts = <GIC_SPI 160 IRQ_TYPE_LEVEL_HIGH>;
+			clock-frequency = <1843200>;
+
+			status = "disabled";
+		};
+
+		/*
+		 * The legacy TRNG of the AN7589 keeps the EN7581 data path, so
+		 * the EN7581 compatible is used on purpose (the newer v3 block
+		 * at 0x1faa2000 has no driver yet).
+		 */
+		rng@1faa1000 {
+			compatible = "airoha,en7581-trng";
+			reg = <0x0 0x1faa1000 0x0 0xc04>;
+			interrupts = <GIC_SPI 91 IRQ_TYPE_LEVEL_HIGH>;
+		};
+	};
+};
