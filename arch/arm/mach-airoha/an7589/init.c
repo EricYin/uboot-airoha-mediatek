@@ -36,15 +36,14 @@ DECLARE_GLOBAL_DATA_PTR;
  * register the whole family stores the bootloader results in (get_pkgid() 
  * in soc/airoha/pkgids.h already reads it unconditionally on every Airoha ARM SoC).
  * It is only a hint for the DRAM size: when the register is not populated or
- * holds an out of range value the code falls back to get_ram_size() probing
- * and finally to the device tree.
+ * holds an out of range value the code falls back to the device tree.
  *
  * Reading this saved value is preferable to trying to derive the capacity
  * from the DRAMC RKCFG register, whose RKSIZE and RKMODE fields describe the
  * controller rank configuration rather than the detected memory size.
  */
 #define AN7589_SYS_GLOBAL_PARM			0x1fb00284UL
-#define AN7589_SYS_GLOBAL_DRAM_SIZE_MASK	GENMASK(27, 20)
+#define AN7589_SYS_GLOBAL_DRAM_SIZE_MASK	GENMASK(29, 20)
 #define AN7589_SYS_GLOBAL_DRAM_SIZE_SHIFT	20
 #define AN7589_SYS_GLOBAL_DRAM_SIZE_UNIT	SZ_16M
 
@@ -92,27 +91,6 @@ static phys_size_t an7589_dram_size_from_scu(void)
 	return size;
 }
 
-/*
- * Detect the DRAM size by writing a pattern above every power of two
- * boundary and looking for address aliasing. get_ram_size() saves and
- * restores the locations it touches.
- *
- * Return: the detected size, 0 on failure.
- */
-static phys_size_t an7589_dram_size_probe(void)
-{
-	long size;
-
-	size = get_ram_size((long *)AN7589_DRAM_BASE, AN7589_DRAM_MAX_SIZE);
-
-	log_debug("AN7589 DRAM: probing reports %ld MiB\n", size >> 20);
-
-	if (size <= 0 || (phys_size_t)size > AN7589_DRAM_MAX_SIZE)
-		return 0;
-
-	return (phys_size_t)size;
-}
-
 int dram_init(void)
 {
 	phys_size_t size;
@@ -120,20 +98,6 @@ int dram_init(void)
 	gd->ram_base = AN7589_DRAM_BASE;
 
 	size = an7589_dram_size_from_scu();
-
-	if (IS_ENABLED(CONFIG_AIROHA_DRAM_SIZE_PROBE)) {
-		phys_size_t probed = an7589_dram_size_probe();
-
-		/* Probing describes the memory that is actually there. */
-		if (probed && probed != size) {
-			if (size)
-				log_warning("AN7589 DRAM: SCU reports %llu MiB, probing reports %llu MiB, using the probed value\n",
-					    (unsigned long long)(size >> 20),
-					    (unsigned long long)(probed >> 20));
-
-			size = probed;
-		}
-	}
 
 	if (size) {
 		gd->ram_size = size;

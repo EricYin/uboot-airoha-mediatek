@@ -19,7 +19,7 @@ DECLARE_GLOBAL_DATA_PTR;
 
 #define EN7523_DRAM_BASE					0x80000000ULL
 #define EN7523_SYS_GLOBAL_PARM				0x1fb00284UL
-#define EN7523_SYS_GLOBAL_DRAM_SIZE_MASK	GENMASK(27, 20)
+#define EN7523_SYS_GLOBAL_DRAM_SIZE_MASK	GENMASK(29, 20)
 #define EN7523_SYS_GLOBAL_DRAM_SIZE_SHIFT	20
 
 int print_cpuinfo(void)
@@ -77,27 +77,6 @@ static bool en7523_dram_size_valid(phys_size_t size)
 	return size >= SZ_32M && size <= SZ_1G;
 }
 
-/*
- * Detect the DRAM size by writing a pattern above every power of two
- * boundary and looking for address aliasing. get_ram_size() saves and
- * restores the locations it touches.
- *
- * Return: the detected size, 0 on failure.
- */
-static phys_size_t en7523_dram_size_probe(void)
-{
-	long size;
-
-	size = get_ram_size((long *)(uintptr_t)EN7523_DRAM_BASE, SZ_1G);
-
-	debug("EN7523 DRAM: probing reports %ld MiB\n", size >> 20);
-
-	if (size <= 0 || !en7523_dram_size_valid(size))
-		return 0;
-
-	return (phys_size_t)size;
-}
-
 int dram_init(void)
 {
 	phys_size_t size;
@@ -105,20 +84,6 @@ int dram_init(void)
 	gd->ram_base = EN7523_DRAM_BASE;
 
 	size = en7523_dram_get_size();
-
-	if (IS_ENABLED(CONFIG_AIROHA_DRAM_SIZE_PROBE)) {
-		phys_size_t probed = en7523_dram_size_probe();
-
-		/* Probing describes the memory that is actually there. */
-		if (probed && probed != size) {
-			if (size)
-				printf("EN7523 DRAM: SCU reports %llu MiB, probing reports %llu MiB, using the probed value\n",
-				       (unsigned long long)(size >> 20),
-				       (unsigned long long)(probed >> 20));
-
-			size = probed;
-		}
-	}
 
 	if (en7523_dram_size_valid(size)) {
 		gd->ram_size = size;

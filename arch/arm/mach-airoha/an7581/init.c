@@ -37,7 +37,7 @@ DECLARE_GLOBAL_DATA_PTR;
  * controller rank configuration rather than the detected memory size.
  */
 #define AN7581_SYS_GLOBAL_PARM			0x1fb00284UL
-#define AN7581_SYS_GLOBAL_DRAM_SIZE_MASK	GENMASK(27, 20)
+#define AN7581_SYS_GLOBAL_DRAM_SIZE_MASK	GENMASK(29, 20)
 #define AN7581_SYS_GLOBAL_DRAM_SIZE_SHIFT	20
 #define AN7581_SYS_GLOBAL_DRAM_SIZE_UNIT	SZ_16M
 
@@ -85,27 +85,6 @@ static phys_size_t an7581_dram_size_from_scu(void)
 	return size;
 }
 
-/*
- * Detect the DRAM size by writing a pattern above every power of two
- * boundary and looking for address aliasing. get_ram_size() saves and
- * restores the locations it touches.
- *
- * Return: the detected size, 0 on failure.
- */
-static phys_size_t an7581_dram_size_probe(void)
-{
-	long size;
-
-	size = get_ram_size((long *)AN7581_DRAM_BASE, AN7581_DRAM_MAX_SIZE);
-
-	log_debug("AN7581 DRAM: probing reports %ld MiB\n", size >> 20);
-
-	if (size <= 0 || (phys_size_t)size > AN7581_DRAM_MAX_SIZE)
-		return 0;
-
-	return (phys_size_t)size;
-}
-
 int dram_init(void)
 {
 	phys_size_t size;
@@ -113,20 +92,6 @@ int dram_init(void)
 	gd->ram_base = AN7581_DRAM_BASE;
 
 	size = an7581_dram_size_from_scu();
-
-	if (IS_ENABLED(CONFIG_AIROHA_DRAM_SIZE_PROBE)) {
-		phys_size_t probed = an7581_dram_size_probe();
-
-		/* Probing describes the memory that is actually there. */
-		if (probed && probed != size) {
-			if (size)
-				log_warning("AN7581 DRAM: SCU reports %llu MiB, probing reports %llu MiB, using the probed value\n",
-					    (unsigned long long)(size >> 20),
-					    (unsigned long long)(probed >> 20));
-
-			size = probed;
-		}
-	}
 
 	if (size) {
 		gd->ram_size = size;
