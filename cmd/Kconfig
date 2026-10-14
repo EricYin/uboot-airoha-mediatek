@@ -1847,9 +1847,11 @@ config CMD_AIROHA_THERMAL
 	bool "airoha-thermal - display Airoha thermal sensor temperature"
 	depends on AIROHA_THERMAL
 	help
-	  Display the current temperature of Airoha thermal sensors
-	  (en7581 / an7583 / en7523). With an optional argument it samples
-	  the sensor several times and reports the average.
+	  Display the current temperature of the Airoha thermal sensors
+	  (en7523, en7581, an7583, an7563). Every sensor of a SoC is shown
+	  (an7583 has bandgap/GBE/CPU, an7563 a diode and a BJT) together
+	  with the hottest one; -n <sensor> reads a single sensor and an
+	  optional sample count reports an average.
 
 config CMD_APBTIMER
 	bool "apbtimer - inspect the Airoha APB timer used as the U-Boot tick"
