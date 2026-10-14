@@ -5,6 +5,7 @@
 
 obj-$(CONFIG_$(PHASE_)MISC) += misc-uclass.o
 obj-$(CONFIG_$(PHASE_)NVMEM) += nvmem.o
+obj-$(CONFIG_AIROHA_EFUSE) += airoha_efuse.o
 
 obj-$(CONFIG_$(PHASE_)CROS_EC) += cros_ec.o
 obj-$(CONFIG_$(PHASE_)CROS_EC_SANDBOX) += cros_ec_sandbox.o

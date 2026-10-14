@@ -59,6 +59,18 @@ config SPL_NVMEM
 	  up hardware configuration data such as MAC addresses and calibration
 	  settings.
 
+config AIROHA_EFUSE
+	bool "Airoha eFuse access (secure monitor SMC)"
+	depends on ARCH_AIROHA
+	select ARM_SMCCC
+	help
+	  Access the eFuse of the Airoha ARM SoCs. The controller itself is
+	  only reachable from the secure world, so the calibration data it
+	  holds (SerDes and PHY trims, ...) is read with a SiP call that lets
+	  the secure monitor fill a buffer. This provides
+	  airoha_efuse_load()/airoha_efuse_get()/airoha_efuse_free() to the
+	  drivers that need such a value.
+
 config ALTERA_SYSID
 	bool "Altera Sysid support"
 	depends on MISC
