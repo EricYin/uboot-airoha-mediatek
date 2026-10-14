@@ -286,11 +286,14 @@ config PHY_AIROHA_USB
 	bool "Airoha USB PHY support"
 	depends on PHY
 	depends on ARCH_AIROHA
+	select AIROHA_EFUSE
 	help
 	  Support the USB PHYs of the Airoha ARM SoCs (EN7523, AN7563,
 	  AN7581, AN7583). The USB 2.0 setup, the slew rate calibration
 	  and the minimal USB 3.0 power sequencing are implemented, the
 	  ethernet(SGMII/HSGMII) modes of the serdes are not.
+	  The per-chip termination / impedance trims the AN7583 keeps in
+	  its eFuse are read through the secure monitor.
 
 config PHY_MTK_UFS
 	bool "MediaTek UFS M-PHY driver"

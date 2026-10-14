@@ -17,6 +17,12 @@
  * calibration and power sequencing, the U3 power sequencing and per SoC PLL
  * settings, plus the SCU serdes selection. The ethernet (SGMII/HSGMII) modes
  * and the full U3 KBand calibration of the vendor drivers are not ported.
+ *
+ * The per-chip trims the AN7583 keeps in its eFuse (SSUSB TX termination and
+ * RX impedance, plus the USB2 INTR calibration of both ports) are applied:
+ * they are read once through the secure monitor, see airoha_efuse_load().
+ * A '<phy node> { airoha,no-efuse-trim; }' property keeps the PHY defaults
+ * instead, which is what the pre-eFuse behaviour was.
  */
 
 #include <dm.h>
@@ -31,12 +37,14 @@
 #include <linux/iopoll.h>
 #include <asm/io.h>
 #include <asm/types.h>
+#include <soc/airoha/efuse.h>
 
 /* U2 registers, relative to the PHY block base + instance offset */
 #define U2_FMCR0		0x100
 #define U2_FMMONR0		0x10c
 #define U2_FMMONR1		0x110
 #define U2_USBPHYACR2		0x308
+#define U2_USBPHYACR1		0x304
 #define U2_USBPHYACR4		0x310
 #define U2_USBPHYACR5		0x314
 #define U2_USBPHYACR6		0x318
@@ -54,6 +62,7 @@
 #define AIROHA_U2_PORT_OFFSET	0x1000
 
 /* U2 bit fields */
+#define U2_INTR_CAL		GENMASK(23, 19)	/* USBPHYACR1 */
 #define U2_MONCLK_SEL		GENMASK(27, 26)
 #define U2_FREQDET_EN		BIT(24)
 #define U2_CYCLECNT		GENMASK(23, 0)
@@ -148,6 +157,7 @@ struct airoha_usb_phy_data {
 	unsigned int monclk_base;	/* monitor clock of the first port  */
 	bool u2_calibrate;		/* run the slew rate calibration */
 	bool u2_full_power;		/* full U2 power sequence (AN7583) */
+	bool efuse_cal;			/* trims are in the eFuse (AN7583) */
 	/* U3 */
 	bool has_u3;
 	bool u3_pll_20m;		/* EN7523 U3 style: PLL + crystal */
@@ -172,6 +182,13 @@ struct airoha_usb_phy_priv {
 	const struct airoha_usb_phy_data *data;
 	unsigned int serdes_port;	/* airoha,serdes-port value */
 	bool has_serdes_port;
+	/* Trims read from the eFuse, AIROHA_EFUSE_INVALID_VAL when the eFuse
+	 * is not programmed or not reachable (then the PHY defaults are used).
+	 */
+	u32 ssusb_tx_term_sel;
+	u32 ssusb_rx_imp_sel;
+	u32 usb20_p0_intr_cal;
+	u32 usb20_p1_intr_cal;
 	unsigned int num_instances;
 	struct airoha_usb_phy_instance instances[AIROHA_USB_PHY_MAX_INSTANCE];
 };
@@ -238,13 +255,102 @@ static void airoha_usb_phy_u2_slew_rate_calibration(struct airoha_usb_phy_priv *
 			FIELD_PREP(U2_HSTX_SRCTRL, srctrl));
 }
 
+/*
+ * USB2 INTR calibration of one port: the eFuse holds a field per port, which
+ * the ports select by their register offset (usb2-phy@0 / usb2-phy@1000).
+ */
+static u32 airoha_usb_phy_u2_intr_cal(struct airoha_usb_phy_priv *priv,
+				      const struct airoha_usb_phy_instance *inst)
+{
+	if (!inst->offset)
+		return priv->usb20_p0_intr_cal;
+
+	return priv->usb20_p1_intr_cal;
+}
+
+/*
+ * Read the per-chip trims out of the eFuse. The secure monitor writes a dump
+ * of the eFuse bits into a non-secure buffer, from which the fields are taken
+ * by their bit offsets. A field whose validity bit is clear, or an eFuse that
+ * cannot be read at all, leaves the value at AIROHA_EFUSE_INVALID_VAL so the
+ * caller keeps the PHY default.
+ */
+static void airoha_usb_phy_read_efuse(struct airoha_usb_phy_priv *priv)
+{
+	void *mem;
+	u32 valid;
+
+	priv->ssusb_tx_term_sel = AIROHA_EFUSE_INVALID_VAL;
+	priv->ssusb_rx_imp_sel = AIROHA_EFUSE_INVALID_VAL;
+	priv->usb20_p0_intr_cal = AIROHA_EFUSE_INVALID_VAL;
+	priv->usb20_p1_intr_cal = AIROHA_EFUSE_INVALID_VAL;
+
+	if (!priv->data->efuse_cal)
+		return;
+
+	if (dev_read_bool(priv->dev, "airoha,no-efuse-trim")) {
+		dev_info(priv->dev, "eFuse trims disabled by the device tree\n");
+		return;
+	}
+
+	mem = airoha_efuse_load();
+	if (!mem) {
+		dev_dbg(priv->dev,
+			"eFuse not readable, keeping the PHY defaults\n");
+		return;
+	}
+
+	valid = airoha_efuse_get(mem, AN7583_EFUSE_SDS_USB_VALID_LSB, 3);
+	if (!valid)
+		dev_dbg(priv->dev, "USB eFuse not valid\n");
+
+	/* bit 0 covers the USB3 PHY and the first USB2 port */
+	if (valid & BIT(0)) {
+		priv->ssusb_tx_term_sel =
+			airoha_efuse_get(mem,
+					 AN7583_EFUSE_SSUSB_TX_TERM_SEL_LSB, 2);
+		priv->ssusb_rx_imp_sel =
+			airoha_efuse_get(mem,
+					 AN7583_EFUSE_SSUSB_RX_IMP_SEL_LSB, 5);
+		priv->usb20_p0_intr_cal =
+			airoha_efuse_get(mem,
+					 AN7583_EFUSE_USB20_P0_INTR_CTRL_LSB, 5);
+	}
+
+	/* bit 1 covers the second USB2 port */
+	if (valid & BIT(1))
+		priv->usb20_p1_intr_cal =
+			airoha_efuse_get(mem,
+					 AN7583_EFUSE_USB20_P1_INTR_CTRL_LSB, 5);
+
+	airoha_efuse_free(mem);
+
+	/* dev_info and not dev_dbg: this is what tells whether the trims of
+	 * this chip were taken from the eFuse, and CONFIG_LOG_MAX_LEVEL drops
+	 * debug messages at compile time.
+	 */
+	dev_info(priv->dev,
+		 "eFuse USB trims: valid %#x, tx_term %#x, rx_imp %#x, p0_intr %#x, p1_intr %#x\n",
+		 valid, priv->ssusb_tx_term_sel, priv->ssusb_rx_imp_sel,
+		 priv->usb20_p0_intr_cal, priv->usb20_p1_intr_cal);
+}
+
 static void airoha_usb_phy_u2_init(struct airoha_usb_phy_priv *priv,
 				   struct airoha_usb_phy_instance *inst)
 {
 	const struct airoha_usb_phy_data *data = priv->data;
 	void __iomem *phy = priv->phy + inst->offset;
+	u32 u2_intr_cal;
 
 	mdelay(1);
+
+	/* INTR calibration from the eFuse, before the FS/HS settings of the
+	 * port (the vendor driver applies it in the same order)
+	 */
+	u2_intr_cal = airoha_usb_phy_u2_intr_cal(priv, inst);
+	if (u2_intr_cal != AIROHA_EFUSE_INVALID_VAL)
+		clrsetbits_le32(phy + U2_USBPHYACR1, U2_INTR_CAL,
+				FIELD_PREP(U2_INTR_CAL, u2_intr_cal));
 
 	clrsetbits_le32(phy + U2_USBPHYACR4, U2_FS_CR,
 			FIELD_PREP(U2_FS_CR, data->fs_cr));
@@ -368,6 +474,20 @@ enum airoha_u3_block {
 #define U3_PMA_INTF_CTRL_6		0x318
 #define U3_PMA_INTF_CTRL_7		0x31c
 #define U3_PMA_INTF_CTRL_8		0x320
+#define U3_PMA_TX_TERM_SEL_SEL		BIT(7)		/* force enable */
+#define U3_PMA_TX_TERM_SEL_FORCE	GENMASK(6, 5)
+/*
+ * The RX impedance trim lives in the next PMA register. Note that the
+ * mainline driver declares RX_IMP_SEL as a field of INTF_STS_9 (0x364) and
+ * programs it there, while the vendor driver - for USB *and* PCIe - writes
+ * PMA 0x324 with exactly these bit positions. 0x324 is also what the register
+ * numbering suggests (INTF_CTRL_8 and _9, the RX side after the TX side), so
+ * that is what is used here; 0x364 (a status register our KBand readout
+ * already uses) is the alternative if a board ever disagrees.
+ */
+#define U3_PMA_INTF_CTRL_9		0x324
+#define U3_PMA_RX_IMP_SEL_SEL		BIT(31)		/* force enable */
+#define U3_PMA_RX_IMP_SEL_FORCE		GENMASK(30, 26)
 #define U3_PMA_INTF_STS_9		0x364
 #define U3_PMA_PLL_CTRL_0		0x400
 #define U3_PMA_PLL_CTRL_1		0x404
@@ -704,7 +824,28 @@ static bool airoha_an7583_u3_kband_is_calibrated(struct airoha_usb_phy_priv *pri
 
 static void airoha_an7583_u3_init(struct airoha_usb_phy_priv *priv)
 {
+	u32 tx_term_sel = priv->ssusb_tx_term_sel;
+	u32 rx_imp_sel = priv->ssusb_rx_imp_sel;
 	int i;
+
+	/* SSUSB termination / impedance trims from the eFuse, or the values
+	 * the vendor driver falls back to when the eFuse carries none. They
+	 * are applied before the init sequence, exactly where the vendor
+	 * driver applies them.
+	 */
+	if (tx_term_sel == AIROHA_EFUSE_INVALID_VAL)
+		tx_term_sel = 0x1;
+	if (rx_imp_sel == AIROHA_EFUSE_INVALID_VAL)
+		rx_imp_sel = 0x10;
+
+	clrsetbits_le32(priv->pma + U3_PMA_INTF_CTRL_8,
+			U3_PMA_TX_TERM_SEL_SEL | U3_PMA_TX_TERM_SEL_FORCE,
+			U3_PMA_TX_TERM_SEL_SEL |
+			FIELD_PREP(U3_PMA_TX_TERM_SEL_FORCE, tx_term_sel));
+	clrsetbits_le32(priv->pma + U3_PMA_INTF_CTRL_9,
+			U3_PMA_RX_IMP_SEL_SEL | U3_PMA_RX_IMP_SEL_FORCE,
+			U3_PMA_RX_IMP_SEL_SEL |
+			FIELD_PREP(U3_PMA_RX_IMP_SEL_FORCE, rx_imp_sel));
 
 	airoha_u3_apply(priv, an7583_u3_init_seq,
 			ARRAY_SIZE(an7583_u3_init_seq));
@@ -1131,6 +1272,9 @@ static int airoha_usb_phy_probe(struct udevice *dev)
 	if (!priv->data)
 		return -EINVAL;
 
+	/* The trims have to be known before the first port comes up */
+	airoha_usb_phy_read_efuse(priv);
+
 	priv->phy = dev_remap_addr_index(dev, 0);
 	if (!priv->phy) {
 		dev_err(dev, "missing PHY register block\n");
@@ -1191,6 +1335,7 @@ static const struct airoha_usb_phy_data airoha_an7583_usb_phy_data = {
 	.monclk_base = 1,
 	.u2_calibrate = true,
 	.u2_full_power = true,
+	.efuse_cal = true,
 	.has_u3 = true,
 	/* The AN7583 SSUSB PHY is configured through the ana/pma/dig blocks
 	 * (KBand calibrated PLL), it does not use the AN7581 style U3
