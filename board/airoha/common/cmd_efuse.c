@@ -5,12 +5,14 @@
  * Copyright (C) 2026 Yuzhii0718 <admin@yuzhii0718.eu.org>
  *
  * These are thin forwarders to the secure monitor (ATF BL31) SiP service.
- * The Airoha/EcoNet ATF exposes eFuse only through raw SMC opcode handlers;
- * so a single command layer is the complete interface.
+ * The Airoha/EcoNet ATF exposes eFuse only through raw SMC opcode handlers,
+ * so the commands stay a direct view of that interface: the SMC itself is
+ * the efuse library (drivers/misc/airoha_efuse.c), which is also what the
+ * drivers use to read the calibration fields.
  *
- *   efuse     -> ECNT_SIP_EFUSE_HANDLE        (0x82000001)
+ *   efuse     -> AIROHA_EFUSE_SMC_FID          (0x82000001)
  *               ecnt_efuse_handler(x1 = opcode, x2, x3)
- *   phy_efuse -> ECNT_SIP_PHY_EFUSE_HANDLE    (0x82000303)
+ *   phy_efuse -> AIROHA_EFUSE_SMC_FID_PHY      (0x82000303)
  *               phy_efuse_handler(x1)
  *
  * For 'efuse', argv[1] is a 4-character ASCII opcode that the secure monitor
@@ -25,11 +27,8 @@
 
 #include <command.h>
 #include <vsprintf.h>
-#include <linux/arm-smccc.h>
 #include <linux/sizes.h>
-
-#define ECNT_SIP_EFUSE_HANDLE		0x82000001
-#define ECNT_SIP_PHY_EFUSE_HANDLE	0x82000303
+#include <soc/airoha/efuse.h>
 
 /* x1..x3 of an SMC32 call are 32 bits wide */
 #define SMC32_ARG_MAX			0xffffffffULL
@@ -92,13 +91,11 @@ static const char *smc_status_str(int ret)
 static int efuse_smc_call(const char *name, unsigned long fid,
 			  unsigned long r1, unsigned long r2, unsigned long r3)
 {
-	struct arm_smccc_res res;
 	const char *status;
 	int ret;
 
-	arm_smccc_smc(fid, r1, r2, r3, 0, 0, 0, 0, &res);
+	ret = airoha_efuse_smc_call(fid, r1, r2, r3);
 
-	ret = (int)res.a0;
 	status = smc_status_str(ret);
 	if (status)
 		printf("%s: SMC 0x%08lx %s\n", name, fid, status);
@@ -120,7 +117,7 @@ static int efuse_command(struct cmd_tbl *cmdtp, int flag, int argc,
 	    smc32_arg(argv[0], argv[3], &r3))
 		return CMD_RET_USAGE;
 
-	return efuse_smc_call(argv[0], ECNT_SIP_EFUSE_HANDLE,
+	return efuse_smc_call(argv[0], AIROHA_EFUSE_SMC_FID,
 			      efuse_opcode(argv[1]), r2, r3);
 }
 
@@ -162,7 +159,7 @@ static int phy_efuse_command(struct cmd_tbl *cmdtp, int flag, int argc,
 		return CMD_RET_USAGE;
 	}
 
-	return efuse_smc_call(argv[0], ECNT_SIP_PHY_EFUSE_HANDLE, buf, 0, 0);
+	return efuse_smc_call(argv[0], AIROHA_EFUSE_SMC_FID_PHY, buf, 0, 0);
 }
 
 U_BOOT_CMD(

@@ -447,7 +447,7 @@ config AIROHA_DEFAULT_FIT_BOOT_CONF
 config CMD_AIROHA_EFUSE
 	bool "Enable efuse / phy_efuse commands (SMC to secure monitor)"
 	depends on ARCH_AIROHA
-	select ARM_SMCCC
+	select AIROHA_EFUSE
 	default n
 	help
 	  Provide the 'efuse' and 'phy_efuse' U-Boot commands that forward
