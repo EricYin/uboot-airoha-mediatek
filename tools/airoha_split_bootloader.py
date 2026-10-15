@@ -70,6 +70,11 @@ LZMA_HEADER_SIZE = 13  # 1 byte props + 4 bytes dict_size + 8 bytes uncomp_size
 # LZMA stream signature: props=0x5D, dict_size=0x00800000 (8 MiB) in little-endian
 LZMA_SIGNATURE = b"\x5d\x00\x00\x80"
 
+# Lower bound for the X.509 certificate scan. The certificate chain always
+# follows the BL2 image, and the smallest BL2 seen in the vendor images is
+# ~64 KiB, so nothing below this offset can be a certificate.
+CERT_SCAN_START = 0x10000
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -139,11 +144,80 @@ def decompress_lzma_raw(
     if max_input is not None:
         compressed = compressed[:max_input]
 
-    result = dec.decompress(compressed, max_length=uncomp_size)
+    # A raw LZMA1 stream stores 0xFFFFFFFFFFFFFFFF when the uncompressed size
+    # is unknown (or the header is bogus). Passing that as max_length overflows
+    # the C ssize_t ("Python int too large to convert to C ssize_t"), so fall
+    # back to -1 (unbounded, decompress until end of stream) in that case.
+    if 0 < uncomp_size < (1 << 63):
+        max_length = uncomp_size
+    else:
+        max_length = -1
+
+    result = dec.decompress(compressed, max_length=max_length)
     unused = dec.unused_data
     consumed = len(compressed) - len(unused)
 
     return result, consumed
+
+
+def verify_lzma_result(
+    name: str, offset: int, result: bytes, uncomp_size: int
+) -> None:
+    """
+    Fail loudly when the decoded payload disagrees with its LZMA header.
+
+    This catches the case where the layout was not detected properly and the
+    "header" at the assumed offset is just image data.
+    """
+    if len(result) != uncomp_size:
+        raise ValueError(
+            f"{name}: LZMA stream at 0x{offset:x} decompressed to "
+            f"0x{len(result):x} bytes but the header claims 0x{uncomp_size:x} "
+            f"bytes - layout detection failed (unsupported firmware variant?)"
+        )
+
+
+def probe_lzma_stream(data: bytes, offset: int) -> Optional[tuple[int, int, int]]:
+    """
+    Return (props, dict_size, uncomp_size) if a genuine raw LZMA1 stream starts
+    at ``offset``, otherwise None.
+
+    A candidate is accepted only when its header looks sane *and* the payload
+    really decompresses to ``uncomp_size`` bytes. The decompression check is
+    what rejects the "props=0x5D, dict=8 MiB" byte pattern when it merely
+    occurs inside BL2 code/data.
+    """
+    if data[offset:offset + 4] != LZMA_SIGNATURE:
+        return None
+
+    props = data[offset]
+    dict_size = struct.unpack_from("<I", data, offset + 1)[0]
+    uncomp_size = struct.unpack_from("<Q", data, offset + 5)[0]
+
+    if dict_size not in (0x800000, 0x100000, 0x200000, 0x400000,
+                         0x10000, 0x1000000):
+        return None
+    if not 0x1000 <= uncomp_size <= 0x400000:
+        return None
+
+    try:
+        dec = lzma.LZMADecompressor(
+            format=lzma.FORMAT_RAW,
+            filters=[{
+                "id": lzma.FILTER_LZMA1,
+                "dict_size": dict_size,
+                "lc": 3,
+                "lp": 0,
+                "pb": 2,
+            }],
+        )
+        payload = data[offset + LZMA_HEADER_SIZE:]
+        if len(dec.decompress(payload, max_length=uncomp_size)) != uncomp_size:
+            return None
+    except (lzma.LZMAError, EOFError, OverflowError):
+        return None
+
+    return props, dict_size, uncomp_size
 
 
 # ---------------------------------------------------------------------------
@@ -268,57 +342,37 @@ class BootloaderParser:
 
     def _detect_layout(self) -> None:
         """
-        Auto-detect the bootloader layout by scanning for LZMA streams
-        and X.509 certificate patterns. This handles different firmware
-        variants (e.g. sdg320 with 4 certificates and different offsets).
+        Auto-detect the bootloader layout by scanning for X.509 certificates
+        and LZMA streams. This handles different firmware variants (e.g.
+        sdg320 with 4 certificates and different offsets).
         """
-        # Scan for LZMA streams (props=0x5D, dict=8MB) between BL2 end and env
-        lzma_streams = []
-        scan_start = 0x1F000  # Certificates/LZMA region starts around here
         scan_end = ENV_OFFSET
 
-        for i in range(scan_start, scan_end - LZMA_HEADER_SIZE, 0x100):
-            if self.data[i:i + 4] == LZMA_SIGNATURE:
-                props = self.data[i]
-                dict_size = struct.unpack_from("<I", self.data, i + 1)[0]
-                uncomp_size = struct.unpack_from("<Q", self.data, i + 5)[0]
-                # Validate: dict_size should be a reasonable power-of-2
-                # and uncomp_size should be plausible (1KB - 4MB)
-                if dict_size in (0x800000, 0x100000, 0x200000, 0x400000,
-                                 0x10000, 0x1000000) and \
-                   0x1000 <= uncomp_size <= 0x400000:
-                    lzma_streams.append(i)
-
-        if len(lzma_streams) >= 2:
-            bl31_off = lzma_streams[0]
-            uboot_off = lzma_streams[1]
-            self.layout["bl31_lzma_offset"] = bl31_off
-            self.layout["bl31_lzma_end"] = uboot_off
-            self.layout["uboot_lzma_offset"] = uboot_off
-            self.layout["uboot_lzma_end"] = ENV_OFFSET
-            # BL2 extends up to the certificate region or first LZMA stream
-            self.layout["bl2_region_end"] = bl31_off
-
         # Scan for X.509 DER certificates (0x30 0x82) to find cert region.
-        # Note: certificate chain starts differ per SoC/firmware batch:
+        # The chain sits right behind the BL2 image, so its start depends on
+        # the (per SoC/firmware batch) BL2 size:
         #   EN7523/EN7562  -> 0x20000 (after the BL2 region)
         #   AN7581/AN7583  -> 0x1D000 (first certs embedded in "BL2 region")
-        #   AN7563 (be5000)-> 0x1BC00 (TB_FW_CERT even earlier, right after
-        #                             the BL2 code + padding)
-        # Scanning from 0x1B000 catches all of the above, and the continuity
-        # check below (a valid DER cert following right after) rejects false
-        # positives inside BL2 code.
-        # First collect every plausible DER-cert candidate, then walk the
-        # chain: the cert region starts at the first candidate that is
-        # followed by another valid cert, and every cert after it is taken
-        # by jumping with the DER length (this keeps the final cert too,
-        # which has no successor).
+        #   AN7563 (be5000)-> 0x1BC00 (TB_FW_CERT right after the BL2 code)
+        #   AN7552         -> 0x1AC00 (BL2 is smaller than AN7563's, so the
+        #                              TB_FW_CERT lands below 0x1B000)
+        # The scan therefore starts at CERT_SCAN_START and every candidate has
+        # to pass three independent checks before it is accepted:
+        #   1. the DER blob carries the "....Certificate" text that every
+        #      Airoha X.509 cert contains (rejects code/data false positives)
+        #   2. another valid cert follows in the next 0x400-aligned slot
+        #   3. the chain is then walked with the DER lengths, which keeps the
+        #      final cert too (it has no successor)
         candidates = []
-        for i in range(0x1B000, scan_end - 4, 0x100):
-            if self.data[i] == 0x30 and self.data[i + 1] == 0x82:
-                cert_len = struct.unpack_from(">H", self.data, i + 2)[0]
-                if 0x100 < cert_len < 0x1000:  # Reasonable cert size
-                    candidates.append(i)
+        for i in range(CERT_SCAN_START, scan_end - 4, 0x100):
+            if self.data[i] != 0x30 or self.data[i + 1] != 0x82:
+                continue
+            cert_len = struct.unpack_from(">H", self.data, i + 2)[0]
+            if not 0x100 < cert_len < 0x1000:  # Reasonable cert size
+                continue
+            if b"Certificate" not in self.data[i:i + 4 + cert_len]:
+                continue
+            candidates.append(i)
 
         cert_positions = []
         # Certificate slots in the flash image are aligned to 0x400 (same as
@@ -352,8 +406,47 @@ class BootloaderParser:
             self.layout["cert_end"] = cert_end
             # BL2 region ends at the first certificate (certificates are
             # separate from BL2 code/data, placed at fixed flash offsets)
-            if cert_start < self.layout["bl2_region_end"]:
-                self.layout["bl2_region_end"] = cert_start
+            self.layout["bl2_region_end"] = min(
+                self.layout["bl2_region_end"], cert_start
+            )
+            # The LZMA payloads (BL31, U-Boot) always follow the certificate
+            # region, so its end is a much tighter (and safer) lower bound for
+            # the LZMA scan than a fixed offset.
+            lzma_scan_start = (cert_end + 0xFF) & ~0xFF
+        else:
+            # Unsigned image without a certificate region: start scanning
+            # right behind the BL2 header.
+            lzma_scan_start = 0x1000
+
+        # Scan for LZMA streams (props=0x5D, dict=8MB) between BL2 end and env.
+        # Every candidate is verified by actually decompressing it, so the
+        # signature appearing inside BL2 code/data is not mistaken for a
+        # payload start.
+        lzma_streams = self._find_lzma_streams(lzma_scan_start, scan_end)
+        if len(lzma_streams) < 2 and lzma_scan_start > 0x1000:
+            # Certificate detection may have overshot into the payload area;
+            # rescan the whole region instead of giving up on auto-detection.
+            lzma_streams = self._find_lzma_streams(0x1000, scan_end)
+
+        if len(lzma_streams) >= 2:
+            bl31_off = lzma_streams[0]
+            uboot_off = lzma_streams[1]
+            self.layout["bl31_lzma_offset"] = bl31_off
+            self.layout["bl31_lzma_end"] = uboot_off
+            self.layout["uboot_lzma_offset"] = uboot_off
+            self.layout["uboot_lzma_end"] = ENV_OFFSET
+            # BL2 extends up to the certificate region or first LZMA stream
+            self.layout["bl2_region_end"] = min(
+                self.layout["bl2_region_end"], bl31_off
+            )
+
+    def _find_lzma_streams(self, scan_start: int, scan_end: int) -> list[int]:
+        """Offsets of every genuine LZMA stream in [scan_start, scan_end)."""
+        streams = []
+        for i in range(scan_start, scan_end - LZMA_HEADER_SIZE, 0x100):
+            if probe_lzma_stream(self.data, i) is not None:
+                streams.append(i)
+        return streams
 
     # -- BL1 ---------------------------------------------------------------
 
@@ -475,25 +568,51 @@ class BootloaderParser:
             extra={"cert_count": len(certs), "cert_offsets": [c[0] for c in certs]},
         ))
 
-    # -- BL31 (LZMA) --------------------------------------------------------
+    # -- LZMA payload decoding ----------------------------------------------
 
-    def _extract_bl31(self) -> None:
-        """BL31 runtime firmware, LZMA-compressed."""
-        bl31_off = self.layout["bl31_lzma_offset"]
-        bl31_end = self.layout["bl31_lzma_end"]
-        region = self.data[bl31_off:bl31_end]
+    def _decode_lzma_stream(
+        self, name: str, start: int, end: int
+    ) -> tuple[bytes, bytes, int, LzmaInfo]:
+        """
+        Parse and decompress the LZMA payload occupying [start, end).
 
-        props, dict_size, uncomp_size = parse_lzma_header(region)
-        decompressed, consumed = decompress_lzma_raw(
-            region, uncomp_size, dict_size,
-            max_input=bl31_end - bl31_off - LZMA_HEADER_SIZE,
-        )
+        Returns (region, decompressed, consumed, info). Any failure (bogus
+        header, corrupt stream, size mismatch) is reported as a ValueError,
+        because it means layout detection picked the wrong offset rather than
+        that this particular payload is broken.
+        """
+        region = self.data[start:end]
+        try:
+            props, dict_size, uncomp_size = parse_lzma_header(region)
+            decompressed, consumed = decompress_lzma_raw(
+                region, uncomp_size, dict_size,
+                max_input=end - start - LZMA_HEADER_SIZE,
+            )
+            verify_lzma_result(name, start, decompressed, uncomp_size)
+        except (lzma.LZMAError, EOFError, IndexError, struct.error,
+                ValueError) as exc:
+            raise ValueError(
+                f"{name}: no usable LZMA stream at 0x{start:x} ({exc}) - "
+                f"layout detection failed (unsupported firmware variant?)"
+            ) from exc
 
         info = LzmaInfo(
             props=props,
             dict_size=dict_size,
             uncomp_size=uncomp_size,
             compressed_size=consumed,
+        )
+        return region, decompressed, consumed, info
+
+    # -- BL31 (LZMA) --------------------------------------------------------
+
+    def _extract_bl31(self) -> None:
+        """BL31 runtime firmware, LZMA-compressed."""
+        bl31_off = self.layout["bl31_lzma_offset"]
+        bl31_end = self.layout["bl31_lzma_end"]
+
+        region, decompressed, consumed, info = self._decode_lzma_stream(
+            "BL31", bl31_off, bl31_end
         )
         self.lzma_info["bl31"] = info
 
@@ -505,7 +624,8 @@ class BootloaderParser:
             offset=bl31_off,
             size=len(lzma_data),
             data=lzma_data,
-            description=f"BL31 LZMA compressed (0x{consumed:x} -> 0x{uncomp_size:x} bytes)",
+            description=f"BL31 LZMA compressed "
+                        f"(0x{consumed:x} -> 0x{info.uncomp_size:x} bytes)",
             extra={"lzma_info": info},
         ))
 
@@ -529,19 +649,9 @@ class BootloaderParser:
         """U-Boot (BL33), LZMA-compressed."""
         uboot_off = self.layout["uboot_lzma_offset"]
         uboot_end = self.layout["uboot_lzma_end"]
-        region = self.data[uboot_off:uboot_end]
 
-        props, dict_size, uncomp_size = parse_lzma_header(region)
-        decompressed, consumed = decompress_lzma_raw(
-            region, uncomp_size, dict_size,
-            max_input=uboot_end - uboot_off - LZMA_HEADER_SIZE,
-        )
-
-        info = LzmaInfo(
-            props=props,
-            dict_size=dict_size,
-            uncomp_size=uncomp_size,
-            compressed_size=consumed,
+        region, decompressed, consumed, info = self._decode_lzma_stream(
+            "U-Boot", uboot_off, uboot_end
         )
         self.lzma_info["uboot"] = info
 
@@ -559,7 +669,8 @@ class BootloaderParser:
             offset=uboot_off,
             size=len(lzma_data),
             data=lzma_data,
-            description=f"U-Boot LZMA compressed (0x{consumed:x} -> 0x{uncomp_size:x} bytes)",
+            description=f"U-Boot LZMA compressed "
+                        f"(0x{consumed:x} -> 0x{info.uncomp_size:x} bytes)",
             extra={"lzma_info": info},
         ))
 
