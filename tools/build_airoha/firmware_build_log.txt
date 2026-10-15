@@ -1,15 +1,16 @@
 ========================================================================================================================
   Airoha SoC BL2/BL31 Firmware Build Information Log
 ========================================================================================================================
-  Generated:    2026-10-12 15:34:46
+  Generated:    2026-10-15 15:14:26
   Scanned dir:  tools/build_airoha
-  BL2 files:    11   BL31 files: 11   (legacy: 7/7, opensource: 4/4)
+  BL2 files:    12   BL31 files: 12   (legacy: 8/8, opensource: 4/4)
 
 ========================================================================================================================
   [OVERVIEW] BL2 (Preloader) Build Information - Legacy (SDK)
 ========================================================================================================================
   Variant                    Version        Build Date               DRAMC Ver              Mode     File Size            Status  
   --------------------------------------------------------------------------------------------------------------------------------
+  an7552_default             v2.3           19:15:00, Jan 20 2025    AN7552DRAMC V0.2       lzma     105992 bytes (0x19e08) VALID   
   an7563_default             v2.3(cf74ec3)  14:50:05, Jan 30 2024    AN7552DRAMC V0.4       lzma     110100 bytes (0x1ae14) VALID   
   an7581_default             v2.3           16:38:10, Apr  8 2024    AN7581DRAMC V0.9       lzma     115093 bytes (0x1c195) VALID   
   an7583_default             v2.3           20:29:59, Dec  2 2024    AN7583DRAMC V0.6       lzma     115117 bytes (0x1c1ad) VALID   
@@ -23,6 +24,7 @@
 ========================================================================================================================
   Variant                    Version                      Build Date               Format         File Size                Status  
   ---------------------------------------------------------------------------------------------------------------------------------
+  an7552_default             v2.3():                      19:15:36, Jan 20 2025    LZMA compressed 41984 bytes (0xa400) -> 99864 bytes (0x18618) VALID   
   an7563_default             v2.3():cf74ec3-dirty         14:50:22, Jan 30 2024    LZMA compressed 41984 bytes (0xa400) -> 99864 bytes (0x18618) VALID   
   an7581_default             v2.3():                      16:38:47, Apr  8 2024    LZMA compressed 40960 bytes (0xa000) -> 95235 bytes (0x17403) VALID   
   an7583_default             v2.3():                      12:04:54, Nov  7 2024    LZMA compressed 43008 bytes (0xa800) -> 99905 bytes (0x18641) VALID   
@@ -58,6 +60,55 @@
 ------------------------------------------------------------------------------------------------------------------------
   Release Group: Legacy (SDK) (legacy/)
 ------------------------------------------------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------------------------------------------------
+  Platform: an7552_default
+------------------------------------------------------------------------------------------------------------------------
+
+  --- BL2: bl2.bin ---
+    File path:  legacy/an7552_default/bl2.bin
+    Version:    v2.3
+    Build Date: 19:15:00, Jan 20 2025
+    Detected Chip: an7563
+    Mode:       lzma
+    File Size:  105992 bytes (0x19e08)
+    DRAMC:      AN7552DRAMC V0.2
+    Supported DRAM Types:
+      - dram_type = PCDDR3, data_rate = %d
+      - dram_type = PCDDR4, data_rate = %d
+    Hashes:
+      MD5:    ecee0b53bd0710a5d10035e900581bf0
+      SHA256: d08e87d8d6053ffda2c47c5b087d44d8d27efb71a05f6ef46d1b0811dd8bae6f
+      CRC32:  0xFFFFFFFF
+    Validation:
+      OK: file size 105992 bytes (>= 0x4000)
+      OK: BL22 stream decompressed (94825 bytes)
+      OK: BL23 stream decompressed (86814 bytes)
+      OK: flash table stream decompressed (21668 bytes, 62 entries)
+      OK: layout continuous (stage1+hdr+BL22+BL23+ft ends at file_size-4)
+      OK: trailing CRC32 (no-final-XOR) matches (0x7BE2250B)
+      OK: stage-1 BL21 region non-empty (7994/14336 non-zero bytes)
+    Status:     VALID
+
+  --- BL31: bl31.lzma ---
+    File path:  legacy/an7552_default/bl31.lzma
+    Version:    v2.3():
+    Build Date: 19:15:36, Jan 20 2025
+    Format:     LZMA compressed
+    Compressed: 41984 bytes (0xa400)
+    Decompressed: 99864 bytes (0x18618)
+    Hashes:
+      MD5:    a9aece1f4dcf7830cd5783185c4a59c4
+      SHA256: ebdbe30826baaddf7721d181aed1bfb7ac43a648474f558929321fd001b6e090
+      CRC32:  0x0C431500
+    Decompressed Hashes:
+      MD5:    af1892ae0d29ee58f2c90e1445ef8d7f
+      SHA256: e07ff64e4ca3175b9fdaf8acd22195bc50f7d8a36ac6542ed7434b71b1444b6e
+      CRC32:  0xF156E76D
+    Validation:
+      OK: file size 41984 bytes (>= 0x100)
+      OK: LZMA stream (props=0x5D) decompressed (99864 bytes)
+    Status:     VALID
 
 ------------------------------------------------------------------------------------------------------------------------
   Platform: an7563_default
