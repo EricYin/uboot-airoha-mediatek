@@ -21,14 +21,24 @@ optionally compares against reference binaries in the en7523/ directory.
 Usage:
   python3 split_bootloader.py [mtd0-bootloader.img] [-o OUTPUT_DIR] [--ref-dir en7523]
 
-Dependencies: Python 3.10+ (uses lzma, struct, pathlib, argparse)
+After splitting, the extracted BL2 and BL31 payloads are validated with the
+same checkers that gate the prebuilt binaries in tools/build_airoha/
+(airoha_info_preloader.validate_bl2 / airoha_info_bl31.validate_bl31). When a
+check fails nothing is written to disk and the tool exits non-zero, so a bad
+image cannot silently end up in the build tree; pass --no-verify to skip the
+gate (e.g. to inspect a known-broken image).
+
+Dependencies: Python 3.10+ (uses lzma, struct, pathlib, argparse) and, for the
+verification step, the sibling tools plus the external "xz" binary they use.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib
 import lzma
 import re
+import shutil
 import struct
 import sys
 from dataclasses import dataclass, field
@@ -302,6 +312,28 @@ def find_strings_with_keywords(
         if any(kw in text.lower() for kw in keywords):
             results.append((off, text))
     return results
+
+
+# ---------------------------------------------------------------------------
+# Verification (delegated to the sibling checker tools)
+# ---------------------------------------------------------------------------
+
+TOOLS_DIR = Path(__file__).resolve().parent
+
+# Extracted component -> (sibling module, validator function). These are the
+# same checkers that gate the prebuilt binaries in tools/build_airoha/, so a
+# freshly split image is held to the same standard as the released ones.
+VERIFY_TOOLS = (
+    ("bl2", "airoha_info_preloader", "validate_bl2"),
+    ("bl31.lzma", "airoha_info_bl31", "validate_bl31"),
+)
+
+
+def _load_sibling_tool(module_name: str):
+    """Import a checker tool that lives next to this script (in tools/)."""
+    if str(TOOLS_DIR) not in sys.path:
+        sys.path.insert(0, str(TOOLS_DIR))
+    return importlib.import_module(module_name)
 
 
 # ---------------------------------------------------------------------------
@@ -839,6 +871,54 @@ class BootloaderParser:
 
         print(f"\n  layout map: {layout_path.name}")
 
+    # -- Verification -------------------------------------------------------
+
+    def verify(self) -> list[tuple[str, bool, list[str]]]:
+        """
+        Validate the extracted payloads with the project's own checker tools.
+
+        BL2 goes through tools/airoha_info_preloader.py:validate_bl2() and the
+        BL31 LZMA blob through tools/airoha_info_bl31.py:validate_bl31(), i.e.
+        exactly the functions that gate the prebuilt binaries in
+        tools/build_airoha/. Components that were not extracted are skipped.
+
+        Returns a list of (artifact name, ok, check lines).
+        """
+        comps = {c.name: c for c in self.components}
+        modules: dict[str, object] = {}
+        results = []
+
+        for comp_name, module_name, func_name in VERIFY_TOOLS:
+            comp = comps.get(comp_name)
+            if comp is None:
+                continue  # not part of this image -> nothing to verify
+            if module_name not in modules:
+                modules[module_name] = _load_sibling_tool(module_name)
+            validator = getattr(modules[module_name], func_name)
+            ok, checks = validator(comp.data, f"{comp_name}.bin")
+            results.append((f"{comp_name}.bin", ok, checks))
+
+        return results
+
+    def print_verification(self, results: list[tuple[str, bool, list[str]]]) -> bool:
+        """Print the verification report; returns True when all checks passed."""
+        print("  Verification (via tools/airoha_info_preloader.py, "
+              "tools/airoha_info_bl31.py):")
+        if not results:
+            print("    (nothing to verify: no BL2/BL31 payload extracted)")
+            print()
+            return True
+
+        for name, ok, checks in results:
+            print(f"    {name:<16s} {'VALID' if ok else 'INVALID'}")
+            for line in checks:
+                print(f"      {line}")
+
+        passed = all(ok for _, ok, _ in results)
+        print(f"    result: {'PASS' if passed else 'FAIL'}")
+        print()
+        return passed
+
 
 # ---------------------------------------------------------------------------
 # Reference comparison
@@ -930,6 +1010,13 @@ def main() -> None:
         action="store_true",
         help="do not save extracted files, only print analysis",
     )
+    parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="skip the automatic BL2/BL31 verification step "
+             "(by default the extracted payloads are validated and a failing "
+             "image is not written to disk)",
+    )
     args = parser.parse_args()
 
     # Read image
@@ -946,7 +1033,13 @@ def main() -> None:
 
     # Parse
     bp = BootloaderParser(image_data)
-    bp.parse()
+    try:
+        bp.parse()
+    except (ValueError, IndexError, struct.error, lzma.LZMAError) as exc:
+        # Not a bootloader image, or an unsupported variant: report instead of
+        # dumping a traceback (nothing has been written at this point).
+        print(f"error: cannot parse {image_path}: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     # Report
     bp.print_report()
@@ -957,9 +1050,29 @@ def main() -> None:
     else:
         print(f"\n  (reference directory {args.ref_dir} not found, skipping comparison)")
 
+    # Verify the extracted payloads before anything is written to disk
+    if args.no_verify:
+        print("\n  Verification: skipped (--no-verify)\n")
+        verified = True
+    elif shutil.which("xz") is None:
+        # The checker tools decompress with the external xz binary; without it
+        # they would report bogus failures, so skip the gate instead.
+        print("\n  Verification: skipped ('xz' not found, required by "
+              "airoha_info_preloader/airoha_info_bl31)\n")
+        verified = True
+    else:
+        print()
+        verified = bp.print_verification(bp.verify())
+
+    if not verified:
+        print("error: verification failed - no components written "
+              "(re-run with --no-verify to write them anyway)",
+              file=sys.stderr)
+        sys.exit(1)
+
     # Save
     if not args.no_save:
-        print(f"\n  Saving components to: {args.output}")
+        print(f"  Saving components to: {args.output}")
         bp.save(args.output)
 
     print()
