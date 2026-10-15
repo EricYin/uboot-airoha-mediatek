@@ -11,6 +11,7 @@
 | EN7523 | evb-ubi |
 | EN7529 | evb |
 | EN7562 | evb |
+| AN7552 | evb |
 | AN7563 | evb |
 | AN7563 | evb-ubi |
 | AN7581 | evb |
