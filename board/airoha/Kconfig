@@ -434,6 +434,44 @@ config AIROHA_FAILSAFE_VALIDATE_FIRMWARE
 
 endif # AIROHA_FAILSAFE_VALIDATE
 
+config AIROHA_FAILSAFE_VERIFY_WRITE
+	bool "Verify the flashed image (read back and compare)"
+	depends on AIROHA_WEB_FAILSAFE
+	default y
+	help
+	  Read every image back from the storage it was just written to
+	  and compare it with the uploaded image (the DRAM staging
+	  buffer), so a write that did not land - a bad flash block, a
+	  dying cell, a storage driver problem - fails the upgrade right
+	  away instead of being discovered during the next boot.
+
+	  This is the post-write half of the validation: the checks of the
+	  "Failsafe image validation" menu above run on the uploaded image
+	  before it is written, this one checks what the flash actually
+	  holds afterwards.  It costs one full read of the image per
+	  upgrade, no extra RAM (the comparison runs in 64 KiB chunks) and
+	  applies to every image type the Web UI can write:
+
+	    firmware    read back from the same FIT volume / partition
+	                the write path resolved,
+	    fip         'fip' UBI static volume / MMC partition,
+	    u-boot      'u-boot' MTD partition,
+	    chainloader 'chainloader' MTD partition,
+	    bl2         read back from where the bootrom expects the
+	                preloader: the 'bl2' MTD partition (at the bootrom
+	                offset 0x800) or the fixed offset of the MMC user
+	                area of an eMMC / SD card.
+
+	  The GPT image is excluded: it is adjusted to the device size
+	  while it is written, so it does not match the upload, and the
+	  GPT writer already reads both of its copies back and verifies
+	  them itself.
+
+	  Independently of this compile-time switch, the runtime
+	  environment variable "failsafe_verify" can disable the read-back
+	  verification on a running device (set it to 0/no; unset means
+	  on).
+
 endmenu # Airoha Failsafe Web recovery
 
 config AIROHA_DEFAULT_FIT_BOOT_CONF

@@ -12,6 +12,8 @@
  *                                      structural image validation
  *   - failsafe_write_image()         — flash the staged image to the
  *                                      target partition (MTD) or UBI volume
+ *   - failsafe_verify_image()        — read the freshly flashed image
+ *                                      back and compare it with the upload
  *   - boot_from_mem()                — boot an uploaded image from DRAM
  *   - failsafe_bl2_version_info()    — extract the preloader banner
  *   - failsafe_atf_version_info()    — read the flashed BL2 / BL31 banners
@@ -49,6 +51,7 @@
 #include <command.h>
 #include <env.h>
 #include <errno.h>
+#include <malloc.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <vsprintf.h>
@@ -242,9 +245,10 @@ static int airoha_write_bl2(const void *data, size_t size)
 		"to hold the preloader", FAILSAFE_STORAGE_BL2_TARGET);
 }
 
-/* Only the ARM banner reporting below reads the preloader back (see the
- * CONFIG_ARM block near the end of this file); the MIPS SoCs (EcoNet)
- * have no FIP to take a banner from.
+/* The ARM banner reporting below (see the CONFIG_ARM block near the end of
+ * this file) and, with CONFIG_AIROHA_FAILSAFE_VERIFY_WRITE, the read-back
+ * verification of a freshly flashed preloader use the reader below; the
+ * MIPS SoCs (EcoNet) have no FIP to take a banner from.
  */
 #if IS_ENABLED(CONFIG_ARM) && !defined(CONFIG_AIROHA_BUILD_LEGACY)
 /* Read the flashed preloader back, from the same two locations. */
@@ -266,6 +270,57 @@ static int airoha_read_bl2(void *buf, size_t max_len, size_t *read_len)
 
 	return -ENODEV;
 }
+
+#if IS_ENABLED(CONFIG_AIROHA_FAILSAFE_VERIFY_WRITE)
+/*
+ * Read-back verification of a freshly flashed preloader.
+ *
+ * The preloader is a small image, so it is read in one go instead of
+ * through the chunked comparison the named targets use
+ * (failsafe_storage_verify()) - which is also the only way to reach it on
+ * an MMC device, where it lives at a fixed offset of the user area rather
+ * than in a partition the storage layer could resolve by name.
+ */
+static int airoha_verify_bl2(const void *data, size_t size)
+{
+	const u8 *src = data;
+	u8 *buf;
+	size_t read_len = 0;
+	size_t i;
+	int ret;
+
+	buf = malloc(size);
+	if (!buf)
+		return -ENOMEM;
+
+	ret = airoha_read_bl2(buf, size, &read_len);
+	if (ret) {
+		ret = failsafe_error(ret, "cannot read 'bl2' back (ret=%d)",
+			ret);
+	} else if (read_len != size) {
+		ret = failsafe_error(-EIO, "'bl2' read-back is short: %zu of "
+			"%zu bytes", read_len, size);
+	} else {
+		for (i = 0; i < size; i++)
+			if (buf[i] != src[i])
+				break;
+
+		if (i < size) {
+			ret = failsafe_error(-EIO, "'bl2' read-back mismatch at "
+				"offset 0x%zx (wrote 0x%02x, read 0x%02x)",
+				i, src[i], buf[i]);
+		}
+	}
+
+	free(buf);
+
+	if (!ret)
+		cprintln(SUCCESS, "Failsafe: 'bl2' verified (read back and "
+			 "compared)");
+
+	return ret;
+}
+#endif /* CONFIG_AIROHA_FAILSAFE_VERIFY_WRITE */
 #endif /* CONFIG_ARM && !CONFIG_AIROHA_BUILD_LEGACY */
 
 
@@ -365,6 +420,75 @@ int failsafe_write_image(const void *data, size_t size, failsafe_fw_t fw)
 
 	return failsafe_storage_write(target, 0, data, size);
 }
+
+#if IS_ENABLED(CONFIG_AIROHA_FAILSAFE_VERIFY_WRITE)
+/*
+ * Read back what was just written and compare it with the staged image.
+ *
+ * Every type is checked at the very location the write path used (see
+ * failsafe_write_image() above), so the two cannot drift apart:
+ *
+ *   firmware    the FIT volume / partition the shared write helper
+ *               resolved (an MMC partition wins over the "fit" volume)
+ *   fip         the "fip" UBI static volume / MMC partition
+ *   u-boot      the "u-boot" MTD partition
+ *   chainloader the "chainloader" MTD partition
+ *   bl2         the preloader location, see airoha_verify_bl2()
+ *
+ * The GPT image is deliberately left out: it is adjusted to the device
+ * size while it is written and so does not match the upload, and
+ * failsafe_mmc_write_gpt() already reads both of its copies back and
+ * verifies them itself.
+ */
+int failsafe_verify_image(const void *data, size_t size, failsafe_fw_t fw)
+{
+	const char *target = fw_to_target(fw);
+
+	if (!data || !size)
+		return -EINVAL;
+
+	/*
+	 * Runtime opt-out, the read-back counterpart of the
+	 * "failsafe_validate" variable: the check costs one full read of
+	 * the image and can be turned off on a running device (the Web UI
+	 * has a switch for it).  Unset means on.
+	 */
+	if (env_get_yesno("failsafe_verify") == 0) {
+		cprintln(CAUTION, "Failsafe: image read-back verification "
+			 "disabled by the 'failsafe_verify' environment "
+			 "variable");
+		return 0;
+	}
+
+	switch (fw) {
+	case FW_TYPE_FW: {
+		const char *part = target ?
+			failsafe_storage_firmware_part(target) : NULL;
+
+		return failsafe_storage_verify(part ? part : target, 0, data,
+					       size);
+	}
+	case FW_TYPE_FIP:
+	case FW_TYPE_UBOOT:
+	case FW_TYPE_CHAINLOADER:
+		return failsafe_storage_verify(target, 0, data, size);
+	case FW_TYPE_BL2:
+#if IS_ENABLED(CONFIG_ARM) && !defined(CONFIG_AIROHA_BUILD_LEGACY)
+		return airoha_verify_bl2(data, size);
+#else
+		/* No standalone preloader in this build: the legacy
+		 * 512 KiB image carries BL2 inside its internal FIP, so
+		 * an upload has no 'bl2' target - and nothing to verify.
+		 */
+		return 0;
+#endif
+	default:
+		/* RAM boot (no flash target) and the GPT (verified by its
+		 * own writer): nothing to compare. */
+		return 0;
+	}
+}
+#endif /* CONFIG_AIROHA_FAILSAFE_VERIFY_WRITE */
 
 /*
  * Boot an image previously uploaded by the failsafe Web UI directly from
