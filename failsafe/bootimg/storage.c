@@ -34,6 +34,8 @@
  */
 
 #include <errno.h>
+#include <malloc.h>
+#include <linux/kernel.h>
 #include <linux/string.h>
 
 #include <failsafe/storage.h>
@@ -281,4 +283,80 @@ int failsafe_storage_read(const char *target, u64 offset, void *buf,
 #else
 	return -ENODEV;
 #endif
+}
+
+/* ------------------------------------------------------------------ */
+/*  Read-back verification                                             */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Chunk size of the read-back comparison.  A firmware image is several
+ * MiB, so reading it back in one go would need a second buffer of that
+ * size next to the staged upload; the chunk keeps the extra RAM at 64 KiB
+ * and leaves the staged image untouched for the caller.
+ */
+#define FAILSAFE_VERIFY_CHUNK	65536
+
+int failsafe_storage_verify(const char *target, u64 offset, const void *data,
+			    size_t size)
+{
+	const u8 *src = data;
+	u8 *buf;
+	size_t done = 0;
+	int ret = 0;
+
+	if (!target || !target[0] || !data || !size)
+		return -EINVAL;
+
+	buf = malloc(FAILSAFE_VERIFY_CHUNK);
+	if (!buf)
+		return -ENOMEM;
+
+	cprintln(NORMAL, "Failsafe: verifying '%s' read-back (%zu (0x%zx) "
+		 "bytes @ 0x%llx)", target, size, size,
+		 (unsigned long long)offset);
+
+	while (done < size) {
+		size_t chunk = min_t(size_t, FAILSAFE_VERIFY_CHUNK, size - done);
+		size_t read_len = 0;
+		size_t i;
+
+		ret = failsafe_storage_read(target, offset + done, buf, chunk,
+					    &read_len);
+		if (ret) {
+			ret = failsafe_error(ret, "cannot read '%s' back at "
+				"0x%llx (ret=%d)", target,
+				(unsigned long long)(offset + done), ret);
+			break;
+		}
+
+		if (read_len != chunk) {
+			ret = failsafe_error(-EIO, "'%s' read-back is short: "
+				"%zu of %zu bytes at 0x%llx", target, read_len,
+				chunk, (unsigned long long)(offset + done));
+			break;
+		}
+
+		for (i = 0; i < chunk; i++)
+			if (buf[i] != src[done + i])
+				break;
+
+		if (i < chunk) {
+			ret = failsafe_error(-EIO, "'%s' read-back mismatch at "
+				"offset 0x%llx (wrote 0x%02x, read 0x%02x)",
+				target, (unsigned long long)(offset + done + i),
+				src[done + i], buf[i]);
+			break;
+		}
+
+		done += chunk;
+	}
+
+	free(buf);
+
+	if (!ret)
+		cprintln(SUCCESS, "Failsafe: '%s' verified (read back and "
+			 "compared)", target);
+
+	return ret;
 }

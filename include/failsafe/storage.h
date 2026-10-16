@@ -200,6 +200,34 @@ const char *failsafe_storage_firmware_part(const char *target);
 int failsafe_storage_read(const char *target, u64 offset, void *buf,
 			  size_t max_len, size_t *read_len);
 
+/**
+ * failsafe_storage_verify() - read an image back and compare it
+ * @target: MTD partition, MMC partition / hardware partition or UBI
+ *	    volume name (the same @target the write used)
+ * @offset: byte offset of the image inside the target
+ * @data: the image as it was written (the staged upload)
+ * @size: image size in bytes
+ *
+ * Post-write verification: the image is read back from the very target
+ * the write path used and compared with @data, so a write that did not
+ * land - a bad flash block, a dying cell, a storage driver problem - is
+ * reported right away instead of at the next boot.
+ *
+ * The read runs in chunks (FAILSAFE_VERIFY_CHUNK bytes), so no second
+ * buffer of the image size is needed and @data stays untouched for the
+ * caller.  On a mismatch the failing byte is reported with its offset and
+ * both values.
+ *
+ * The GPT (partition table) upload is *not* verifiable this way - it is
+ * adjusted to the device size and its backup copy generated while it is
+ * written - and is verified by failsafe_mmc_write_gpt() itself.
+ *
+ * Returns 0 when the target holds exactly @data, -EIO on a mismatch or a
+ * short read, and the negative errno of the failed read otherwise.
+ */
+int failsafe_storage_verify(const char *target, u64 offset, const void *data,
+			    size_t size);
+
 /* ------------------------------------------------------------------ */
 /*  Backend: raw MTD partitions (failsafe/bootimg/mtd.c)               */
 /*                                                                     */

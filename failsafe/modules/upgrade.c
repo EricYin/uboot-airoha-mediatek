@@ -21,7 +21,9 @@
  *   - result_handler(): commit the staged image through
  *     failsafe_write_image() - which picks the storage target for the
  *     firmware type (an MTD partition, a UBI volume or an MMC partition,
- *     see failsafe/bootimg/) - or hand an uploaded image to the RAM-boot
+ *     see failsafe/bootimg/) - have what was written read back and
+ *     compared with the staged image through failsafe_verify_image() -
+ *     or hand an uploaded image to the RAM-boot
  *     path (booted by boot_from_mem() from core.c: FIT / legacy
  *     images via bootm, other raw binaries via the "go" command), and
  *     report success / failed.
@@ -562,7 +564,23 @@ void result_handler(enum httpd_uri_handler_status status,
 				st->ret = failsafe_write_image(upload_data,
 							       upload_size,
 							       fw_type);
-			}
+
+				/*
+				 * A write that reported success is still read back
+				 * from the storage it went to and compared with the
+				 * image it was made from (board hook, see
+				 * failsafe_verify_image()): a write that did not
+				 * land - a bad flash block, a dying cell, a storage
+				 * driver problem - fails the upgrade here instead of
+				 * being discovered during the next boot.  The check
+				 * is a no-op when the build or the running device
+				 * has it turned off.
+				 */
+				if (!st->ret)
+					st->ret = failsafe_verify_image(upload_data,
+									upload_size,
+									fw_type);
+				}
 
 			/* report the outcome with the configured effect */
 			failsafe_led_set_phase(st->ret ? FAILSAFE_LED_FAIL :

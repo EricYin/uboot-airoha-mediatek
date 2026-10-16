@@ -28,6 +28,35 @@ int failsafe_validate_image(const void *data, size_t size,
 int failsafe_write_image(const void *data, size_t size,
 			 failsafe_fw_t fw);
 
+/**
+ * failsafe_verify_image() - verify a freshly flashed image (board hook)
+ * @data: the image as it was flashed (the staged upload)
+ * @size: image size in bytes
+ * @fw: firmware type of the upload (see failsafe_fw_t)
+ *
+ * Post-write counterpart of failsafe_write_image(), called by
+ * failsafe/modules/upgrade.c right after a write that reported success:
+ * the image is read back from the storage the write path just used and
+ * compared with @data, so a write that did not land is reported as a
+ * failed upgrade instead of being discovered at the next boot.
+ *
+ * The board-level implementation (board/airoha/common/failsafe.c,
+ * board/mediatek/common/failsafe.c) is the only place that knows where
+ * each type was written - the 'bl2' location in particular is SoC
+ * specific - and uses the shared chunked comparison
+ * failsafe_storage_verify() for the targets the storage layer can resolve
+ * by name.  It also honours the runtime environment variable
+ * "failsafe_verify" (0/no turns the read-back off).
+ *
+ * Controlled by CONFIG_<SOC>_FAILSAFE_VERIFY_WRITE; the weak default in
+ * core.c reports "nothing to verify" (0), which is what a board without
+ * an implementation and a build with the option off run.
+ *
+ * Returns 0 when the storage holds exactly @data, a negative errno when
+ * it does not - the caller then reports the upgrade as failed.
+ */
+int failsafe_verify_image(const void *data, size_t size, failsafe_fw_t fw);
+
 /*
  * Uploaded image staged by failsafe/modules/upgrade.c, consumed by the
  * board RAM-boot hook (boot_from_mem).

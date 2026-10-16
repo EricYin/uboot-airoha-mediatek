@@ -93,6 +93,22 @@ int __weak failsafe_write_image(const void *data, size_t size, failsafe_fw_t fw)
 	return -ENOSYS;
 }
 
+int __weak failsafe_verify_image(const void *data, size_t size, failsafe_fw_t fw)
+{
+	/*
+	 * Nothing to verify: the read-back check is written together with
+	 * the board's write policy (board/airoha/common/failsafe.c,
+	 * board/mediatek/common/failsafe.c), and this default is what a
+	 * board without one - or a build with the read-back verification
+	 * option off - runs.
+	 */
+	(void)data;
+	(void)size;
+	(void)fw;
+
+	return 0;
+}
+
 int __weak failsafe_bl2_version_info(const void *data, size_t size,
 				     failsafe_fw_t fw,
 				     struct failsafe_version_info *info)
