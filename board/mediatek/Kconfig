@@ -99,6 +99,43 @@ config MTK_FAILSAFE_VALIDATE_FIRMWARE
 
 endif # MTK_FAILSAFE_VALIDATE
 
+config MTK_FAILSAFE_VERIFY_WRITE
+	bool "Verify the flashed image (read back and compare)"
+	depends on MTK_WEB_FAILSAFE
+	default y
+	help
+	  Read every image back from the storage it was just written to
+	  and compare it with the uploaded image (the DRAM staging
+	  buffer), so a write that did not land - a bad flash block, a
+	  dying cell, a storage driver problem - fails the upgrade right
+	  away instead of being discovered during the next boot.
+
+	  This is the post-write half of the validation: the checks of the
+	  "Mediatek Failsafe Web recovery" menu above run on the uploaded
+	  image before it is written, this one checks what the flash
+	  actually holds afterwards.  It costs one full read of the image
+	  per upgrade, no extra RAM (the comparison runs in 64 KiB
+	  chunks) and applies to every image type the Web UI can write:
+
+	    firmware    read back from the same FIT volume / partition
+	                the write path resolved,
+	    fip         'fip' UBI static volume / MMC partition,
+	    u-boot      'u-boot' storage (MIPS: SPL / payload + U-Boot),
+	    bl2         read back from where the bootrom expects the
+	                preloader: the 'bl2' MTD partition, the 'bl2'
+	                partition of an SD card, or the boot0 hardware
+	                partition of an eMMC.
+
+	  The GPT image is excluded: it is adjusted to the device size
+	  while it is written, so it does not match the upload, and the
+	  GPT writer already reads both of its copies back and verifies
+	  them itself.
+
+	  Independently of this compile-time switch, the runtime
+	  environment variable "failsafe_verify" can disable the read-back
+	  verification on a running device (set it to 0/no; unset means
+	  on).
+
 endmenu # Mediatek Failsafe Web recovery
 
 config MTK_DEFAULT_FIT_BOOT_CONF
