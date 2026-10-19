@@ -26,9 +26,13 @@
 #                         atf   - only compile ../atf-airoha and stage its
 #                                 artifacts under tools/build_airoha/source/
 #   ATF_DIR=<path>      ATF source tree (default: ../atf-airoha)
-#   BLOBS=<source|opensource|legacy|auto>
-#                       Blob source for this build; auto (default) keeps the
-#                       defconfig's CONFIG_AIROHA_BLOBS_* selection
+#   BLOBS=<source|prebuilt|auto>
+#                       Where BL1/BL2/BL31 come from: source builds them from
+#                       the ATF tree, prebuilt uses the blob directories
+#                       checked into tools/build_airoha (a modern defconfig
+#                       falls back to opensource/, a legacy board keeps
+#                       legacy/ - the build type picks the directory, it is not
+#                       a user choice), auto (default) keeps the defconfig
 #
 # Toolchain auto-detection:
 #   en7523 / en7529 / en7562 / an7563  ->  arm-linux-gnueabi-        (ARMv7, 32-bit)
@@ -47,8 +51,9 @@
 #   # Build only the ATF blobs (after cloning ../atf-airoha):
 #   SOC=an7581 BOARD=evb STAGE=atf ./airoha.sh
 #
-#   # Build against the checked-in blobs instead of the ATF tree:
-#   SOC=an7581 BOARD=evb BLOBS=opensource ./airoha.sh
+#   # Build against the checked-in blobs instead of the ATF tree (one board,
+#   # or a whole batch with ./build.sh airoha):
+#   SOC=an7581 BOARD=evb BLOBS=prebuilt ./airoha.sh
 #===============================================================================
 
 set -e
@@ -262,9 +267,11 @@ atf_soc_for() {
 	esac
 }
 
-# BLOBS=<source|opensource|legacy> forces the blob source for this build by
-# rewriting the choice in .config (auto keeps the defconfig's selection).  It is
-# the escape hatch for a tree without the ATF sources: use BLOBS=opensource.
+# BLOBS=<source|prebuilt> forces how BL1/BL2/BL31 are obtained by rewriting the
+# choice in .config (auto keeps the defconfig's selection).  Which of the
+# checked-in directories (opensource/ or legacy/) a prebuilt build reads is
+# decided by the board's build type and handled by tools/build_airoha, so it is
+# deliberately not selectable here.
 apply_blob_override() {
 	local want=""
 	case "${BLOBS}" in
@@ -274,19 +281,17 @@ apply_blob_override() {
 		source)
 			want="CONFIG_AIROHA_BLOBS_SOURCE"
 			;;
-		opensource)
+		prebuilt)
+			config_enabled CONFIG_AIROHA_BLOBS_SOURCE || return 0
 			want="CONFIG_AIROHA_BLOBS_OPENSOURCE"
 			;;
-		legacy)
-			want="CONFIG_AIROHA_BLOBS_LEGACY"
-			;;
 		*)
-			error "Unsupported BLOBS value: ${BLOBS} (use source, opensource, legacy or auto)"
+			error "Unsupported BLOBS value: ${BLOBS} (use source, prebuilt or auto)"
 			exit 1
 			;;
 	esac
 
-	info "Overriding blob source: ${BLOBS}"
+	info "Blob source override: ${BLOBS} -> $(printf '%s' "${want#CONFIG_AIROHA_BLOBS_}" | tr 'A-Z' 'a-z')"
 	sed -i \
 		-e '/^CONFIG_AIROHA_BLOBS_SOURCE=/d' \
 		-e '/^CONFIG_AIROHA_BLOBS_OPENSOURCE=/d' \
@@ -303,7 +308,7 @@ check_atf_tree() {
 	if [ ! -d "${ATF_DIR}" ]; then
 		error "ATF source tree not found: ${ATF_DIR}"
 		error "Clone it next to this tree, or set ATF_DIR=<path>."
-		error "To build against the checked-in blobs instead, re-run with BLOBS=opensource."
+		error "To build against the checked-in blobs instead, re-run with BLOBS=prebuilt."
 		exit 1
 	fi
 	if [ ! -x "${ATF_DIR}/build.sh" ]; then
@@ -570,7 +575,7 @@ build_atf_source() {
 		error "No ATF source platform matches SOC=${SOC_FAMILY}."
 		error "atf-airoha build.sh builds en7523 / an7552 / an7581 / an7583;"
 		error "AN7563 is an AN7552 package variant and EN7562 an EN7523 one."
-		error "Build this board against the checked-in blobs instead: BLOBS=opensource"
+		error "Build this board against the checked-in blobs instead: BLOBS=prebuilt"
 		exit 1
 	fi
 
