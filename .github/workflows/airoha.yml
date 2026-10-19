@@ -1,10 +1,12 @@
 name: Airoha Build and Release
 
 # The Airoha boot chain is split over two trees: this repository builds U-Boot
-# and packs the FIP images, while BL1/BL2/BL31 are built from the atf-airoha
-# tree, checked out as a sibling of the workspace.  airoha.sh drives both and
-# stages the bootloader artifacts under tools/build_airoha/source/ before
-# tools/build_airoha packs preloader.bin / bl31-uboot.fip.
+# and packs the FIP images, while BL1/BL2/BL31 are either built from atf-airoha
+# (checked out as a sibling of the workspace when atf_ref is given) or taken
+# from the blob directories checked into tools/build_airoha (atf_ref empty, the
+# default).  airoha.sh drives both: with a ref it stages the bootloader
+# artifacts under tools/build_airoha/source/ before tools/build_airoha packs
+# preloader.bin / bl31-uboot.fip.
 
 on:
   workflow_dispatch:
@@ -17,9 +19,9 @@ on:
         options:
           - v2026.10
       atf_ref:
-        description: 'Branch/ref of atf-airoha to build the bootloader from'
-        required: true
-        default: atf-v2.10
+        description: 'Branch/ref of atf-airoha to build BL1/BL2/BL31 from. Leave empty to use the checked-in blobs instead - no ATF tree, no download.'
+        required: false
+        default: 'atf-v2.10'
         type: string
       SOC:
         description: 'SOC type (e.g., en7523/an7563/an7581/an7583)'
@@ -64,6 +66,7 @@ jobs:
           echo "Dropdown sha   = ${{ github.sha }}"
           echo "Ref name       = ${{ github.ref_name }}"
           echo "Branch input   = ${{ inputs.branch }}"
+          echo "ATF ref input  = '${{ inputs.atf_ref }}'"
 
       # 3. Checkout the repository to access the build scripts and source code.
       #    The `branch` input is required, so the built ref is deterministic.
@@ -86,7 +89,10 @@ jobs:
       #     This is not cosmetic: the U-Boot tree *is* the workspace, and its
       #     `make clean` deletes every '*.[aios]' file found below the tree, so a
       #     nested ATF tree would have its prebuilt DRAM objects wiped.
+      #     Skipped when atf_ref is empty: step 5 then passes BLOBS=prebuilt and
+      #     the checked-in blobs are used, so no ATF tree is needed at all.
       - name: Checkout atf-airoha
+        if: inputs.atf_ref != ''
         uses: actions/checkout@v4
         with:
           repository: Yuzhii0718/atf-airoha
@@ -94,13 +100,17 @@ jobs:
           path: atf-airoha
 
       - name: Move the ATF tree next to the U-Boot tree
+        if: inputs.atf_ref != ''
         run: mv "${GITHUB_WORKSPACE}/atf-airoha" "${GITHUB_WORKSPACE}/../atf-airoha"
 
-      # 3c. Cache the ATF host archives: atf-airoha/build.sh fetches the AArch32
-      #     toolchain and mbedTLS into dl/ when they are missing (~150 MiB
-      #     together), so keep them between runs.  The extracted toolchain is
-      #     still unpacked once per run; only the download is avoided.
+      # 3c. Cache the ATF host archives, only when a ref was given (i.e. the
+      #     bootloader is built from source): atf-airoha/build.sh fetches the
+      #     AArch32 toolchain and mbedTLS into dl/ when they are missing
+      #     (~150 MiB together), so keep them between runs.  The extracted
+      #     toolchain is still unpacked once per run; only the download is
+      #     avoided.
       - name: Cache the ATF host archives
+        if: inputs.atf_ref != ''
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/../atf-airoha/dl
@@ -134,11 +144,23 @@ jobs:
           BUILD_TIME="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 
           # The ATF tree lives next to the workspace (step 3b) and the bootloader
-          # images are built from it, so its commit is recorded as well.
-          ATF_DIR="$(cd "${GITHUB_WORKSPACE}/../atf-airoha" && pwd)"
-          ATF_BRANCH="$(git -C "${ATF_DIR}" rev-parse --abbrev-ref HEAD)"
-          ATF_COMMIT="$(git -C "${ATF_DIR}" rev-parse HEAD)"
-          ATF_COMMIT_SHORT="${ATF_COMMIT:0:7}"
+          # images are built from it - unless atf_ref is empty, in which case the
+          # blobs checked into tools/build_airoha are used and there is no tree
+          # to inspect.
+          if [ -n "${{ inputs.atf_ref }}" ]; then
+            BLOB_SOURCE="source"
+            ATF_DIR="$(cd "${GITHUB_WORKSPACE}/../atf-airoha" && pwd)"
+            ATF_BRANCH="$(git -C "${ATF_DIR}" rev-parse --abbrev-ref HEAD)"
+            ATF_COMMIT="$(git -C "${ATF_DIR}" rev-parse HEAD)"
+            ATF_COMMIT_SHORT="${ATF_COMMIT:0:7}"
+            ATF_SUMMARY="atf-airoha ${ATF_BRANCH} / \`${ATF_COMMIT_SHORT}\`"
+          else
+            BLOB_SOURCE="prebuilt"
+            ATF_BRANCH="-"
+            ATF_COMMIT="-"
+            ATF_COMMIT_SHORT="-"
+            ATF_SUMMARY="checked-in prebuilt blobs (no ATF tree)"
+          fi
 
           {
             echo "Airoha U-Boot Build Information"
@@ -148,9 +170,12 @@ jobs:
             echo "Repository     : ${GITHUB_REPOSITORY}"
             echo "Branch         : ${BRANCH}"
             echo "Commit         : ${COMMIT_SHORT} (${COMMIT})"
-            echo "ATF Repository : Yuzhii0718/atf-airoha"
-            echo "ATF Branch     : ${ATF_BRANCH}"
-            echo "ATF Commit     : ${ATF_COMMIT_SHORT} (${ATF_COMMIT})"
+            echo "Blobs          : ${BLOB_SOURCE}"
+            if [ "${BLOB_SOURCE}" = "source" ]; then
+              echo "ATF Repository : Yuzhii0718/atf-airoha"
+              echo "ATF Branch     : ${ATF_BRANCH}"
+              echo "ATF Commit     : ${ATF_COMMIT_SHORT} (${ATF_COMMIT})"
+            fi
             echo "Build Time     : ${BUILD_TIME}"
             echo "SOC            : ${{ inputs.SOC }}"
             echo "BOARD          : ${{ inputs.BOARD }}"
@@ -162,21 +187,25 @@ jobs:
           echo "BRANCH=${BRANCH}"                         >> "$GITHUB_ENV"
           echo "COMMIT=${COMMIT}"                         >> "$GITHUB_ENV"
           echo "COMMIT_SHORT=${COMMIT_SHORT}"             >> "$GITHUB_ENV"
+          echo "BLOB_SOURCE=${BLOB_SOURCE}"               >> "$GITHUB_ENV"
+          echo "ATF_SUMMARY=${ATF_SUMMARY}"               >> "$GITHUB_ENV"
           echo "ATF_BRANCH=${ATF_BRANCH}"                 >> "$GITHUB_ENV"
           echo "ATF_COMMIT=${ATF_COMMIT}"                 >> "$GITHUB_ENV"
           echo "ATF_COMMIT_SHORT=${ATF_COMMIT_SHORT}"     >> "$GITHUB_ENV"
           echo "BUILD_TIME=${BUILD_TIME}"                 >> "$GITHUB_ENV"
 
       # 5. Execute the build script with the provided SOC and BOARD inputs,
-      #    and capture the full build log into the output directory.  airoha.sh
-      #    compiles the bootloader from the ATF tree checked out in step 3b and
-      #    stages it under tools/build_airoha/source/ before the FIP images are
-      #    packed (the modern blob layout builds from source by default).
+      #    and capture the full build log into the output directory.  With a ref
+      #    airoha.sh compiles the bootloader from the ATF tree checked out in
+      #    step 3b and stages it under tools/build_airoha/source/ before the FIP
+      #    images are packed; with an empty ref it uses the checked-in blobs
+      #    (BLOBS=prebuilt) and needs no ATF tree at all.
       - name: Run build script
         run: |
           set -o pipefail
           chmod +x airoha.sh
           LOG_FILE="output_airoha/build.log"
+          BLOBS=${{ inputs.atf_ref == '' && 'prebuilt' || 'auto' }} \
           ATF_DIR="${GITHUB_WORKSPACE}/../atf-airoha" \
             SOC=${{ inputs.SOC }} BOARD=${{ inputs.BOARD }} ./airoha.sh 2>&1 | tee "${LOG_FILE}"
           cp .config output_airoha/.config
@@ -216,7 +245,7 @@ jobs:
           - **Repository**: ${GITHUB_REPOSITORY}
           - **Ref**: \`${{ inputs.branch }}\`
           - **Branch / commit**: ${BRANCH} / \`${COMMIT_SHORT}\`
-          - **ATF branch / commit**: ${ATF_BRANCH} / \`${ATF_COMMIT_SHORT}\`
+          - **Bootloader blobs**: ${ATF_SUMMARY}
           - **Build time**: ${BUILD_TIME}
           - **SOC / BOARD**: ${{ inputs.SOC }} / ${{ inputs.BOARD }}
           EOF
