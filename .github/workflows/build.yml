@@ -8,7 +8,10 @@ name: Batch Build and Release
 #   arm   -> airoha  + mediatek      (32/64-bit ARM)
 #   mips  -> econet  + mtmips        (MIPS big-endian / ramips)
 #
-#   airoha    -> airoha.sh    ARM, FIP/BROM images packed in-tree
+#   airoha    -> airoha.sh    ARM, BL1/BL2/BL31 either from atf-airoha (when
+#                             airoha_atf_ref is given) or from the checked-in
+#                             blobs (empty ref, the default); FIP/BROM images
+#                             packed in-tree
 #   econet    -> econet.sh    MIPS, needs airoha_mips_dramc (DRAMC + TCBoot)
 #   mediatek  -> mediatek.sh  Filogic, needs arm-trusted-firmware-mtksoc (BL2/FIP)
 #   mtmips    -> mtmips.sh    ramips, OpenWrt musl toolchain downloaded on demand
@@ -54,6 +57,11 @@ on:
         required: true
         default: mtksoc-20260817
         type: string
+      airoha_atf_ref:
+        description: 'Branch/ref of atf-airoha to build BL1/BL2/BL31 from (airoha only). Leave empty to use the checked-in blobs instead - no ATF tree, no download.'
+        required: false
+        default: 'atf-v2.10'
+        type: string
       dramc_ref:
         description: 'Branch/ref of airoha_mips_dramc (econet only)'
         required: true
@@ -91,6 +99,7 @@ jobs:
       #    - gcc-aarch64-linux-gnu   : airoha an7581/an7583, all mediatek
       #    - gcc-mips-linux-gnu      : econet big endian (en751221/en751627)
       #    - zstd                    : mtmips/econet fetch an OpenWrt .tar.zst
+      #    - unzip                   : atf-airoha extracts its mbedTLS archive
       #    - nodejs/npm              : airoha.sh/mediatek.sh embed the failsafe UI
       #    - device-tree-compiler    : U-Boot and TF-A device trees
       #    - lzma / lzma-dev         : legacy LZMA SDK 9.22 encoder.  tools/
@@ -121,7 +130,7 @@ jobs:
             build-essential flex bison libssl-dev device-tree-compiler \
             python-is-python3 \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi gcc-mips-linux-gnu \
-            zstd \
+            zstd unzip \
             lzma lzma-dev \
             libgnutls28-dev \
             nodejs npm
@@ -152,9 +161,10 @@ jobs:
       # 3b. TF-A tree, only needed by the MediaTek Filogic boot chain: mediatek.sh
       #     builds U-Boot, then TF-A with that u-boot.bin as BL33, and emits
       #     preloader.bin + bl31-uboot.fip.
-      #     Both paired trees (this one and 3c) belong *next to* the U-Boot tree,
-      #     as the README clones them (<parent>/atf-mtksoc), not inside it: the
-      #     U-Boot tree is the workspace and its `make clean` deletes every
+      #     All three paired trees (this one, 3b2 and 3c) belong *next to* the
+      #     U-Boot tree, as the README clones them (<parent>/atf-mtksoc), not
+      #     inside it: the U-Boot tree is the workspace and its `make clean`
+      #     deletes every
       #     '*.[aios]' file below it (Makefile, clean rule), which would wipe
       #     TF-A's prebuilt DRAM/efuse libraries (plat/mediatek/*/drivers/
       #     {dram,efuse}/release/*.a) - they have no build rule, so TF-A then
@@ -171,6 +181,36 @@ jobs:
           repository: Yuzhii0718/arm-trusted-firmware-mtksoc
           ref: ${{ inputs.atf_ref }}
           path: atf-mtksoc
+
+      # 3b2. Airoha ATF tree, needed only when airoha_atf_ref names the revision
+      #      to build BL1/BL2/BL31 from.  The modern (split-FIP) configurations
+      #      default to CONFIG_AIROHA_BLOBS_SOURCE - AN7581, AN7583 and the -ubi
+      #      variants of AN7563/EN7523 - and airoha.sh then wants atf-airoha as a
+      #      sibling of this tree; without it those configurations stop in the
+      #      pre-flight with
+      #        [ERROR] ATF source tree not found: <parent>/atf-airoha
+      #        [ERROR] To build against the checked-in blobs instead, re-run with
+      #                BLOBS=prebuilt.
+      #      which is what the batch used to hit once the script defaulted to the
+      #      source layout.  Leaving airoha_atf_ref empty keeps the historical
+      #      behaviour: step 6 then passes BLOBS=prebuilt, a modern defconfig
+      #      falls back to the checked-in open-source blobs, legacy boards keep
+      #      their legacy blobs - no ATF tree, no download - and this checkout is
+      #      skipped.
+      #      When it does run it is checked out inside the workspace and moved one
+      #      level up for the same reason as 3b: the U-Boot `make clean` sweeps
+      #      '*.[aios]' below the workspace and would wipe the ATF objects between
+      #      two configurations of the batch.  Its own build.sh fetches the
+      #      AArch32 toolchain and mbedTLS when AUTO_DL=1 (set in step 6), so
+      #      nothing has to be preinstalled for it beyond the lzma/unzip of
+      #      step 1.
+      - name: Checkout atf-airoha
+        if: matrix.platform == 'airoha' && inputs.airoha_atf_ref != ''
+        uses: actions/checkout@v4
+        with:
+          repository: Yuzhii0718/atf-airoha
+          ref: ${{ inputs.airoha_atf_ref }}
+          path: atf-airoha
 
       # 3c. Early-boot tree, only needed by EcoNet: econet.sh builds the DRAMC
       #     stages there and composes tcboot.bin (TCBoot loader + u-boot.bin).
@@ -192,7 +232,24 @@ jobs:
       - name: Move the paired trees next to the U-Boot tree
         run: |
           mv "${GITHUB_WORKSPACE}/atf-mtksoc" "${GITHUB_WORKSPACE}/../atf-mtksoc" 2>/dev/null || true
+          mv "${GITHUB_WORKSPACE}/atf-airoha" "${GITHUB_WORKSPACE}/../atf-airoha" 2>/dev/null || true
           mv "${GITHUB_WORKSPACE}/airoha_mips_dramc" "${GITHUB_WORKSPACE}/../airoha_mips_dramc" 2>/dev/null || true
+
+      # 3e. Cache the ATF host archives, only when airoha_atf_ref is set (the
+      #     modern boards are then built from source): atf-airoha/build.sh fetches the AArch32 toolchain and
+      #     mbedTLS into dl/ when they are missing (~150 MiB together), and the
+      #     batch builds that tree once per modern configuration.  The archives
+      #     are reused between runs; the extracted toolchain is still unpacked
+      #     once per run, only the download is avoided.  The key carries the ATF
+      #     ref, so switching atf-airoha revisions (or the runner OS) never
+      #     reuses a stale archive.  Same step as the single-board workflow, see
+      #     .github/workflows/airoha.yml.
+      - name: Cache the ATF host archives
+        if: matrix.platform == 'airoha' && inputs.airoha_atf_ref != ''
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../atf-airoha/dl
+          key: atf-airoha-dl-${{ runner.os }}-${{ inputs.airoha_atf_ref }}
 
       # 4. Pre-flight: build.sh carries the platform list, so a too-old ref is
       #    reported here instead of failing in the middle of the batch.
@@ -251,6 +308,16 @@ jobs:
             echo "DRAMC          : Sirherobrine23/airoha_mips_dramc" \
                  "@ ${{ inputs.dramc_ref }} ($(git -C "${GITHUB_WORKSPACE}/../airoha_mips_dramc" rev-parse HEAD | cut -c1-7))" >> "${INFO}"
           fi
+          if [ "${{ matrix.platform }}" = "airoha" ]; then
+            # The ATF tree only exists when a ref was given.
+            if [ -n "${{ inputs.airoha_atf_ref }}" ]; then
+              echo "Blobs          : source" >> "${INFO}"
+              echo "ATF-Airoha     : Yuzhii0718/atf-airoha" \
+                   "@ ${{ inputs.airoha_atf_ref }} ($(git -C "${GITHUB_WORKSPACE}/../atf-airoha" rev-parse HEAD | cut -c1-7))" >> "${INFO}"
+            else
+              echo "Blobs          : prebuilt" >> "${INFO}"
+            fi
+          fi
 
           cat "${INFO}"
 
@@ -265,6 +332,15 @@ jobs:
           # Passed through by build.sh to the platform scripts:
           AUTO_DL: '1'                                    # download missing toolchains (mtmips/econet)
           STAGE: 'all'                                    # full flashable images, not just u-boot.bin
+          # airoha only: an empty airoha_atf_ref means "use the checked-in
+          # blobs" (BLOBS=prebuilt: modern boards fall back to opensource/,
+          # legacy boards keep legacy/ - which directory applies is decided by
+          # the build type, not by this workflow), while a ref means "build them
+          # from that atf-airoha revision" (BLOBS=auto keeps each defconfig,
+          # i.e. the source layout of the modern boards and the legacy blobs of
+          # the legacy ones).  Empty for the other platforms, which do not read
+          # it.
+          BLOBS: ${{ matrix.platform == 'airoha' && (inputs.airoha_atf_ref == '' && 'prebuilt' || 'auto') || '' }}
           MTK_ATF_DIR: ${{ github.workspace }}/../atf-mtksoc
           AIROHA_ATF_DIR: ${{ github.workspace }}/../atf-airoha
           DRAMC_DIR: ${{ github.workspace }}/../airoha_mips_dramc
@@ -401,9 +477,13 @@ jobs:
           COMMIT_FULL="$(meta 'Commit Full')"
           BUILD_TIME="$(meta 'Build Time')"
           # Only the paired trees this run actually built: build-info-<platform>.txt
-          # records TF-A for mediatek and DRAMC for econet, so a batch that
-          # selects one of them does not name the other's revision.
+          # records TF-A for mediatek, ATF-Airoha for airoha and DRAMC for
+          # econet, so a batch that selects one of them does not name the
+          # other's revision.  The airoha blob source (opensource/legacy/source)
+          # is recorded as well, so an image states which bootloader it packs.
           TF_A="$(meta 'TF-A')"
+          AIROHA_ATF="$(meta 'ATF-Airoha')"
+          AIROHA_BLOBS="$(meta 'Blobs')"
           DRAMC="$(meta 'DRAMC')"
 
           mapfile -t FILES < <(find release -type f | sort)
@@ -430,6 +510,12 @@ jobs:
             echo "- **Branch / commit**: ${BRANCH:-unknown} / \`${COMMIT:-unknown}\`"
             if [ -n "${TF_A}" ]; then
               echo "- **TF-A (mediatek)**: ${TF_A}"
+            fi
+            if [ -n "${AIROHA_BLOBS}" ]; then
+              echo "- **Blobs (airoha)**: ${AIROHA_BLOBS}"
+            fi
+            if [ -n "${AIROHA_ATF}" ]; then
+              echo "- **ATF (airoha)**: ${AIROHA_ATF}"
             fi
             if [ -n "${DRAMC}" ]; then
               echo "- **DRAMC (econet)**: ${DRAMC}"
