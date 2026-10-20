@@ -25,6 +25,7 @@
 			reg = <0x80000000 0x200000>;
 		};
 
+#ifndef CONFIG_AIROHA_OLD_KERNEL_SDK_COMPAT
 		npu_binary: npu-binary@84000000 {
 			no-map;
 			reg = <0x84000000 0x00100000>;
@@ -44,6 +45,7 @@
 			no-map;
 			reg = <0x88400000 0x01000000>;
 		};
+#endif
 	};
 
 	psci {

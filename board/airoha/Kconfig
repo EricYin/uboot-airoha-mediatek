@@ -216,6 +216,23 @@ endif # AIROHA_BOOTEXT_RAM
 
 endif # AIROHA_BUILD_LEGACY
 
+config AIROHA_OLD_KERNEL_SDK_COMPAT
+	bool "Drop NPU/QDMA reserved-memory for old kernel SDK"
+	default n
+	help
+	  By default en7523.dtsi declares the full set of reserved-memory
+	  regions expected by the current (modern) Airoha kernel SDK: the
+	  ATF region plus the NPU binary, NPU packet and QDMA0/1 buffers.
+
+	  Older Airoha kernel SDKs only understand the ATF reserved region
+	  and expect the NPU/QDMA address ranges to be ordinary system
+	  memory.  Enable this option to compile out the NPU and QDMA
+	  reserved-memory nodes from the device tree, leaving only the ATF
+	  region reserved.
+
+	  The ATF region is always reserved regardless of this setting (it
+	  is already excluded by the board's linux,usable-memory-range).
+
 config AIROHA_FIP_BLOBS_DIR
 	string "Override prebuilt binaries directory"
 	depends on AIROHA_BUILD_MODERN || AIROHA_BUILD_LEGACY
