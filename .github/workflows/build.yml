@@ -79,7 +79,10 @@ permissions:
 jobs:
   build:
     name: build ${{ matrix.platform }}
-    runs-on: ubuntu-latest
+    # ubuntu-22.04 still ships gcc-mips-linux-gnu (removed in 24.04); the econet
+    # big-endian SoCs (en751221/en751627) build U-Boot with it.  The release job
+    # below does not need the MIPS toolchain and stays on ubuntu-latest.
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
     strategy:
@@ -97,25 +100,22 @@ jobs:
       # 1. Toolchains and build prerequisites:
       #    - gcc-arm-linux-gnueabi   : airoha en7523/en7562/an7563 (32-bit ARM)
       #    - gcc-aarch64-linux-gnu   : airoha an7581/an7583, all mediatek
-      #    - gcc-mips-linux-gnu      : econet big endian (en751221/en751627)
+      #    - gcc-mips-linux-gnu      : econet big endian (en751221/en751627).
+      #                                REMOVED from Ubuntu 24.04 (Noble), so the
+      #                                build job is pinned to ubuntu-22.04 below.
       #    - zstd                    : mtmips/econet fetch an OpenWrt .tar.zst
       #    - unzip                   : atf-airoha extracts its mbedTLS archive
       #    - nodejs/npm              : airoha.sh/mediatek.sh embed the failsafe UI
       #    - device-tree-compiler    : U-Boot and TF-A device trees
-      #    - lzma / lzma-dev         : legacy LZMA SDK 9.22 encoder.  tools/
-      #                                build_airoha compresses u-boot.bin with
-      #                                `lzma -c`; Debian/Ubuntu ship the SDK as
-      #                                /usr/bin/lzmp and register it as the
-      #                                /usr/bin/lzma alternative (priority 30,
-      #                                ahead of xz-utils' 20).  Without the
-      #                                package `command -v lzma` resolves to xz,
-      #                                which writes -1 ("unknown size") into the
-      #                                LZMA-Alone header - BL2 rejects that with
-      #                                "Failed to decompress image (err=1)" and
-      #                                the FIP never boots.  The Makefile
-      #                                normalises the header as well, but the
-      #                                SDK encoder also keeps the CI image
-      #                                identical to a local build.
+      #    - lzma                    : legacy LZMA SDK encoder wrapper.  The real
+      #                                encoder is resolved by tools/lzma_wrapper.sh
+      #                                ('auto' backend: system lzma/lzmp, else the
+      #                                in-tree tools/build_airoha/lzma-sdk), and it
+      #                                always patches the real uncompressed size
+      #                                into the LZMA-Alone header, so BL2 boots the
+      #                                FIP.  NOTE: the historical 'lzma-dev' SDK
+      #                                dev package was dropped from the Ubuntu
+      #                                archive and is not needed here.
       #    - libgnutls28-dev         : host tool tools/mkeficapsule includes
       #                                <gnutls/gnutls.h> unconditionally; it is
       #                                built for every board whose config ends
@@ -131,7 +131,7 @@ jobs:
             python-is-python3 \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi gcc-mips-linux-gnu \
             zstd unzip \
-            lzma lzma-dev \
+            lzma \
             libgnutls28-dev \
             nodejs npm
 
